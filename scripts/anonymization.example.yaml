@@ -58,3 +58,7 @@ file_map:
   'skills/**/*.md': 'skills/'
   'hooks/*.md': 'hooks/'
   'rules/*.md': 'rules/'
+
+# Extra files outside ~/.claude/ that should also be synced + anonymized
+extra_files:
+  '~/Dev/my-workflow-guide.html': 'docs/workflow-guide.html'
