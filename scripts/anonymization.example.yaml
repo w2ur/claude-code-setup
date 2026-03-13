@@ -1,0 +1,60 @@
+# Anonymization mapping — EXAMPLE
+# Copy this to anonymization.yaml and replace with your real data.
+# anonymization.yaml is gitignored and never committed.
+#
+# Option B strategy: public apps keep real names, private apps get placeholders.
+# This way your public repos are recognizable, but private projects stay hidden.
+
+replacements:
+  # GitHub username
+  "your-gh-user": "{github-username}"
+
+  # Portfolio site
+  "your-portfolio-site": "{portfolio-site}"
+  "your-site.dev": "{portfolio-site-url}"
+
+  # App URLs (anonymize even for public apps — URLs reveal the owner)
+  "myapp.dev": "myapp.example.com"
+  "budget.yoursite.dev": "budget.example.com"
+
+  # People
+  "Jane Doe": "{author-name}"
+  "Jane": "{author-first-name}"
+
+  # Private app slugs (use descriptive placeholders)
+  "my-secret-project": "my-sample-app"
+  "private-tool": "my-tool"
+
+  # Public app slugs — leave them out! They stay as-is.
+  # Listed here for documentation:
+  #   my-public-app, another-public-app
+
+  # Emails
+  "me@mysite.dev": "{email}"
+
+patterns:
+  '/Users/[^/\s]+/': '/Users/{username}/'
+  '/home/[^/\s]+/': '/home/{username}/'
+
+audit_patterns:
+  - 'your-gh-user'
+  - 'yoursite\.dev'
+  - 'Jane'
+  - 'my-secret-project'
+  - 'private-tool'
+
+skip:
+  - 'agent-memory/**'
+  - 'plans/**'
+  - 'projects/**'
+  - 'plugins/**'
+  - 'settings.json'
+  - 'settings.local.json'
+
+file_map:
+  'CLAUDE.md': 'CLAUDE.md'
+  'commands/*.md': 'commands/'
+  'agents/*.md': 'agents/'
+  'skills/**/*.md': 'skills/'
+  'hooks/*.md': 'hooks/'
+  'rules/*.md': 'rules/'
