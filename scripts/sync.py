@@ -155,14 +155,19 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     """
     warnings: list[str] = []
 
-    for md_file in sorted(target_dir.rglob("*.md")):
+    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml")
+    all_files: list[Path] = []
+    for ext in audit_extensions:
+        all_files.extend(target_dir.rglob(ext))
+
+    for audit_file in sorted(set(all_files)):
         # Skip files not tracked (e.g., the scripts/ directory)
-        rel = md_file.relative_to(REPO_ROOT)
+        rel = audit_file.relative_to(REPO_ROOT)
         if str(rel).startswith("scripts/"):
             continue
 
         try:
-            content = md_file.read_text(encoding="utf-8")
+            content = audit_file.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
 
@@ -187,6 +192,15 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
 
     pairs = discover_files(source, file_map, skip_patterns)
 
+    # Extra files from outside the source directory
+    extra_files = config.get("extra_files", {})
+    for src_path_str, dest_path_str in extra_files.items():
+        src_path = Path(src_path_str).expanduser()
+        if src_path.exists():
+            pairs.append((src_path, REPO_ROOT / dest_path_str))
+        else:
+            log.warning("Extra file not found: %s", src_path)
+
     if not pairs:
         log.warning("No files matched the file_map patterns in %s", source)
         return
@@ -195,7 +209,11 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
     copied = 0
 
     for src, dest in pairs:
-        rel_src = src.relative_to(source)
+        try:
+            rel_src = src.relative_to(source)
+        except ValueError:
+            # Extra file outside source directory
+            rel_src = src
         rel_dest = dest.relative_to(REPO_ROOT)
 
         content = src.read_text(encoding="utf-8")
