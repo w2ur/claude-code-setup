@@ -1,0 +1,21 @@
+name: claude-code-setup
+slug: claude-code-setup
+type: repo
+tagline: "Mon workflow Claude Code, anonymisé et documenté."
+description: "Configuration opinionated pour gérer un portfolio de 10+ apps avec Claude Code. Commands, agents, skills, hooks, et la philosophie derrière."
+audience: public
+visibility: public
+status: production
+url: https://github.com/w2ur/claude-code-setup
+repo_public: true
+license: MIT
+portfolio_card: true
+portfolio_link: true
+sort_order: 99
+icon_emoji: "⚙️"
+icon_file: null
+stack:
+  - Claude Code
+  - Markdown
+  - Python
+badge: null
