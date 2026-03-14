@@ -1,5 +1,9 @@
 # claude-code-setup
 
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-compatible-8B5CF6.svg)](https://docs.anthropic.com/en/docs/claude-code)
+[![10+ apps](https://img.shields.io/badge/battle--tested-10%2B_apps-F97316.svg)](#the-story)
+
 > If [claude-code-best-practice](https://github.com/shanraisshan/claude-code-best-practice) is the encyclopedia, this is the field guide.
 
 An opinionated, production-tested Claude Code configuration for solo developers managing multiple apps. Not a tutorial — a real setup that runs daily across 10+ personal projects, shared so you can steal the parts that work for you.
@@ -19,42 +23,43 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 ## What's Inside
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      You type a command                  │
-│           /fix  /sync  /audit  /architect  ...           │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│                        Agents                            │
-│                                                          │
-│  implementer ─── sonnet (simple) / opus (complex)        │
-│  architect ───── opus only (diagnoses, never codes)      │
-│  docs-checker ── sonnet (audits README, CLAUDE.md)       │
-│  portfolio-sync  sonnet (cross-repo coherence)           │
-│  portfolio-audit  haiku (compliance checks)              │
-│  dev-scanner ─── sonnet (discovers & inventories)        │
-│                                                          │
-│  ┌──────────┐  ┌───────────────────────────────────┐     │
-│  │  Memory   │  │  Skills (preloaded knowledge)     │     │
-│  │ per agent │  │  • portfolio-conventions           │     │
+┌───────────────────────────────────────────────────────────┐
+│                    You type a command                      │
+│            /fix  /sync  /audit  /architect  ...            │
+└─────────────────────────────┬─────────────────────────────┘
+                              │
+                              ▼
+┌───────────────────────────────────────────────────────────┐
+│                          Agents                           │
+│                                                           │
+│  implementer ──── sonnet (simple) / opus (complex)        │
+│  architect ────── opus only (diagnoses, never codes)      │
+│  docs-checker ─── sonnet (audits README, CLAUDE.md)       │
+│  portfolio-sync ─ sonnet (cross-repo coherence)           │
+│  portfolio-audit  haiku (compliance checks)               │
+│  dev-scanner ──── sonnet (discovers & inventories)        │
+│                                                           │
+│  ┌────────────┐  ┌──────────────────────────────────┐     │
+│  │   Memory   │  │  Skills (preloaded knowledge)    │     │
+│  │  per agent │  │  • portfolio-conventions          │     │
 │  │ per project│  │  • code-quality                   │     │
-│  └──────────┘  └───────────────────────────────────┘     │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│                   Hooks (advisory)                        │
-│                                                          │
-│  doc-guard ──── "Did you update the docs?"               │
-│  build-check ── "Any warnings left?"                     │
-│  memory-reminder "Save what you learned"                 │
-│                                                          │
-│  All advisory — they nudge, never block.                 │
-└─────────────────────────────────────────────────────────┘
+│  └────────────┘  └──────────────────────────────────┘     │
+└─────────────────────────────┬─────────────────────────────┘
+                              │
+                              ▼
+┌───────────────────────────────────────────────────────────┐
+│                     Hooks (advisory)                      │
+│                                                           │
+│  doc-guard ─────── "Did you update the docs?"             │
+│  build-check ───── "Any warnings left?"                   │
+│  memory-reminder ─ "Save what you learned"                │
+│                                                           │
+│  All advisory — they nudge, never block.                  │
+└───────────────────────────────────────────────────────────┘
 ```
 
-For a visual, interactive version of this architecture → [open the workflow guide](docs/workflow-guide.html)
+> [!TIP]
+> For a visual, interactive version of this architecture, [open the workflow guide](https://w2ur.github.io/claude-code-setup/workflow-guide.html).
 
 ### Commands (7)
 
@@ -108,7 +113,8 @@ Why advisory? Because in a system where I don't review code, I need Claude Code 
 
 The `CLAUDE.md` at the root is the backbone — ~180 lines of rules that apply to every project. The most important ones:
 
-**The 2-attempt rule.** After 2 failed attempts at the same fix, stop. No "let me just try one more thing." Escalate to the architect agent. This single rule saved me more hours than everything else combined.
+> [!IMPORTANT]
+> **The 2-attempt rule.** After 2 failed attempts at the same fix, stop. No "let me just try one more thing." Escalate to the architect agent. This single rule saved me more hours than everything else combined.
 
 **Bug triage before code.** When I report a bug, Claude Code must rule out environment issues first — stale cache, service worker, old build. The most common "bugs" in my portfolio weren't bugs at all.
 
@@ -131,6 +137,9 @@ These aren't arbitrary choices. Each one came from a specific failure. Read [the
 | One manifest per repo (.portfolio.yml) | Central inventory document only | Drift. A central doc goes stale the moment you rename an app. A manifest in the repo travels with the code and gets updated in the same commit. |
 
 ## Quick Start
+
+> [!NOTE]
+> The setup is fully modular — you can copy everything, cherry-pick individual pieces, or just read and adapt the patterns to your own system.
 
 ### Option A: Copy the whole system
 
