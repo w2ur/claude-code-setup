@@ -11,7 +11,7 @@ repo_public: true
 license: MIT
 portfolio_card: true
 portfolio_link: true
-sort_order: 99
+sort_order: 3
 icon_emoji: "⚙️"
 icon_file: null
 stack:
