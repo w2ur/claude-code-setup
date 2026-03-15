@@ -287,6 +287,12 @@ The portfolio's strategic documents live in `~/Dev/{portfolio-site}/strategy/`:
 - The system preference is the default. A manual toggle in the UI is optional — up to each project.
 - This is the default. To opt out, the project-level CLAUDE.md must explicitly state it with a justification (e.g., "This app has its own theme system", "The artistic direction requires a fixed palette").
 
+## Design Defaults
+
+- Never default to purple, violet, or indigo as a primary color. This is a known model bias from overexposure to Tailwind/shadcn defaults.
+- When no color palette is specified for a new project, propose 2-3 palette directions based on the app's subject, mood, and audience. Wait for approval before implementing.
+- When a project-level CLAUDE.md already defines a palette or design direction, follow it strictly.
+
 ## Tech Stack Choices
 
 - No stack is imposed globally. Choose the best tools for each project.

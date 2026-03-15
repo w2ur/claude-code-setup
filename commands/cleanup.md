@@ -123,7 +123,27 @@ if [ "$ACTUAL_CMD_COUNT" != "$CHARTE_CMD_COUNT" ] 2>/dev/null; then
 fi
 ```
 
-Report any staleness found. Do NOT fix these files — just flag them for the owner.
+**claude-code-setup repo:**
+```bash
+# Check if claude-code-setup is stale vs live config
+LIVE_HASH=$(find ~/.claude/commands ~/.claude/agents ~/.claude/skills ~/.claude/hooks ~/.claude/rules ~/.claude/CLAUDE.md -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
+REPO_HASH=$(find ~/Dev/claude-code-setup/commands ~/Dev/claude-code-setup/agents ~/Dev/claude-code-setup/skills ~/Dev/claude-code-setup/hooks ~/Dev/claude-code-setup/rules ~/Dev/claude-code-setup/CLAUDE.md -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
+if [ "$LIVE_HASH" != "$REPO_HASH" ]; then
+  echo "⚠️  claude-code-setup is stale — running sync.py..."
+fi
+```
+
+If claude-code-setup is stale, **auto-run the sync**:
+```bash
+cd ~/Dev/claude-code-setup && python scripts/sync.py
+```
+
+After the sync completes:
+1. Run `git status` to see what changed.
+2. If there are changes, commit them: `chore: sync with live ~/.claude/ config`
+3. Do NOT push — just commit locally. The owner pushes manually.
+
+Report any staleness found for workflow guide and strategic docs. Do NOT fix those — just flag them for the owner.
 
 ## Report
 
@@ -150,5 +170,6 @@ Report any staleness found. Do NOT fix these files — just flag them for the ow
 ### Staleness
 - Workflow guide: [OK / stale — missing commands: X, Y]
 - Charte de cohérence: [OK / stale — command count mismatch, etc.]
+- claude-code-setup repo: [OK / stale — synced and committed locally (push manually)]
 - Action needed: [list or "all up to date"]
 ```
