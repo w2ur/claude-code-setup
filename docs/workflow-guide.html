@@ -41,7 +41,7 @@ const AGENTS = [
 ];
 
 const SKILLS = [
-  { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["architect", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, docs, manifest, quality standards, display order." },
+  { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["architect", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, manifest, quality standards, display order." },
   { name: "code-quality", file: "~/.claude/skills/code-quality/SKILL.md", preloaded: ["implementer"], desc: "Checklist qualité : conventions à vérifier avant/pendant/après le code, pièges courants." },
 ];
 
@@ -150,7 +150,7 @@ const CATEGORIES={dev:{label:"Développement",color:"#3B82F6",bg:"#1E3A5F"},main
 <!-- ======= RENDERER — Claude Code: do NOT edit below this line. ======= -->
 <script type="text/babel">
 const{useState}=React;
-const TC={"\/sync":"#3B82F6","\/fix":"#3B82F6","\/new-app":"#3B82F6","\/audit":"#3B82F6","\/architect":"#3B82F6","\/cleanup":"#3B82F6","\/plan":"#3B82F6","\/context":"#3B82F6","\/rename":"#3B82F6","superpowers":"#A855F7","hook":"#F59E0B","conversation":"#64748B","manuel":"#64748B","claude":"#8B5CF6","npm":"#EF4444","git":"#F97316","gh ":"#F97316","skill":"#10B981","rapport":"#10B981","automatique":"#10B981","review":"#A855F7","prompt":"#8B5CF6","\u00e9dition":"#64748B","owner":"#64748B"};
+const TC={"\/sync":"#3B82F6","\/fix":"#3B82F6","\/new-app":"#3B82F6","\/audit":"#3B82F6","\/architect":"#3B82F6","\/cleanup":"#3B82F6","\/plan":"#3B82F6","\/context":"#3B82F6","\/rename":"#3B82F6","superpowers":"#A855F7","hook":"#F59E0B","conversation":"#64748B","manuel":"#64748B","claude":"#8B5CF6","npm":"#EF4444","git":"#F97316","gh ":"#F97316","skill":"#10B981","rapport":"#10B981","automatique":"#10B981","review":"#A855F7","prompt":"#8B5CF6","\u00e9dition":"#64748B","william":"#64748B"};
 function gtc(t){const l=t.toLowerCase();for(const[k,c]of Object.entries(TC)){if(l.includes(k))return c}return"#94A3B8"}
 const F="'JetBrains Mono','SF Mono','Fira Code','Cascadia Code',monospace";
 const pill=(bg,color,text)=>(<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:bg,color,fontWeight:600}}>{text}</span>);
