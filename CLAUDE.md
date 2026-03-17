@@ -218,6 +218,26 @@ The portfolio's strategic documents live in `~/Dev/{portfolio-site}/strategy/`:
 - Skip this for simple, obvious fixes — don't over-engineer a one-line bug fix.
 - Challenge your own work before presenting it. The owner does not review code, so the quality bar is entirely on you.
 
+## Generalization Check
+
+Before implementing a specific request, consider whether it's a special case of a
+more general pattern. If the general solution is roughly the same effort as the
+specific one, implement the general version with the specific case as the default.
+
+Apply this when:
+- The pattern already appears elsewhere in the project or portfolio
+- The request involves hardcoded values that could be configuration
+- A utility function would serve multiple callers
+
+Skip this when:
+- The general version requires significantly more code or complexity
+- There's only one known use case and no evidence of others
+- Adding configurability would slow down the immediate task without clear future benefit
+
+This is a design judgment call, not a mandatory abstraction step. When in doubt,
+implement the specific case cleanly — it's easier to generalize clean code later
+than to simplify over-engineered code.
+
 ## Testing
 
 - Every feature or bug fix should include relevant unit tests.

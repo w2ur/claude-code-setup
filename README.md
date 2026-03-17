@@ -168,6 +168,8 @@ flowchart LR
 
 **The elegance check.** Before presenting non-trivial work, pause and ask: "Is there a more elegant way?" I don't review code — Claude Code is the entire quality bar.
 
+**The generalization check.** Before implementing a specific request, consider whether it's a special case of a more general pattern. If the general solution is roughly the same effort, implement the general version. If not, implement the specific case cleanly — it's easier to generalize clean code later than to simplify over-engineered code.
+
 ## Key Decisions
 
 These aren't arbitrary choices. Each one came from a specific failure. Read [the full story](docs/philosophy.md) for the context behind each decision.
