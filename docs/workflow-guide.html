@@ -30,6 +30,7 @@ const COMMANDS = [
   { name: "/troubleshoot", args: "$0 (problème + ce qui a été tenté)", desc: "Escalade directe vers l'agent troubleshooter (opus). Diagnostic structural après 2 échecs d'implémentation. Produit un plan, jamais du code.", agents: ["troubleshooter"], when: "Escalade après 2 échecs sur /fix, ou override manuel" },
   { name: "/cleanup", args: "[plans-only | plugins-only | memory-only]", desc: "Nettoie les plans orphelins dans les repos, audite les plugins installés, compacte la mémoire agent si > 200 lignes, et vérifie si le workflow guide et les docs stratégiques sont à jour par rapport à la config réelle.", agents: [], when: "1×/semaine en hygiène, ou quand les plans s'accumulent" },
   { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2+1 phases. Phase 1 : triage rapide avec score readiness (harness-engineering). Phase 2 : revue approfondie + delta readiness avant/après fixes. Auto-fix ce qui est safe, flag le reste.", agents: ["implementer (auto-fix)", "troubleshooter (si migration majeure)"], when: "1×/mois en session dédiée" },
+  { name: "/sync-setup", args: "[--dry-run | --audit-only]", desc: "Synchronise le repo claude-code-setup depuis ~/.claude/. Copie + anonymise les fichiers, nettoie les fichiers obsolètes, met à jour le README (compteurs, noms), vérifie l'absence de données personnelles.", agents: [], when: "Après des changements de workflow (nouvel agent, commande renommée, nouveau hook)" },
 ];
 
 const AGENTS = [
