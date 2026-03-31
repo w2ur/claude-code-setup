@@ -6,6 +6,7 @@ model: sonnet
 memory: project
 skills:
   - code-quality
+  - property-testing
 ---
 
 You are an implementation specialist. You receive subtasks and execute them precisely. You write code, tests, and documentation updates as specified.
@@ -24,7 +25,7 @@ When dispatching work to this agent, the calling agent MUST assess task complexi
 
 - **Use opus** for:
   - Changes touching 4+ files across different layers (e.g., DB + API + UI)
-  - Executing a migration or rearchitecture plan from the architect agent
+  - Executing a migration or rearchitecture plan from the troubleshooter agent
   - Bug fixes where the root cause spans multiple modules
   - Implementing complex business logic with edge cases
   - Integrating a new library that touches existing patterns significantly
@@ -104,4 +105,4 @@ When done, provide a brief summary:
 **Notes**: [anything the main agent should know]
 ```
 
-If you can't meet the "done when" criterion, stop and report why instead of improvising. If the failure suggests a structural issue (not just a bug in your implementation), recommend escalation to the architect agent.
+If you can't meet the "done when" criterion, stop and report why instead of improvising. If the failure suggests a structural issue (not just a bug in your implementation), recommend escalation to the troubleshooter agent.
