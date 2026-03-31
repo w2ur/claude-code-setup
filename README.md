@@ -37,15 +37,15 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 ```
 ┌───────────────────────────────────────────────────────────┐
 │                    You type a command                     │
-│           /fix  /sync  /audit  /architect  ...            │
+│       /fix  /sync  /audit  /troubleshoot  ...              │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
 ┌───────────────────────────────────────────────────────────┐
 │                          Agents                           │
 │                                                           │
-│  implementer ──── sonnet (simple) / opus (complex)        │
-│  architect ────── opus only (diagnoses, never codes)      │
+│  implementer ───── sonnet (simple) / opus (complex)       │
+│  troubleshooter ── opus only (diagnoses, never codes)     │
 │  docs-checker ─── sonnet (audits README, CLAUDE.md)       │
 │  portfolio-sync ─ sonnet (cross-repo coherence)           │
 │  portfolio-audit  haiku (compliance checks)               │
@@ -55,18 +55,19 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 │  │   Memory   │  │  Skills (preloaded knowledge)    │     │
 │  │ per agent  │  │  • portfolio-conventions         │     │
 │  │ per project│  │  • code-quality                  │     │
-│  └────────────┘  └──────────────────────────────────┘     │
+│  └────────────┘  │  • property-testing              │     │
+│                  └──────────────────────────────────┘     │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
 ┌───────────────────────────────────────────────────────────┐
-│                     Hooks (advisory)                      │
+│                          Hooks                            │
 │                                                           │
-│  doc-guard ─────── "Did you update the docs?"             │
-│  build-check ───── "Any warnings left?"                   │
-│  memory-reminder ─ "Save what you learned"                │
-│                                                           │
-│  All advisory — they nudge, never block.                  │
+│  doc-guard ──────── "Did you update the docs?" (advisory) │
+│  build-check ────── "Any warnings left?"       (advisory) │
+│  memory-reminder ── "Save what you learned"    (advisory) │
+│  fix-loop-detector  "Same file 3× in 30min?"  (advisory) │
+│  secret-scan ────── "API key in source?"       (blocking) │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -74,19 +75,20 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 > For a visual, interactive version of this architecture, [open the workflow guide](https://w2ur.github.io/claude-code-setup/workflow-guide.html).
 
 <details>
-<summary><strong>Commands (7)</strong> — entry points that orchestrate everything</summary>
+<summary><strong>Commands (8)</strong> — entry points that orchestrate everything</summary>
 
 <br>
 
 | Command | What it does | When to use it |
 |---------|-------------|----------------|
-| `/fix` | Bug fix with agent memory + auto-escalation after 2 failures | Something's broken |
+| `/fix` | Bug fix with 3-level escalation cascade (direct → debugging → troubleshooter) | Something's broken |
 | `/sync` | Portfolio-wide manifest sync + JSON generation | Weekly maintenance |
 | `/audit` | Parallel docs-checker + portfolio-audit | Before releases, compliance sweeps |
-| `/architect` | Escalate to opus for structural diagnosis | Fix keeps failing, or upfront design needed |
+| `/troubleshoot` | Escalate to opus for structural diagnosis after 2 failed fixes | Fix keeps failing |
 | `/new-app` | Full scaffold with portfolio compliance from day one | Starting a new project |
 | `/cleanup` | Stale plans, plugin audit, memory compaction | Weekly housekeeping |
-| `/tech-debt` | Monthly triage → deep review → auto-fix safe items | Monthly health check |
+| `/tech-debt` | Monthly triage (with readiness scoring) → deep review → auto-fix | Monthly health check |
+| `/sync-setup` | Sync this repo from live `~/.claude/` config (anonymize + audit) | After workflow changes |
 
 </details>
 
@@ -98,7 +100,7 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 | Agent | Model | Memory | What it does | What it doesn't do |
 |-------|-------|--------|--------------|--------------------|
 | **implementer** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) → ![opus](https://img.shields.io/badge/opus-8B5CF6?style=flat-square) | ✅ | Executes tasks with "done when" criteria | Architecture decisions |
-| **architect** | ![opus](https://img.shields.io/badge/opus-8B5CF6?style=flat-square) | ✅ | Diagnoses structural problems, produces plans | Write production code |
+| **troubleshooter** | ![opus](https://img.shields.io/badge/opus-8B5CF6?style=flat-square) | ✅ | Diagnoses structural problems after 2 failed fixes, produces plans | Write production code |
 | **portfolio-sync** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Cross-repo coherence (manifests, JSON, docs) | Creative content |
 | **docs-checker** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Audits + fixes README, CLAUDE.md, URLs | Compliance standards |
 | **portfolio-audit** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Read-only compliance check (signature, secrets, tests) | Fix anything |
@@ -109,27 +111,30 @@ The model selection matters. I don't pay opus prices for a compliance check that
 </details>
 
 <details>
-<summary><strong>Skills (2)</strong> — preloaded knowledge, injected at startup</summary>
+<summary><strong>Skills (3)</strong> — preloaded knowledge, injected at startup</summary>
 
 <br>
 
-- **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, manifest format, quality gates, display order). Loaded into `architect` and `portfolio-sync`.
-- **code-quality**: before/during/after checklist, common pitfalls, elegance check protocol. Loaded into `implementer`.
+- **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, manifest format, quality gates, display order). Loaded into `troubleshooter` and `portfolio-sync`.
+- **code-quality**: before/during/after checklist, common pitfalls, elegance check, spec compliance check. Loaded into `implementer`.
+- **property-testing**: patterns for property-based tests (roundtrip, conservation, idempotence, no-crash) using fast-check (TS) or hypothesis (Python). Loaded into `implementer`.
 
 Why skills instead of just writing longer agent prompts? Because skills are reusable across agents, versionable independently, and don't bloat agents that don't need them.
 
 </details>
 
 <details>
-<summary><strong>Hooks (3)</strong> — advisory nudges, never blocking</summary>
+<summary><strong>Hooks (5)</strong> — 4 advisory + 1 blocking</summary>
 
 <br>
 
-- **doc-guard** (PostToolUse → Write): nudges when you modify code without updating `.portfolio.yml` or docs
-- **build-check** (Stop): verifies zero warnings after each agent completes
-- **memory-reminder** (Stop): reminds the agent to save what it learned
+- **doc-guard** (PostToolUse → Write): nudges when you modify code without updating `.portfolio.yml` or docs *(advisory)*
+- **build-check** (Stop): verifies zero warnings after each agent completes *(advisory)*
+- **memory-reminder** (Stop): reminds the agent to save what it learned *(advisory)*
+- **fix-loop-detector** (PostToolUse → Bash): warns when the same file gets 3+ `fix:` commits in 30 minutes — a signal to escalate *(advisory)*
+- **secret-scan** (PreToolUse → Write|Edit): blocks writes containing API key patterns (`sk-`, `AKIA`, `ghp_`, etc.), excludes `.env.example` *(blocking)*
 
-Why advisory? Because in a system where I don't review code, I need Claude Code to exercise judgment — not pass a checklist. A blocking hook on a one-character typo fix is just noise. Advisory hooks maintain signal quality: the agent sees the nudge and decides whether it matters.
+Most hooks are advisory — in a system where I don't review code, I need Claude Code to exercise judgment, not pass checklists. The one exception is secret scanning: accidentally committing an API key is irreversible enough to justify blocking.
 
 </details>
 
@@ -138,17 +143,19 @@ Why advisory? Because in a system where I don't review code, I need Claude Code 
 The `CLAUDE.md` at the root is the backbone — ~180 lines of rules that apply to every project. The most important ones:
 
 > [!IMPORTANT]
-> **The 2-attempt rule.** After 2 failed attempts at the same fix, stop. No "let me just try one more thing." Escalate to the architect agent. This single rule saved me more hours than everything else combined.
+> **The 3-level escalation cascade.** Each level forces a different approach. No retrying the same level twice. Every fix attempt requires a stated root cause hypothesis — no "let me try a different approach" without a new theory.
 
 ```mermaid
 flowchart LR
-    A["🐛 Bug or task"] --> B{"Attempt 1"}
-    B -->|succeeds| Z["✅ Done"]
-    B -->|fails| C{"Attempt 2"}
-    C -->|succeeds| Z
-    C -->|fails| D["🛑 STOP"]
-    D --> E["🏛️ Architect agent
-    opus · diagnosis only"]
+    A["🐛 Bug"] --> B["L1: Direct fix
+    hypothesis → fix"]
+    B -->|works| Z["✅ Done"]
+    B -->|"still broken"| C["L2: Systematic debugging
+    investigate → hypothesize → fix → verify"]
+    C -->|works| Z
+    C -->|"still broken"| D["🛑 STOP"]
+    D --> E["L3: Troubleshooter
+    opus · structural diagnosis"]
     E --> F["📋 New plan"]
     F --> G["🔧 Implementer
     executes plan"]
@@ -176,9 +183,10 @@ These aren't arbitrary choices. Each one came from a specific failure. Read [the
 
 | Decision | Alternative I considered | Why I went this way |
 |----------|------------------------|-------------------|
-| 2 attempts then escalate | 3 attempts (Claude Code's natural tendency) | The 3rd attempt is almost always the same approach with minor variations. It wastes time and digs deeper into the wrong solution. |
-| Architect never codes | Architect diagnoses and implements | When the same agent diagnoses and codes, it's biased toward solutions it can implement quickly rather than the right solution. |
-| Advisory hooks, not blocking | Blocking hooks that fail the build | In a system where I never review code, I need AI that exercises judgment, not one that passes checklists. Blocking hooks on trivial changes are just noise. |
+| 3-level escalation cascade | Binary "2 fails → architect" | The old binary rule skipped a crucial step: structured debugging. Level 2 (systematic debugging skill) catches tricky-but-not-architectural bugs without invoking opus. |
+| Troubleshooter never codes | One agent diagnoses and implements | When the same agent diagnoses and codes, it's biased toward solutions it can implement quickly rather than the right solution. |
+| Advisory hooks + 1 blocker | All advisory or all blocking | Most hooks should nudge, not gate. The exception: secret scanning is blocking because committing an API key is irreversible. |
+| Property-based tests for invariants | Unit tests only | Unit tests verify examples. Property tests verify *laws* — "transfers preserve totals" catches edge cases no human would write. |
 | Model selection per task | Always use the best model | Haiku is perfect for audits. Sonnet handles 80% of implementation. Opus is for architecture and complex cross-file work. Matching model to task is a quality decision, not just a cost one. |
 | Agent memory over lesson files | Flat markdown files per project | Files had no structure, no auto-injection, no compaction. Agent memory is read at startup, written automatically after corrections, and split when it grows too large. |
 | Skills as preloaded context | Dynamic tool calls | Skills need to be available before the agent starts thinking. Dynamic loading means the agent might not know what it needs to know when making its first decision. |
@@ -205,7 +213,7 @@ Then edit `CLAUDE.md` and the agent files to replace `w2ur`, `{portfolio-site}`,
 
 ### Option B: Cherry-pick what you need
 
-The setup is modular. Want just the escalation system? Copy `/fix`, the `implementer` agent, and the `architect` agent. Want just the maintenance workflow? Copy `/cleanup` and `/tech-debt`. Each piece works independently — the full system is better, but partial adoption works fine.
+The setup is modular. Want just the escalation system? Copy `/fix`, the `implementer` agent, and the `troubleshooter` agent. Want just the maintenance workflow? Copy `/cleanup` and `/tech-debt`. Each piece works independently — the full system is better, but partial adoption works fine.
 
 ### Option C: Read and adapt
 
@@ -218,9 +226,9 @@ Browse the files, understand the patterns, and build your own version. The [phil
 
 <br>
 
-**If you have 1-3 apps:** You don't need half of this. Drop `portfolio-sync`, `portfolio-audit`, `dev-scanner` — they exist because I have 10+ repos to keep in sync. Keep `/fix`, `/architect`, the two core agents, and the global `CLAUDE.md`. That alone is a massive upgrade over bare Claude Code.
+**If you have 1-3 apps:** You don't need half of this. Drop `portfolio-sync`, `portfolio-audit`, `dev-scanner` — they exist because I have 10+ repos to keep in sync. Keep `/fix`, `/troubleshoot`, the two core agents, and the global `CLAUDE.md`. That alone is a massive upgrade over bare Claude Code.
 
-**If you work in a team:** The escalation rules still apply — they're about AI behavior, not team size. The `implementer`/`architect` split actually maps well to teams where juniors implement and seniors review. The memory system needs thought, though — per-developer or shared? I haven't solved that one.
+**If you work in a team:** The escalation rules still apply — they're about AI behavior, not team size. The `implementer`/`troubleshooter` split actually maps well to teams where juniors implement and seniors review. The memory system needs thought, though — per-developer or shared? I haven't solved that one.
 
 **If you have a different stack:** My skills are specific to my projects. Throw them out and write your own. The architecture (commands → agents → skills + hooks) doesn't care what language you write in.
 
@@ -237,7 +245,7 @@ Browse the files, understand the patterns, and build your own version. The [phil
 
 ## Maintenance
 
-This repo stays in sync with my actual `~/.claude/` setup via a Python sync script that copies, anonymizes, and audits for data leaks. See [`scripts/`](scripts/) for details.
+This repo stays in sync with my actual `~/.claude/` setup via `/sync-setup` — a command that runs a Python sync script to copy, anonymize, and audit for data leaks. After any workflow change (new agent, renamed command, new hook), I run `/sync-setup` and the repo updates itself. See [`scripts/`](scripts/) for details.
 
 If something looks outdated, it probably means I changed my setup and haven't synced yet. Open an issue — it's a good nudge.
 
