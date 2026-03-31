@@ -1,6 +1,6 @@
 ---
 name: portfolio-conventions
-description: Portfolio coherence rules — preloaded into architect and portfolio-sync agents as background knowledge.
+description: Portfolio coherence rules — preloaded into troubleshooter and portfolio-sync agents as background knowledge.
 user-invocable: false
 ---
 

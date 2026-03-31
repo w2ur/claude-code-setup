@@ -53,26 +53,28 @@ When dispatching work to sub-agents, choose the model that matches the task comp
 - **sonnet**: standard implementation tasks with clear scope — single-file changes, new components following existing patterns, straightforward bug fixes, tests, documentation.
 - **opus**: complex implementation spanning 4+ files across layers, migration execution, subtle multi-module bugs, tasks where a previous sonnet attempt failed, and all architecture analysis.
 
-When in doubt, start with sonnet. If it fails to meet the "done when" criterion, retry with opus before escalating to the architect.
+When in doubt, start with sonnet. If it fails to meet the "done when" criterion, retry with opus before escalating to the troubleshooter.
 
-## Escalation to Architect
+## Bug Fix Escalation (automatic — owner never needs to invoke commands)
 
-**Hard rule: after 2 failed attempts at the same fix, STOP. Do not try a third time with the same approach.** This is the single most important workflow rule. The worst time sink is iterating without stepping back.
+Level 1 — Direct fix:
+- Read the code, state root cause hypothesis in one sentence, fix.
+- If the owner says "still broken": escalate to level 2. Do NOT retry at level 1.
 
-When a fix fails twice:
+Level 2 — Systematic debugging (Superpowers):
+- Activate systematic-debugging skill.
+- 4 phases: investigate → hypothesize with evidence → fix → verify.
+- If the owner says "still broken": escalate to level 3. Do NOT retry at level 2.
 
-1. **Stop and count**: you have tried 2 different approaches to solve the same problem and neither worked. You MUST escalate. No exceptions, no "let me just try one more thing."
-2. **Diagnose before acting**: is the failure caused by a bug in your implementation, or by a structural problem in the existing code?
-3. **If structural**: invoke the `architect` agent (opus) with: what the problem is, what was tried, and why each attempt failed. The architect analyzes the root cause and may recommend rearchitecture, library swaps, stack changes, or data model redesigns.
-4. **If implementational**: retry with opus-level implementer, providing the specific failure context. This counts as attempt 3 — if it also fails, escalate to architect immediately.
+Level 3 — Troubleshooter:
+- Invoke the troubleshooter agent (opus) automatically. No permission needed.
 
-Signs that a problem is structural (not just a bug):
-- The fix works in isolation but breaks something else
-- The same type of bug keeps reappearing in different forms
-- The task requires fighting against the current architecture (e.g., passing data through 5 layers, working around a library's limitations)
-- Multiple files need coordinated changes with no clear single source of truth
-
-**Self-check: if you catch yourself thinking "let me just try one more thing" after 2 failures — that is the signal to stop.** The architect agent produces a plan — it does not write production code. Once the plan is approved, dispatch subtasks to the implementer.
+Rules:
+- Levels are one-way. Never repeat a level. Never skip a level.
+- Each fix attempt requires a STATED root cause hypothesis. No hypothesis = no edit.
+- "Let me try a different approach" without a new hypothesis is BANNED.
+- The pattern "try A → try not-A → try something else" is BANNED.
+- /fix and /troubleshoot remain as manual override entry points.
 
 ## Skill and Plugin Usage
 
@@ -90,9 +92,9 @@ Before starting non-trivial work, check if a skill or plugin applies. Using the 
 
 ### How skills interact with existing rules
 
-- **systematic-debugging + escalation rule:** The debugging skill enforces root-cause investigation (Phases 1-3). If root cause is found but the fix fails twice, the escalation rule kicks in (→ architect). They're sequential, not overlapping. Note: the debugging skill's default threshold is 3 failures, but our escalation rule overrides this to 2.
-- **systematic-debugging + bug triage:** Bug triage (environment causes first) runs BEFORE systematic-debugging. Triage eliminates cache/service worker/stale build. If the bug survives triage, systematic-debugging takes over for code investigation.
-- **plan-reviewer + architect:** Plan-reviewer catches problems before implementation. The architect catches problems after implementation fails. One is preventive, the other reactive.
+- **systematic-debugging + escalation rule:** The debugging skill is Level 2 of the escalation cascade. If the fix fails at Level 2, the troubleshooter takes over at Level 3. They're sequential, not overlapping.
+- **systematic-debugging + bug triage:** Bug triage (environment causes first) runs BEFORE the escalation cascade. Triage eliminates cache/service worker/stale build. If the bug survives triage, the cascade starts at Level 1.
+- **plan-reviewer + troubleshooter:** Plan-reviewer catches problems before implementation. The troubleshooter catches problems after implementation fails. One is preventive, the other reactive.
 
 ## Session Handoff
 
@@ -112,14 +114,22 @@ Before starting non-trivial work, check if a skill or plugin applies. Using the 
 - When switching to a completely different task mid-session, prefer `/clear` over continuing in a polluted context.
 - When dispatching to sub-agents, send focused prompts — not conversation history dumps.
 
-## Agent Memory
+## Memory
 
-- Agents with `memory: project` in their frontmatter learn across sessions. They read MEMORY.md at startup and write to it at session end.
-- Memory files live in `~/.claude/agent-memory/{agent-name}/`. The first 200 lines of MEMORY.md are injected into the agent's system prompt.
-- If MEMORY.md exceeds 200 lines, the agent splits detailed content into topic files and keeps MEMORY.md as a summary with cross-references.
-- Memory is for patterns, decisions, and project-specific quirks — not for task tracking or TODO lists.
-- After any correction from the owner, the agent writes a memory entry capturing the lesson — without asking.
-- This replaces the previous `~/.claude/lessons/{project-slug}.md` convention. Do NOT read from or write to `~/.claude/lessons/` — that directory no longer exists.
+Two complementary systems:
+
+### Agent Memory (MEMORY.md) — curated project knowledge
+- Agents with `memory: project` read MEMORY.md at startup (first 200 lines)
+- Content: patterns, decisions, project quirks, recurring mistakes
+- Written by agents after corrections and session end. Do not ask permission.
+- The memory-reminder hook fires at Stop to remind agents to write here.
+- This is NOT a session log. Only write durable knowledge that helps future sessions.
+
+### Claude-Mem — automatic session history
+- Captures all tool executions and generates session summaries automatically
+- Injects context from recent sessions at startup
+- Use MCP search tools to query past sessions ("what did we fix last time?")
+- Do NOT duplicate claude-mem's automatic history into MEMORY.md.
 
 ## Portfolio-Wide Artifacts
 
@@ -134,7 +144,7 @@ When a new project idea is evaluated or an idea changes status:
 - Flag that strategy/pipeline.md needs updating.
 
 These flags go in the session handoff and agent memory. The owner handles the commits in {portfolio-site} separately. The /cleanup command verifies staleness of these artifacts weekly.
-- Run /tech-debt monthly. Phase 1 triages all apps automatically; the owner picks which to review in depth. Items flagged 2+ months without action are escalated to /architect. Scan dates tracked in ~/Dev/.tech-debt-rotation.json.
+- Run /tech-debt monthly. Phase 1 triages all apps automatically; the owner picks which to review in depth. Items flagged 2+ months without action are escalated to /troubleshoot. Scan dates tracked in ~/Dev/.tech-debt-rotation.json.
 
 ## Documentation Updates
 
@@ -238,13 +248,18 @@ This is a design judgment call, not a mandatory abstraction step. When in doubt,
 implement the specific case cleanly — it's easier to generalize clean code later
 than to simplify over-engineered code.
 
-## Testing
+## Testing Strategy
 
-- Every feature or bug fix should include relevant unit tests.
+Three tiers:
+- **Unit tests**: systematic on all projects. Every feature or bug fix includes relevant tests.
+- **Property-based tests**: for functions with calculation, transformation, or invariant logic. Use fast-check (TS) or hypothesis (Python). The property-testing skill has patterns.
+- **Regression tests**: every bug fix MUST include a test reproducing the pre-fix scenario.
+
+Conventions:
 - Write tests alongside the implementation, not as a separate step after the fact.
 - When modifying existing code, verify that existing tests still pass. Fix any broken tests before committing.
 - Use the testing framework already present in the project. If none exists, propose one that fits the stack (e.g., Vitest for Vite projects, Jest for Next.js, pytest for Python).
-- Test files live next to the code they test (e.g., `utils.ts` → `utils.test.ts`) unless the project has an established `__tests__/` or `tests/` convention.
+- Test files live next to the code they test (`utils.ts` → `utils.test.ts`, `utils.property.test.ts`).
 - At minimum, test: utility functions, data transformations, API endpoints, and any logic with branching conditions. UI components are lower priority unless the project-level CLAUDE.md specifies otherwise.
 
 ## Error Handling

@@ -18,37 +18,40 @@
 <!--
   ============================================================================
   DATA SECTION — Claude Code: edit data here, don't touch the renderer below.
-  Last updated: 2026-03-12
+  Last updated: 2026-03-31
   ============================================================================
 -->
 <script id="workflow-data">
 const COMMANDS = [
   { name: "/sync", args: "[project-name | --report-only]", desc: "Synchronise le portfolio : scanne les .portfolio.yml, cross-check avec les repos, fixe les divergences, régénère portfolio-apps.json.", agents: ["portfolio-sync", "docs-checker", "portfolio-audit"], when: "Après des changements sur une ou plusieurs apps, ou 1×/semaine" },
-  { name: "/fix", args: "$0 (description du problème)", desc: "Charge la mémoire agent et le CLAUDE.md du projet, évalue la complexité, dispatche à l'implementer (sonnet ou opus selon la taille). Escalade auto vers /architect après 2 échecs.", agents: ["implementer", "architect (si escalade)"], when: "Bug fix, petite feature, correction rapide" },
+  { name: "/fix", args: "$0 (description du problème)", desc: "Charge la mémoire agent et le CLAUDE.md du projet, évalue la complexité, dispatche à l'implementer (sonnet ou opus selon la taille). Cascade d'escalade auto : Level 1 → Level 2 (systematic-debugging) → Level 3 (troubleshooter).", agents: ["implementer", "troubleshooter (si escalade L3)"], when: "Bug fix, petite feature, correction rapide" },
   { name: "/new-app", args: "$0 (nom-en-kebab-case)", desc: "Scaffold complet conforme à la charte : repo Git, README, CLAUDE.md, .portfolio.yml, .gitignore, premier commit, repo GitHub privé.", agents: ["implementer"], when: "Création d'une nouvelle app dans le portfolio" },
   { name: "/audit", args: "[URL canonique optionnelle]", desc: "Lance docs-checker (sonnet) et portfolio-audit (haiku) en parallèle sur le projet courant. Produit un rapport consolidé.", agents: ["docs-checker", "portfolio-audit"], when: "Avant un release, une publication, ou pendant un compliance sweep" },
-  { name: "/architect", args: "$0 (problème ou feature)", desc: "Escalade directe vers l'agent architect (opus). Charge la mémoire architecture et le contexte projet. Produit un plan, jamais du code.", agents: ["architect"], when: "Feature complexe à concevoir, ou escalade après 2 échecs sur /fix" },
+  { name: "/troubleshoot", args: "$0 (problème + ce qui a été tenté)", desc: "Escalade directe vers l'agent troubleshooter (opus). Diagnostic structural après 2 échecs d'implémentation. Produit un plan, jamais du code.", agents: ["troubleshooter"], when: "Escalade après 2 échecs sur /fix, ou override manuel" },
   { name: "/cleanup", args: "[plans-only | plugins-only | memory-only]", desc: "Nettoie les plans orphelins dans les repos, audite les plugins installés, compacte la mémoire agent si > 200 lignes, et vérifie si le workflow guide et les docs stratégiques sont à jour par rapport à la config réelle.", agents: [], when: "1×/semaine en hygiène, ou quand les plans s'accumulent" },
-  { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2 phases. Phase 1 : triage rapide de TOUTES les apps (activité, prominence, ancienneté, vulnérabilités). Phase 2 : revue approfondie sur les apps choisies par l'owner. Auto-fix ce qui est safe, flag le reste.", agents: ["implementer (auto-fix)", "architect (si migration majeure)"], when: "1×/mois en session dédiée" },
+  { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2+1 phases. Phase 1 : triage rapide avec score readiness (harness-engineering). Phase 2 : revue approfondie + delta readiness avant/après fixes. Auto-fix ce qui est safe, flag le reste.", agents: ["implementer (auto-fix)", "troubleshooter (si migration majeure)"], when: "1×/mois en session dédiée" },
 ];
 
 const AGENTS = [
   { name: "implementer", model: "sonnet (→ opus si complexe)", skills: ["code-quality"], memory: true, desc: "Exécute les tâches d'implémentation avec un critère 'done when' clair. Ne prend pas de décisions d'architecture." },
-  { name: "architect", model: "opus", skills: ["portfolio-conventions"], memory: true, desc: "Diagnostique les problèmes structurels, évalue les options, produit un plan. Ne code jamais." },
+  { name: "troubleshooter", model: "opus", skills: ["portfolio-conventions"], memory: true, desc: "Diagnostique les problèmes structurels après 2 échecs d'implémentation. Évalue les options, produit un plan. Ne code jamais." },
   { name: "portfolio-sync", model: "sonnet", skills: ["portfolio-conventions"], memory: false, desc: "Orchestre la cohérence entre repos, manifests .portfolio.yml et portfolio-apps.json." },
   { name: "docs-checker", model: "sonnet", skills: [], memory: false, desc: "Audite et corrige README, CLAUDE.md, .gitignore, URLs. Fixe les problèmes directement." },
   { name: "portfolio-audit", model: "haiku", skills: [], memory: false, desc: "Audit compliance read-only : signature auteur, secrets, .gitignore, dead code, tests, commits." },
 ];
 
 const SKILLS = [
-  { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["architect", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, manifest, quality standards, display order." },
+  { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["troubleshooter", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, manifest, quality standards, display order." },
   { name: "code-quality", file: "~/.claude/skills/code-quality/SKILL.md", preloaded: ["implementer"], desc: "Checklist qualité : conventions à vérifier avant/pendant/après le code, pièges courants." },
+  { name: "property-testing", file: "~/.claude/skills/property-testing/SKILL.md", preloaded: ["implementer"], desc: "Patterns de tests property-based : roundtrip, conservation, idempotence, no-crash. fast-check (TS) / hypothesis (Python)." },
 ];
 
 const HOOKS = [
   { name: "doc-guard", event: "PostToolUse → Write", desc: "Vérifie qu'une modification de .portfolio.yml est accompagnée d'un update README ou CLAUDE.md.", mode: "Advisory (warning, ne bloque pas)" },
   { name: "build-check", event: "Stop", desc: "Lance npm run build et vérifie zero-warning après chaque agent.", mode: "Advisory" },
   { name: "memory-reminder", event: "Stop", desc: "Rappelle de sauver les apprentissages en mémoire agent s'il y a eu des commits.", mode: "Advisory" },
+  { name: "fix-loop-detector", event: "PostToolUse → Bash", desc: "Détecte si un même fichier est modifié 3+ fois par des commits fix: en 30 min. Signal d'escalade.", mode: "Advisory" },
+  { name: "secret-scan", event: "PreToolUse → Write|Edit", desc: "Bloque l'écriture de fichiers contenant des patterns de secrets (sk-, AKIA, ghp_, etc.). Exclut .env.example.", mode: "Blocking" },
 ];
 
 const SCENARIOS = [
@@ -67,14 +70,14 @@ const SCENARIOS = [
     steps:[
       {action:"Triage environnement",where:"Navigateur",tool:"Manuel",detail:"Cache ? Service worker ? Hard refresh ? Build stale ?"},
       {action:"Lancer le fix",where:"Claude Code",tool:"/fix description du bug",detail:"Charge la mémoire agent + CLAUDE.md projet, évalue la complexité"},
-      {action:"Si 2 échecs → escalade",where:"Claude Code",tool:"/architect description + contexte des échecs",detail:"STOP obligatoire. L'architect diagnostique le problème structurel"},
+      {action:"Si 2 échecs → escalade",where:"Claude Code",tool:"/troubleshoot description + contexte des échecs",detail:"STOP obligatoire. Le troubleshooter diagnostique le problème structurel"},
       {action:"Vérifier le build",where:"Claude Code",tool:"Hook auto (build-check)",detail:"Le hook Stop vérifie automatiquement les warnings"},
       {action:"Commit + push",where:"Claude Code",tool:"git push",detail:"La mémoire agent est auto-sauvegardée en fin de session"}],
     traps:["Le piège #1 : service worker cache → toujours tester en navigation privée d'abord","Itérer 3+ fois sur le même bug au lieu d'escalader","Oublier que le hook memory-reminder sauve les leçons — pas besoin de le faire manuellement"]},
   { id:"big-feature",icon:"◆",title:"Grosse feature",when:"Ajout structurant (sync, nouvelle section, refacto majeur)",category:"dev",frequency:"Régulier",
     steps:[
-      {action:"Design upfront",where:"Claude Code",tool:"/architect feature à concevoir",detail:"L'architect produit un plan avec options, trade-offs, et subtasks"},
-      {action:"Valider le plan",where:"Claude Code",tool:"Review manuel",detail:"Toi seul approuves — l'architect ne code pas"},
+      {action:"Design upfront",where:"Claude Code",tool:"Plan mode ou brainstorm",detail:"Utiliser le plan mode natif ou /superpowers:brainstorm pour concevoir la feature"},
+      {action:"Valider le plan",where:"Claude Code",tool:"Review manuel",detail:"Toi seul approuves — le plan ne s'exécute pas sans ton OK"},
       {action:"Implémenter par subtask",where:"Claude Code",tool:"/fix subtask N (ou dispatch auto)",detail:"Chaque subtask a un 'done when' clair, dispatché à l'implementer"},
       {action:"Review intermédiaire",where:"Claude Code",tool:"superpowers:code-reviewer ou prompt",detail:"Review entre chaque phase si multi-phase"},
       {action:"Tests",where:"Claude Code",tool:"npm test",detail:"Tests écrits avec l'implémentation, pas après"},
@@ -117,7 +120,7 @@ const SCENARIOS = [
       {action:"Choisir les apps à reviewer",where:"Claude Code",tool:"Réponse à la question",detail:"Claude propose un ordre de priorité — tu choisis 3-4 apps (ou plus, ou moins)"},
       {action:"Deep review",where:"Claude Code",tool:"Automatique (phase 2)",detail:"Dépendances, sécurité, dead code, performance, versions, dette des sessions précédentes"},
       {action:"Approuver les auto-fix",where:"Claude Code",tool:"Réponse à la question",detail:"Claude propose de fixer les items safe (patches sécu, console.log, deps inutilisées)"},
-      {action:"Planifier les majors",where:"Claude Code",tool:"/architect si migration framework",detail:"Migrations majeures → session architect dédiée. Items 2+ mois non résolus → escalade"},
+      {action:"Planifier les majors",where:"Claude Code",tool:"/troubleshoot si migration framework",detail:"Migrations majeures → session troubleshooter dédiée. Items 2+ mois non résolus → escalade"},
       {action:"Reviewer et pousser",where:"Terminal",tool:"git log + git push par app",detail:"Chaque app a ses commits chore(tech-debt) à reviewer avant push"}],
     traps:[
       "Faire npm update --latest aveuglément → breaking changes non testées",
@@ -150,7 +153,7 @@ const CATEGORIES={dev:{label:"Développement",color:"#3B82F6",bg:"#1E3A5F"},main
 <!-- ======= RENDERER — Claude Code: do NOT edit below this line. ======= -->
 <script type="text/babel">
 const{useState}=React;
-const TC={"\/sync":"#3B82F6","\/fix":"#3B82F6","\/new-app":"#3B82F6","\/audit":"#3B82F6","\/architect":"#3B82F6","\/cleanup":"#3B82F6","\/plan":"#3B82F6","\/context":"#3B82F6","\/rename":"#3B82F6","superpowers":"#A855F7","hook":"#F59E0B","conversation":"#64748B","manuel":"#64748B","claude":"#8B5CF6","npm":"#EF4444","git":"#F97316","gh ":"#F97316","skill":"#10B981","rapport":"#10B981","automatique":"#10B981","review":"#A855F7","prompt":"#8B5CF6","\u00e9dition":"#64748B","william":"#64748B"};
+const TC={"\/sync":"#3B82F6","\/fix":"#3B82F6","\/new-app":"#3B82F6","\/audit":"#3B82F6","\/troubleshoot":"#3B82F6","\/cleanup":"#3B82F6","\/plan":"#3B82F6","\/context":"#3B82F6","\/rename":"#3B82F6","superpowers":"#A855F7","hook":"#F59E0B","conversation":"#64748B","manuel":"#64748B","claude":"#8B5CF6","npm":"#EF4444","git":"#F97316","gh ":"#F97316","skill":"#10B981","rapport":"#10B981","automatique":"#10B981","review":"#A855F7","prompt":"#8B5CF6","\u00e9dition":"#64748B","william":"#64748B"};
 function gtc(t){const l=t.toLowerCase();for(const[k,c]of Object.entries(TC)){if(l.includes(k))return c}return"#94A3B8"}
 const F="'JetBrains Mono','SF Mono','Fira Code','Cascadia Code',monospace";
 const pill=(bg,color,text)=>(<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:bg,color,fontWeight:600}}>{text}</span>);

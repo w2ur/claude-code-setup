@@ -7,7 +7,7 @@ description: |
   Run without args for the full flow, or skip to phase 2 with app names.
 argument-hint: [app1 app2 ... | --triage-only]
 model: sonnet
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent(implementer), Agent(architect)
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent(implementer), Agent(troubleshooter)
 ---
 
 Monthly technical health review. Two phases: triage everything, then deep-dive on your picks.
@@ -61,6 +61,12 @@ CONSOLE_LOGS=$(grep -rn "console\.log" --include="*.ts" --include="*.tsx" --incl
 NODE_FILE=$(cat .nvmrc .node-version 2>/dev/null | head -1)
 ```
 
+### Signal E: Readiness Score
+If harness-engineering plugin is installed:
+- Run `/readiness` on the project (or read cached `readiness-report.md` if <30 days old)
+- Extract the overall maturity level (1-5) from the YAML frontmatter
+- Add to scoring: ×2 if level 1-2, ×1 if level 3, ×0 if level 4-5
+
 ### Scoring
 
 Compute a priority score for each app (higher = more urgent):
@@ -71,6 +77,7 @@ Compute a priority score for each app (higher = more urgent):
 | Portfolio prominence | ×2 if sort_order ≤ 6 and portfolio_card: true, ×1 if card true, ×0 if card false | 0-2 |
 | Time since last scan | ×3 if never, ×2 if >60 days, ×1 if 30-60 days, ×0 if <30 days | 0-3 |
 | Quick issues | ×1 per critical/high vuln, +1 if >5 outdated, +1 if >3 console.logs | 0-3+ |
+| Readiness level | ×2 if level 1-2, ×1 if level 3, ×0 if level 4-5 | 0-2 |
 
 ### Present Triage Results
 
@@ -79,14 +86,14 @@ Sort by priority score (descending) and present as a table:
 ```
 ## Tech Debt Triage — {date}
 
-| # | App | Score | Commits (30d) | Last Scan | Vulns | Outdated | Issues |
-|---|-----|-------|---------------|-----------|-------|----------|--------|
-| 1 | untilt | 8 | 23 | never | 2 high | 14 | 3 console.log |
-| 2 | my-budget-app | 6 | 12 | 2026-01-15 | 0 | 8 | Node 18 (.nvmrc) |
-| 3 | birdie | 5 | 0 | never | 1 high | 22 | — |
-| 4 | my-tsundoku | 4 | 5 | 2026-02-20 | 0 | 3 | — |
-| ... | ... | ... | ... | ... | ... | ... | ... |
-| 12 | kairos | 0 | 0 | 2026-03-01 | 0 | 1 | — |
+| # | App | Score | Commits (30d) | Last Scan | Readiness | Vulns | Outdated | Issues |
+|---|-----|-------|---------------|-----------|-----------|-------|----------|--------|
+| 1 | untilt | 10 | 23 | never | L1 | 2 high | 14 | 3 console.log |
+| 2 | my-budget-app | 7 | 12 | 2026-01-15 | L2 | 0 | 8 | Node 18 (.nvmrc) |
+| 3 | birdie | 7 | 0 | never | L1 | 1 high | 22 | — |
+| 4 | my-tsundoku | 5 | 5 | 2026-02-20 | L3 | 0 | 3 | — |
+| ... | ... | ... | ... | ... | ... | ... | ... | ... |
+| 12 | kairos | 0 | 0 | 2026-03-01 | L4 | 0 | 1 | — |
 
 💡 Recommended: review the top 3-4 (untilt, my-budget-app, birdie, my-tsundoku)
 ```
@@ -146,12 +153,20 @@ npm run build 2>&1 | grep -i "warn"
 Check agent memory for items flagged in previous /tech-debt sessions for this app.
 If an item has been flagged 2+ months without action, mark it as **ESCALATE**.
 
+### 2g. Readiness Score
+
+If harness-engineering plugin is installed:
+- Run `/readiness` on the project (or read cached `readiness-report.md` if <30 days old)
+- After fixes: re-run `/readiness` and compare with the pre-fix report
+- Include delta: "Readiness: L2 → L3 (+1)"
+
 ### Per-App Report
 
 ```
 ## Deep Review: {app-name}
 
 Scanned: {today} | Previous: {last scan date or "never"}
+Readiness: L{X} → L{Y} ({delta})
 
 ### 🔴 Critical (fix now)
 - ...
@@ -167,8 +182,8 @@ Scanned: {today} | Previous: {last scan date or "never"}
 
 ### Recommended Actions
 1. Auto-fixable: npm audit fix, remove 2 unused deps, remove 4 console.log
-2. Needs review: Next.js 15→16 migration (schedule /architect)
-3. Escalate: localStorage migration (3 months unfixed → /architect)
+2. Needs review: Next.js 15→16 migration (schedule /troubleshoot)
+3. Escalate: localStorage migration (3 months unfixed → /troubleshoot)
 ```
 
 ## Phase 3 — Fix (if owner approves)
@@ -190,9 +205,9 @@ git add -A && git commit -m "chore(tech-debt): {description}"
 ```
 
 **Flag for later:**
-- Major upgrades → note for next `/architect` session
+- Major upgrades → note for next `/troubleshoot` session
 - Performance regressions → note for investigation
-- Escalated items → create a concrete plan or escalate to `/architect`
+- Escalated items → create a concrete plan or escalate to `/troubleshoot`
 
 Do NOT push. The owner reviews and pushes.
 
@@ -215,9 +230,14 @@ Write a summary to agent memory:
 - Apps reviewed (deep): {count} — {list}
 
 ### Results
-| App | Critical | Major | Minor | Auto-fixed | Needs Manual | Escalated |
-|-----|----------|-------|-------|------------|--------------|-----------|
-| ... | ... | ... | ... | ... | ... | ... |
+| App | Readiness | Critical | Major | Minor | Auto-fixed | Needs Manual | Escalated |
+|-----|-----------|----------|-------|-------|------------|--------------|-----------|
+| ... | L2→L3 (+1) | ... | ... | ... | ... | ... | ... |
+
+### Readiness Summary
+| App | Before | After | Delta |
+|-----|--------|-------|-------|
+| ... | L2 (12/37) | L3 (18/37) | +6 |
 
 ### Next Month
 Top candidates for next session (based on today's triage):
@@ -226,6 +246,6 @@ Top candidates for next session (based on today's triage):
 
 ### Manual Actions
 1. Review and push commits: {list of apps with commits}
-2. Schedule /architect for: {list of major migrations}
+2. Schedule /troubleshoot for: {list of major migrations}
 3. Escalated items requiring decision: {list}
 ```

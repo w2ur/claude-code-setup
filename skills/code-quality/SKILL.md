@@ -42,6 +42,18 @@ This skill is preloaded into the implementer. Use it as a mental checklist befor
 - [ ] If this fix revealed a pattern → agent auto-writes to its memory (no action needed)
 - [ ] `git status` shows no untracked files that should be ignored
 
+## Spec Compliance Check
+
+After completing all subtasks from a plan:
+
+1. Re-read the original SPEC or plan document
+2. For each requirement in the spec: verify it exists in the code
+3. For each described behavior: verify it works as described
+4. List any deviations before presenting results
+5. Fix deviations or flag them with justification
+
+This check is mandatory after plan-driven work (Superpowers plans, /troubleshoot plans, multi-subtask implementations). Skip for direct fixes and single-file edits.
+
 ## Common Traps (from lessons)
 
 - Service worker cache is the #1 false-positive for "my change isn't showing"
