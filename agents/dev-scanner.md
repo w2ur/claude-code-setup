@@ -7,7 +7,7 @@ description: |
   Examples:
   - "Run dev-scanner" — full scan of ~/Dev
   - "Run dev-scanner ~/Dev/untilt" — scan a single project
-model: sonnet
+model: haiku
 tools: Read, Bash, Glob, Grep
 ---
 

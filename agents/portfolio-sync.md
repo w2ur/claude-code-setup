@@ -11,6 +11,7 @@ description: |
   - "Run portfolio-sync my-editor-app" — sync a single project
 model: sonnet
 tools: Read, Write, Edit, Bash, Glob, Grep
+memory: project
 skills:
   - portfolio-conventions
 ---

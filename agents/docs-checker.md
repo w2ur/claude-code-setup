@@ -8,8 +8,9 @@ description: |
   Examples:
   - "Run docs-checker" — full audit
   - "Run docs-checker, the site is available at https://budget.example.com" — full audit + URL verification
-model: sonnet
+model: haiku
 tools: Read, Write, Edit, Bash, Glob, Grep
+memory: project
 ---
 
 You are a documentation and git hygiene auditor. Run every step of this checklist on the current project, in order. Fix problems directly — don't just report them.

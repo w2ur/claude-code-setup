@@ -18,7 +18,7 @@
 <!--
   ============================================================================
   DATA SECTION — Claude Code: edit data here, don't touch the renderer below.
-  Last updated: 2026-03-31
+  Last updated: 2026-04-17
   ============================================================================
 -->
 <script id="workflow-data">
@@ -34,25 +34,31 @@ const COMMANDS = [
 ];
 
 const AGENTS = [
-  { name: "implementer", model: "sonnet (→ opus si complexe)", skills: ["code-quality"], memory: true, desc: "Exécute les tâches d'implémentation avec un critère 'done when' clair. Ne prend pas de décisions d'architecture." },
+  { name: "implementer", model: "sonnet (→ opus si complexe)", skills: ["code-quality", "property-testing"], memory: true, desc: "Exécute les tâches d'implémentation avec un critère 'done when' clair. Ne prend pas de décisions d'architecture." },
   { name: "troubleshooter", model: "opus", skills: ["portfolio-conventions"], memory: true, desc: "Diagnostique les problèmes structurels après 2 échecs d'implémentation. Évalue les options, produit un plan. Ne code jamais." },
-  { name: "portfolio-sync", model: "sonnet", skills: ["portfolio-conventions"], memory: false, desc: "Orchestre la cohérence entre repos, manifests .portfolio.yml et portfolio-apps.json." },
-  { name: "docs-checker", model: "sonnet", skills: [], memory: false, desc: "Audite et corrige README, CLAUDE.md, .gitignore, URLs. Fixe les problèmes directement." },
+  { name: "portfolio-sync", model: "sonnet", skills: ["portfolio-conventions"], memory: true, desc: "Orchestre la cohérence entre repos, manifests .portfolio.yml et portfolio-apps.json." },
+  { name: "docs-checker", model: "haiku", skills: [], memory: true, desc: "Audite et corrige README, CLAUDE.md, .gitignore, URLs. Fixe les problèmes mécaniques directement." },
   { name: "portfolio-audit", model: "haiku", skills: [], memory: false, desc: "Audit compliance read-only : signature auteur, secrets, .gitignore, dead code, tests, commits." },
+  { name: "dev-scanner", model: "haiku", skills: [], memory: false, desc: "Scanne ~/Dev pour découvrir les projets et comparer à l'inventaire. Read-only — aucune modification." },
+  { name: "dummy-visitor", model: "sonnet", skills: [], memory: false, desc: "Visiteur naïf bilingue FR/EN qui découvre un site sans contexte, puis réagit au gap perception/intention après lecture du README." },
+  { name: "deploy-doctor", model: "haiku", skills: [], memory: false, desc: "Pattern-matching sur logs de déploiement (GitHub Actions / Netlify / Vercel / Cloudflare). Retourne une hypothèse, pas un fix." },
 ];
 
 const SKILLS = [
   { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["troubleshooter", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, manifest, quality standards, display order." },
   { name: "code-quality", file: "~/.claude/skills/code-quality/SKILL.md", preloaded: ["implementer"], desc: "Checklist qualité : conventions à vérifier avant/pendant/après le code, pièges courants." },
   { name: "property-testing", file: "~/.claude/skills/property-testing/SKILL.md", preloaded: ["implementer"], desc: "Patterns de tests property-based : roundtrip, conservation, idempotence, no-crash. fast-check (TS) / hypothesis (Python)." },
+  { name: "deploy-status", file: "~/.claude/skills/deploy-status/SKILL.md", preloaded: [], desc: "User-only. Lance un check HTTP + dernier run CI pour chaque app 'production' du portfolio. Sortie tabulaire." },
+  { name: "fresh-session", file: "~/.claude/skills/fresh-session/SKILL.md", preloaded: [], desc: "User-only. Audit de santé du setup ~/.claude/ : taille CLAUDE.md, nombre de plugins, agents enregistrés. Flag le principal contributeur à la dérive." },
 ];
 
 const HOOKS = [
-  { name: "doc-guard", event: "PostToolUse → Write", desc: "Vérifie qu'une modification de .portfolio.yml est accompagnée d'un update README ou CLAUDE.md.", mode: "Advisory (warning, ne bloque pas)" },
-  { name: "build-check", event: "Stop", desc: "Lance npm run build et vérifie zero-warning après chaque agent.", mode: "Advisory" },
-  { name: "memory-reminder", event: "Stop", desc: "Rappelle de sauver les apprentissages en mémoire agent s'il y a eu des commits.", mode: "Advisory" },
-  { name: "fix-loop-detector", event: "PostToolUse → Bash", desc: "Détecte si un même fichier est modifié 3+ fois par des commits fix: en 30 min. Signal d'escalade.", mode: "Advisory" },
   { name: "secret-scan", event: "PreToolUse → Write|Edit", desc: "Bloque l'écriture de fichiers contenant des patterns de secrets (sk-, AKIA, ghp_, etc.). Exclut .env.example.", mode: "Blocking" },
+  { name: "fix-loop-detector", event: "PostToolUse → Bash", desc: "Détecte si un même fichier est modifié 3+ fois par des commits fix: en 30 min. Signal d'escalade.", mode: "Advisory" },
+  { name: "auto-format", event: "PostToolUse → Write|Edit", desc: "Lance Prettier / Ruff / rustfmt sur le fichier édité si le projet a la config correspondante. Silencieux si absent.", mode: "Advisory" },
+  { name: "portfolio-yml-validate", event: "PostToolUse → Write|Edit (*.portfolio.yml)", desc: "Après édition d'un .portfolio.yml : vérifie les champs requis, slug = nom du dossier, sort_order numérique.", mode: "Advisory" },
+  { name: "portfolio-drift", event: "PreToolUse → Bash(git commit)", desc: "Warn si package.json / config deploy modifiés dans les fichiers staged mais .portfolio.yml ou README pas touchés.", mode: "Advisory" },
+  { name: "stale-readme-guard", event: "PreToolUse → Bash(git push)", desc: "Avant push : vérifie qu'aucun commit non-pushé ne change les deps / config deploy sans toucher au README.md.", mode: "Advisory" },
 ];
 
 const SCENARIOS = [

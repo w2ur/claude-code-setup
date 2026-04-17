@@ -1,343 +1,83 @@
 # CLAUDE.md — Global Instructions
 
-These instructions apply to all projects unless overridden by a project-level CLAUDE.md.
+Project-level CLAUDE.md overrides anything here.
 
 ## Language
 
-- All code, comments, variable names, function names, and commit messages MUST be in English.
-- User-facing content (UI text, labels, documentation shown to users) follows the project's target language, defined in the project-level CLAUDE.md.
-- This file and all project-level CLAUDE.md files are written in English.
+All code, comments, identifiers, commit messages → English. User-facing content follows the project's target language (defined in the project CLAUDE.md).
 
-## Planning and Execution
+## Planning and execution
 
-- For small, well-scoped tasks (single file edit, bug fix, simple refactor): execute directly.
-- For tasks that touch multiple files, change architecture, or add features: propose a plan first and wait for approval before executing.
-- When in doubt, bias toward proposing a plan.
-- Plans must break work into atomic subtasks, each with a clear "done when…" criterion (e.g., "done when the test passes", "done when the route returns 200"). This makes plans actionable regardless of which model executes them.
-- Each subtask should be self-contained enough to be delegated to a sub-agent: task description, affected files, and "done when…" criterion — with no dependency on the surrounding plan context.
-- When proposing a plan, give an opinionated recommendation for each decision point — don't just list options. Justify the recommendation, then ask for approval.
-- Plan files are working artifacts — NEVER create them inside the project repository. They go in `~/.claude/plans/` only.
-- If you find plan files inside a repo (e.g., `docs/plans/`, `docs/superpowers/`, `PLAN.md`, `.superpowers/`), remove them from git tracking immediately: `git rm -r --cached <path>` then add the path to `.gitignore`.
-- Plugins that create plans inside repos (e.g., Superpowers' `writing-plans`) must be configured to write to `~/.claude/plans/` instead. If the plugin cannot be configured, add its output directory to `.gitignore`.
-- Run `/cleanup plans-only` periodically to catch plans that slipped through.
+- Single-file / small fix: execute directly.
+- Multi-file / architecture / feature work: propose a plan first and wait for approval. Plan subtasks must be atomic with explicit "done when…" criteria so any sub-agent can pick them up.
+- **Plans never live in the repo.** They go in `~/.claude/plans/` only. If you find plan files inside a repo, `git rm -r --cached` them and add to `.gitignore`.
 
-## Bug Triage
+## Bug handling
 
-When the owner reports a bug, do NOT start fixing immediately. First, rule out environment issues.
+1. **Triage first**: one concise question about the most likely environmental cause (stale cache, service worker, stale build, local state). Skip for obvious code bugs.
+2. **Escalation cascade** — one-way, no retries at the same level:
+   - L1: direct fix with a **stated root-cause hypothesis**.
+   - L2: `superpowers:systematic-debugging` skill.
+   - L3: `troubleshooter` agent.
+3. No edit without a stated hypothesis. "Try a different approach" without a new hypothesis is banned.
 
-Ask about the most likely culprit — typically a stale cache or service worker (especially for PWAs). Common causes to eliminate:
+## Sub-agents
 
-- **Stale cache / service worker**: has the browser cache been cleared? Has the service worker been unregistered and the page hard-refreshed?
-- **Stale build**: is the user running the latest deployed version? (hard refresh, redeploy, `npm run build`)
-- **Local state**: could localStorage, IndexedDB, or cookies contain outdated data causing the issue?
-- **Network**: is the issue reproducible on different connections?
-- **Device-specific**: does it happen on all devices or just one?
+Default to parallel dispatch for any 2+ independent tasks. Specify the model when dispatching:
 
-Ask one concise question targeting the most probable cause — don't send a full checklist every time. Use judgment: if the bug is clearly a code issue (e.g., "the button does X instead of Y and I can see it in the source code"), skip triage and fix directly.
+- **haiku** — passive audits (portfolio-audit, docs-checker).
+- **sonnet** — default implementation, single-file changes, clear scope.
+- **opus** — 4+ files across layers, architecture analysis, retry after failed sonnet.
 
-Only start investigating the code once environment causes are ruled out.
+## Session handoff and memory
 
-## Task Execution
+- At the end of significant work: produce a handoff (Done / In progress / Remaining / Decisions) and write a condensed version to agent memory automatically — no permission needed.
+- Agent memory (`MEMORY.md`) = durable project knowledge. claude-mem handles session history — don't duplicate into MEMORY.md.
 
-- **Default to sub-agents** for any task with 2+ independent parts. Sequential execution of independent work is a waste of time — parallelize.
-- The bar for "should I use a sub-agent?" is low: if two things don't depend on each other, they run in parallel.
-- Examples: auditing .gitignore + adding footer + checking for secrets; running backend + frontend tests; updating README + CLAUDE.md + .portfolio.yml; checking multiple APIs' free tier limits; running docs-checker + portfolio-audit simultaneously.
-- Keep sequential what has dependencies: understand the project → create/update CLAUDE.md → set up tests → verify build.
-- When dispatching sub-agents, always specify the model (haiku/sonnet/opus) based on task complexity — see "Agent Model Selection" section.
+## Context management
 
-## Agent Model Selection
+- Monitor context usage. Run `/compact` proactively around ~50%; don't wait for degradation.
+- After `/compact`, re-read the project CLAUDE.md and any loaded skills.
+- When switching to a completely different task mid-session, prefer `/clear`.
+- When dispatching to sub-agents, send focused prompts — not conversation dumps.
 
-When dispatching work to sub-agents, choose the model that matches the task complexity:
+## Portfolio is a system
 
-- **haiku**: passive audits, compliance checks, linting, format verification (e.g., portfolio-audit, docs-checker).
-- **sonnet**: standard implementation tasks with clear scope — single-file changes, new components following existing patterns, straightforward bug fixes, tests, documentation.
-- **opus**: complex implementation spanning 4+ files across layers, migration execution, subtle multi-module bugs, tasks where a previous sonnet attempt failed, and all architecture analysis.
+- Every project has `README.md`, `CLAUDE.md`, and `.portfolio.yml`. Full manifest spec lives in the `portfolio-conventions` skill.
+- Folder name = GitHub repo name = `.portfolio.yml` slug. Always **kebab-case**.
+- Docs (README / CLAUDE.md / .portfolio.yml) update in the **same commit** as the code change they describe. Never commit a feature with a stale README.
+- New projects default `sort_order: 99`.
+- Strategic docs live in `~/Dev/{portfolio-site}/strategy/`: `inventaire.md`, `charte-coherence.md`, `pipeline.md`, `strategie-visibilite.md`. Read when relevant; flag in handoff when they need updating (owner commits separately).
+- When changing commands/agents/skills/hooks in `~/.claude/`: update `~/Dev/workflow-guide.html` DATA section; if architectural, flag `strategy/charte-coherence.md`.
+- Run `/tech-debt` monthly. Items flagged 2+ months without action escalate to `/troubleshoot`.
 
-When in doubt, start with sonnet. If it fails to meet the "done when" criterion, retry with opus before escalating to the troubleshooter.
+## Quality
 
-## Bug Fix Escalation (automatic — owner never needs to invoke commands)
+- Zero build warnings. Exceptions → documented in the project CLAUDE.md with justification.
+- Conventional Commits. One logical change per commit.
+- Tests are systematic: unit for all logic, property tests for pure transforms (see `property-testing` skill), regression test alongside every bug fix.
+- Implementer checklist (pre/during/post code): `code-quality` skill.
 
-Level 1 — Direct fix:
-- Read the code, state root cause hypothesis in one sentence, fix.
-- If the owner says "still broken": escalate to level 2. Do NOT retry at level 1.
+## Generalization check
 
-Level 2 — Systematic debugging (Superpowers):
-- Activate systematic-debugging skill.
-- 4 phases: investigate → hypothesize with evidence → fix → verify.
-- If the owner says "still broken": escalate to level 3. Do NOT retry at level 2.
+Before implementing a specific request, consider whether it's a special case of a pattern already in the portfolio. If the general solution is roughly the same effort, implement the general version with the specific case as the default. Skip when the general version materially increases complexity or when there's only one known use case. This is a judgment call, not a mandatory abstraction.
 
-Level 3 — Troubleshooter:
-- Invoke the troubleshooter agent (opus) automatically. No permission needed.
+## Design defaults
 
-Rules:
-- Levels are one-way. Never repeat a level. Never skip a level.
-- Each fix attempt requires a STATED root cause hypothesis. No hypothesis = no edit.
-- "Let me try a different approach" without a new hypothesis is BANNED.
-- The pattern "try A → try not-A → try something else" is BANNED.
-- /fix and /troubleshoot remain as manual override entry points.
+- **Never default to purple / violet / indigo** as a primary color (model bias from Tailwind/shadcn defaults). For new projects without a specified palette, propose 2-3 directions based on subject, mood, and audience. Wait for approval.
+- Dark + light mode default, via `prefers-color-scheme`. Opt-out requires justification in the project CLAUDE.md.
+- Author signature default: footer **"Made with care by {author-first-name}"** → `https://{portfolio-site-url}`. Opt-out requires justification.
 
-## Skill and Plugin Usage
+## Security and privacy
 
-Before starting non-trivial work, check if a skill or plugin applies. Using the right skill at the right time prevents rework and catches problems early.
+- No secrets in repos (also enforced by the `secret-scan` hook). Update `.env.example` with placeholders when adding env vars.
+- No private/personal user data in repos. Test fixtures must be synthetic.
+- `.gitignore` coverage verified whenever new file types enter the project (build artifacts, `.env*`, OS files, data exports, `docs/plans/`).
 
-### Mandatory triggers
-
-| Situation | Skill / Plugin | When |
-|-----------|---------------|------|
-| Plan written or modified in `~/.claude/plans/` | `/review-plan` (plan-reviewer plugin) | Before executing any plan |
-| Bug report or test failure | systematic-debugging | Before proposing any fix |
-| Documentation changes (README, CLAUDE.md) | docs-checker agent | After changes, before commit |
-| Pre-release or compliance sweep | portfolio-audit agent | Before pushing to production |
-| New project created | portfolio-sync agent (single project mode) | After initial scaffold |
-
-### How skills interact with existing rules
+## Infrastructure
 
-- **systematic-debugging + escalation rule:** The debugging skill is Level 2 of the escalation cascade. If the fix fails at Level 2, the troubleshooter takes over at Level 3. They're sequential, not overlapping.
-- **systematic-debugging + bug triage:** Bug triage (environment causes first) runs BEFORE the escalation cascade. Triage eliminates cache/service worker/stale build. If the bug survives triage, the cascade starts at Level 1.
-- **plan-reviewer + troubleshooter:** Plan-reviewer catches problems before implementation. The troubleshooter catches problems after implementation fails. One is preventive, the other reactive.
-
-## Session Handoff
-
-- At the end of a significant block of work (feature complete, sprint done, or when asked), produce a structured handoff summary:
-  - **Done**: what was completed (with commit refs if relevant)
-  - **In progress**: what was started but not finished
-  - **Remaining**: what still needs to be done
-  - **Decisions made**: any choices that affect future work
-- This summary helps resume work cleanly in a new session, especially after a `/compact` or context reset.
-- **Write to agent memory**: after producing the handoff summary, write a condensed version to your agent memory. Include: key decisions made, patterns discovered, and any unfinished work with context needed to resume. This happens automatically — do not ask the owner for permission.
-- If no significant work was done in the session, skip the memory write.
-
-## Context Management
-
-- Monitor context usage. When context reaches ~50%, run `/compact` proactively — do not wait for degradation.
-- After a `/compact`, re-read the project CLAUDE.md and any loaded skills — they may have been summarized away.
-- When switching to a completely different task mid-session, prefer `/clear` over continuing in a polluted context.
-- When dispatching to sub-agents, send focused prompts — not conversation history dumps.
-
-## Memory
-
-Two complementary systems:
-
-### Agent Memory (MEMORY.md) — curated project knowledge
-- Agents with `memory: project` read MEMORY.md at startup (first 200 lines)
-- Content: patterns, decisions, project quirks, recurring mistakes
-- Written by agents after corrections and session end. Do not ask permission.
-- The memory-reminder hook fires at Stop to remind agents to write here.
-- This is NOT a session log. Only write durable knowledge that helps future sessions.
-
-### Claude-Mem — automatic session history
-- Captures all tool executions and generates session summaries automatically
-- Injects context from recent sessions at startup
-- Use MCP search tools to query past sessions ("what did we fix last time?")
-- Do NOT duplicate claude-mem's automatic history into MEMORY.md.
-
-## Portfolio-Wide Artifacts
-
-When modifying commands, agents, skills, or hooks in ~/.claude/:
-1. Update the DATA section of ~/Dev/workflow-guide.html to reflect the change.
-2. If the change affects the architecture (new agent, new command, changed escalation rules): flag that ~/Dev/{portfolio-site}/strategy/charte-coherence.md needs updating (section "Workflow Claude Code") and include it in the session handoff.
-
-When a new app is created, an app changes visibility, or a domain changes:
-- Flag that strategy/strategie-visibilite.md needs updating.
-
-When a new project idea is evaluated or an idea changes status:
-- Flag that strategy/pipeline.md needs updating.
-
-These flags go in the session handoff and agent memory. The owner handles the commits in {portfolio-site} separately. The /cleanup command verifies staleness of these artifacts weekly.
-- Run /tech-debt monthly. Phase 1 triages all apps automatically; the owner picks which to review in depth. Items flagged 2+ months without action are escalated to /troubleshoot. Scan dates tracked in ~/Dev/.tech-debt-rotation.json.
-
-## Documentation Updates
-
-- README.md, CLAUDE.md, and .portfolio.yml updates are part of the implementation, not a separate step.
-- When a task changes the stack, adds a feature, modifies routes, or alters the deployment setup: update the README.md, the project-level CLAUDE.md, AND the .portfolio.yml (if affected) in the **same commit** as the code change.
-- Never commit a feature without verifying that the README still accurately describes the project.
-- Every project MUST have a README.md at the root. Never leave a boilerplate/template README in place.
-- When creating a new project, write the README as part of the initial setup — not as an afterthought.
-- README structure should include at minimum: project description (one paragraph), tech stack, how to run locally, and deployment info. Adapt depth to the project's complexity.
-
-## Project-Level CLAUDE.md
-
-- If a project has a CLAUDE.md at its root, keep it up to date when making significant changes (new dependencies, new testing conventions, new deployment setup, new environment variables).
-- If a project does NOT have a CLAUDE.md, create one when starting significant work on the project.
-- The project-level CLAUDE.md only contains project-specific information. Never duplicate rules from the global CLAUDE.md.
-- Expected sections (include only those that are relevant):
-  - **Project Overview**: one paragraph — what the app does, who it's for, current status.
-  - **Tech Stack**: main technologies and frameworks.
-  - **User-Facing Language**: the language shown to end users (e.g., French, English, Bilingual FR/EN).
-  - **Development**: how to install and run locally.
-  - **Project Structure**: key directories and their purpose (only non-obvious ones).
-  - **Testing**: framework used, project-specific conventions or priorities.
-  - **Build Warning Exceptions**: any known warnings that cannot be fixed, with justification.
-  - **Deployment**: where and how it's deployed, required environment variables.
-  - **Project-Specific Rules**: anything that overrides or extends the global CLAUDE.md.
-
-## Portfolio Manifest (.portfolio.yml)
-
-- Every project in the portfolio MUST have a `.portfolio.yml` file at the root.
-- This file is machine-readable metadata used by the portfolio-sync agent and the apps page on {portfolio-site-url}.
-- When a task changes any field described in the manifest (app name, stack, deployment platform, URL, domain, visibility, status), update `.portfolio.yml` in the **same commit** as the code change.
-- The `tagline` field is the app's one-liner for the portfolio page. If you come up with a better tagline while working on the project — funnier, more personal, more memorable — propose updating it. Good taglines are personal and witty, not corporate-descriptive.
-- The `icon_file` field should point to the best available icon in the repo (PWA icon, favicon SVG/PNG). If you add or change an app icon, update this field.
-- The `sort_order` field controls display order on the portfolio apps page. Lower numbers appear first. When adding a new project, set `sort_order: 99` — the owner will assign the final position.
-- When creating a new project, generate the `.portfolio.yml` as part of the initial setup alongside the README and CLAUDE.md.
-- Do NOT duplicate the full README content into the manifest. The `description` field is 2-3 sentences max.
-
-## Strategic Documents
-
-The portfolio's strategic documents live in `~/Dev/{portfolio-site}/strategy/`:
-- `inventaire.md` — App inventory (the reference for all apps in the portfolio)
-- `charte-coherence.md` — Coherence charter (cross-app decisions and standards)
-- `pipeline.md` — Ideas pipeline (evaluation and prioritization of future apps)
-- `strategie-visibilite.md` — Visibility strategy (domains, branding, promotion)
-
-### When to read
-- At the start of a session involving a new project, portfolio-level decisions, or naming/branding.
-- When the owner references "the inventory", "the charter", "the pipeline", or "the visibility strategy".
-
-### When to update
-- **Minor updates (do directly):** adding a new app to the inventory after creating it, updating a status, adding a deployment entry to the charter, moving an idea from pipeline to inventory.
-- **Structural decisions (discuss with owner first):** changing visibility tiers, adding new principles to the charter, re-prioritizing the pipeline, changing naming conventions.
-- Update in the same commit as the related code change when possible. If the change is in a different repo, commit separately in `{portfolio-site}`.
-
-## Naming Convention
-
-- The local folder name in `~/Dev/` MUST match the GitHub repo name exactly.
-- Both MUST be in **kebab-case** (lowercase, hyphens as separators).
-- Examples: `my-budget-app`, `my-tsundoku`, `my-roadmap-app`, `{portfolio-site}`.
-- When renaming a project, rename BOTH the GitHub repo (`gh repo rename`) and the local folder in the same operation. Update the git remote URL after renaming.
-- The `slug` field in `.portfolio.yml` must also match.
-
-## Commits
-
-- Use Conventional Commits format: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `style:`, `perf:`, `ci:`, `build:`.
-- Commit messages must be concise and descriptive. One line, imperative mood, no period.
-- Scope is optional but encouraged for multi-module projects: `feat(auth): add email OTP flow`.
-- One logical change per commit. Don't bundle unrelated changes.
-
-## Build Quality
-
-- Zero warnings policy: builds must produce zero warnings. Fix warnings before considering a task done.
-- If a warning cannot be fixed (e.g., upstream dependency issue), document it as an exception in the project-level CLAUDE.md with a justification and a tracking note (issue link or TODO).
-- This applies to all build tools: TypeScript compiler, ESLint, Vite, Next.js, Astro, Python linters, etc.
-- FutureWarning, DeprecationWarning, and similar: fix proactively. If the fix requires a major version bump that is out of scope, document the exception.
-
-## Code Quality
-
-- For non-trivial changes (new features, refactors, multi-file edits): before presenting the result, pause and ask yourself "is there a more elegant way to do this?"
-- If the implementation feels hacky or like a workaround, step back and implement the clean solution — as if you knew from the start what you know now.
-- Skip this for simple, obvious fixes — don't over-engineer a one-line bug fix.
-- Challenge your own work before presenting it. The owner does not review code, so the quality bar is entirely on you.
-
-## Generalization Check
-
-Before implementing a specific request, consider whether it's a special case of a
-more general pattern. If the general solution is roughly the same effort as the
-specific one, implement the general version with the specific case as the default.
-
-Apply this when:
-- The pattern already appears elsewhere in the project or portfolio
-- The request involves hardcoded values that could be configuration
-- A utility function would serve multiple callers
-
-Skip this when:
-- The general version requires significantly more code or complexity
-- There's only one known use case and no evidence of others
-- Adding configurability would slow down the immediate task without clear future benefit
-
-This is a design judgment call, not a mandatory abstraction step. When in doubt,
-implement the specific case cleanly — it's easier to generalize clean code later
-than to simplify over-engineered code.
-
-## Testing Strategy
-
-Three tiers:
-- **Unit tests**: systematic on all projects. Every feature or bug fix includes relevant tests.
-- **Property-based tests**: for functions with calculation, transformation, or invariant logic. Use fast-check (TS) or hypothesis (Python). The property-testing skill has patterns.
-- **Regression tests**: every bug fix MUST include a test reproducing the pre-fix scenario.
-
-Conventions:
-- Write tests alongside the implementation, not as a separate step after the fact.
-- When modifying existing code, verify that existing tests still pass. Fix any broken tests before committing.
-- Use the testing framework already present in the project. If none exists, propose one that fits the stack (e.g., Vitest for Vite projects, Jest for Next.js, pytest for Python).
-- Test files live next to the code they test (`utils.ts` → `utils.test.ts`, `utils.property.test.ts`).
-- At minimum, test: utility functions, data transformations, API endpoints, and any logic with branching conditions. UI components are lower priority unless the project-level CLAUDE.md specifies otherwise.
-
-## Error Handling
-
-- Never silently swallow errors. Log them or surface them to the user.
-- Prefer explicit error handling over try/catch-all patterns.
-- In user-facing apps, show meaningful error messages — not raw stack traces.
-
-## Dependencies
-
-- Don't add dependencies without a clear reason. Prefer standard library or existing project dependencies when possible.
-- When adding a dependency, verify it is actively maintained and widely used.
-- Pin dependency versions in lock files. Don't use `latest` or loose ranges in package.json for production dependencies.
-
-## Code Style
-
-- Follow the existing code style of the project. Don't introduce new patterns or conventions without discussing it first.
-- If the project has a linter/formatter config (ESLint, Prettier, Ruff, Black), respect it.
-- If no linter/formatter is configured, follow standard community conventions for the language.
-
-## Security and Privacy
-
-### Secrets
-- Never commit secrets, API keys, tokens, or passwords. Use environment variables.
-- If a `.env.example` or `.env.local.example` exists, keep it up to date when adding new environment variables (with placeholder values, not real ones).
-- Never log sensitive data (tokens, passwords, personal information).
-
-### Private Data
-- Never commit files containing personal or private user data: fitness logs, financial records, health data, personal notes, user exports, etc.
-- Data fixtures for tests must use synthetic/fake data, never real user data.
-- If a project uses JSON data files (e.g., content databases), verify they contain only public/editorial content before committing.
-- Backup files, export files, and database dumps must be in `.gitignore`.
-
-### Images and Media
-- Never commit images or media files without explicit license verification.
-- Images sourced from external APIs or websites must have their license and attribution tracked (e.g., in an `attributions.json` or similar file).
-- AI-generated images: note the generation tool and any applicable terms in the project documentation.
-- When in doubt about an image's license, ask before committing.
-
-### .gitignore
-- Every project must have a `.gitignore` appropriate for its stack.
-- At minimum, it must exclude: build artifacts, `node_modules`/`__pycache__`, `.env*` (except `.env.example`), OS files (`.DS_Store`, `Thumbs.db`), editor configs, backup/export files, `docs/plans/`, and any data files containing personal information.
-- Verify `.gitignore` coverage when adding new file types to a project.
-
-## Git Hygiene
-
-- Don't commit generated files or build artifacts. Verify `.gitignore` covers them.
-- Don't commit commented-out code. Remove it or put it behind a feature flag.
-- Don't commit plan files, scratch notes, or task artifacts.
-- Before staging, review `git status` for any files that shouldn't be tracked (plans, backups, exports).
-
-## Author Signature
-
-- Every app MUST include a footer: **"Made with care by {author-first-name}"** with a link to `https://{portfolio-site-url}`.
-- This is the default. To opt out, the project-level CLAUDE.md must explicitly state it.
-
-## Dark/Light Mode
-
-- Every user-facing app MUST support dark and light mode, following the user's system preference (`prefers-color-scheme`).
-- The system preference is the default. A manual toggle in the UI is optional — up to each project.
-- This is the default. To opt out, the project-level CLAUDE.md must explicitly state it with a justification (e.g., "This app has its own theme system", "The artistic direction requires a fixed palette").
-
-## Design Defaults
-
-- Never default to purple, violet, or indigo as a primary color. This is a known model bias from overexposure to Tailwind/shadcn defaults.
-- When no color palette is specified for a new project, propose 2-3 palette directions based on the app's subject, mood, and audience. Wait for approval before implementing.
-- When a project-level CLAUDE.md already defines a palette or design direction, follow it strictly.
-
-## Tech Stack Choices
-
-- No stack is imposed globally. Choose the best tools for each project.
-- The owner does not review code — optimize for correctness, maintainability, and the best fit for the project's needs.
-- What matters at the portfolio level: zero cost (free tiers only), automatic deploys on push to main, zero warnings, tests, and documentation.
+Zero-cost policy: free tiers only (Netlify, Vercel, Cloudflare, Neon, D1). Automatic deploys on push to main.
 
 ## Plugins
 
-- Plugins add agents, skills, hooks, and commands to the context. Each one has a cost: startup time, context consumption, and potential conflicts with custom agents.
-- Before installing a plugin, evaluate: does it solve a problem that your custom agents/commands don't already handle? If there's overlap, prefer your custom setup — it's tailored to your portfolio.
-- Audit installed plugins periodically with `/cleanup plugins-only`. Uninstall plugins you don't actively use — they cost context on every session start.
-- If a plugin's agent conflicts with a custom agent (same name or overlapping scope), the custom agent takes priority. Disable the plugin's agent in `.claude/settings.json` if needed.
-- If a plugin injects a SessionStart hook, be aware it consumes context in every session — even when you don't use that plugin's features.
+Before installing a plugin: evaluate overlap with existing custom agents/commands — custom setup wins on conflict. Audit periodically with `/cleanup plugins-only`. Plugins with SessionStart hooks cost context every session; prefer plugins that lazy-load.
