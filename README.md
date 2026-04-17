@@ -93,7 +93,7 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 </details>
 
 <details>
-<summary><strong>Agents (6)</strong> — the workers, each with a specific role and model</summary>
+<summary><strong>Agents (8)</strong> — the workers, each with a specific role and model</summary>
 
 <br>
 
@@ -101,38 +101,43 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 |-------|-------|--------|--------------|--------------------|
 | **implementer** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) → ![opus](https://img.shields.io/badge/opus-8B5CF6?style=flat-square) | ✅ | Executes tasks with "done when" criteria | Architecture decisions |
 | **troubleshooter** | ![opus](https://img.shields.io/badge/opus-8B5CF6?style=flat-square) | ✅ | Diagnoses structural problems after 2 failed fixes, produces plans | Write production code |
-| **portfolio-sync** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Cross-repo coherence (manifests, JSON, docs) | Creative content |
-| **docs-checker** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Audits + fixes README, CLAUDE.md, URLs | Compliance standards |
+| **portfolio-sync** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | ✅ | Cross-repo coherence (manifests, JSON, docs) | Creative content |
+| **docs-checker** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | ✅ | Audits + fixes README, CLAUDE.md, URLs | Compliance standards |
 | **portfolio-audit** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Read-only compliance check (signature, secrets, tests) | Fix anything |
-| **dev-scanner** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Discovers projects, detects drift, finds orphans | Modify files |
+| **dev-scanner** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Discovers projects, detects drift, finds orphans | Modify files |
+| **dummy-visitor** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Bilingual FR/EN naive visitor — two-phase perception vs. intent review | Compare to competitors |
+| **deploy-doctor** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Pattern-matches deploy logs, returns root-cause hypothesis | Edit code or rerun builds |
 
 The model selection matters. I don't pay opus prices for a compliance check that haiku handles perfectly. And I don't trust sonnet with a migration that touches 8 files across 3 layers — that's opus territory.
 
 </details>
 
 <details>
-<summary><strong>Skills (3)</strong> — preloaded knowledge, injected at startup</summary>
+<summary><strong>Skills (5)</strong> — preloaded knowledge and user-invocable utilities</summary>
 
 <br>
 
 - **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, manifest format, quality gates, display order). Loaded into `troubleshooter` and `portfolio-sync`.
 - **code-quality**: before/during/after checklist, common pitfalls, elegance check, spec compliance check. Loaded into `implementer`.
 - **property-testing**: patterns for property-based tests (roundtrip, conservation, idempotence, no-crash) using fast-check (TS) or hypothesis (Python). Loaded into `implementer`.
+- **deploy-status** *(user-only)*: HTTP status + latest CI run for every production app in the portfolio, in one command.
+- **fresh-session** *(user-only)*: audits `~/.claude/` for startup-cost drift (CLAUDE.md size, plugin count, registered agents) and flags the biggest contributor.
 
 Why skills instead of just writing longer agent prompts? Because skills are reusable across agents, versionable independently, and don't bloat agents that don't need them.
 
 </details>
 
 <details>
-<summary><strong>Hooks (5)</strong> — 4 advisory + 1 blocking</summary>
+<summary><strong>Hooks (6)</strong> — 5 advisory + 1 blocking</summary>
 
 <br>
 
-- **doc-guard** (PostToolUse → Write): nudges when you modify code without updating `.portfolio.yml` or docs *(advisory)*
-- **build-check** (Stop): verifies zero warnings after each agent completes *(advisory)*
-- **memory-reminder** (Stop): reminds the agent to save what it learned *(advisory)*
-- **fix-loop-detector** (PostToolUse → Bash): warns when the same file gets 3+ `fix:` commits in 30 minutes — a signal to escalate *(advisory)*
 - **secret-scan** (PreToolUse → Write|Edit): blocks writes containing API key patterns (`sk-`, `AKIA`, `ghp_`, etc.), excludes `.env.example` *(blocking)*
+- **fix-loop-detector** (PostToolUse → Bash): warns when the same file gets 3+ `fix:` commits in 30 minutes — a signal to escalate *(advisory)*
+- **auto-format** (PostToolUse → Write|Edit): runs Prettier / Ruff / rustfmt on the edited file if the project has the corresponding config — silent if not *(advisory)*
+- **portfolio-yml-validate** (PostToolUse → Write|Edit `*.portfolio.yml`): checks required fields, slug = folder name, numeric `sort_order` *(advisory)*
+- **portfolio-drift** (PreToolUse → Bash `git commit`): warns when dependency/deploy files are staged but `.portfolio.yml` / README.md aren't *(advisory)*
+- **stale-readme-guard** (PreToolUse → Bash `git push`): checks unpushed commits for deploy/dep changes without a README.md update *(advisory)*
 
 Most hooks are advisory — in a system where I don't review code, I need Claude Code to exercise judgment, not pass checklists. The one exception is secret scanning: accidentally committing an API key is irreversible enough to justify blocking.
 
@@ -140,7 +145,7 @@ Most hooks are advisory — in a system where I don't review code, I need Claude
 
 ### The Global CLAUDE.md
 
-The `CLAUDE.md` at the root is the backbone — ~180 lines of rules that apply to every project. The most important ones:
+The `CLAUDE.md` at the root is the backbone — ~80 lines of rules that apply to every project. The most important ones:
 
 > [!IMPORTANT]
 > **The 3-level escalation cascade.** Each level forces a different approach. No retrying the same level twice. Every fix attempt requires a stated root cause hypothesis — no "let me try a different approach" without a new theory.
