@@ -6,6 +6,8 @@ description: "Configuration opinionated pour gérer un portfolio de 10+ apps ave
 audience: public
 visibility: public
 status: production
+surface_type: meta
+story_slug: atelier
 url: https://github.com/w2ur/claude-code-setup
 repo_public: true
 license: MIT
