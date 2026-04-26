@@ -23,7 +23,7 @@ You are the portfolio synchronization agent. You maintain coherence across all p
 - **Dev directory**: `~/Dev`
 - **GitHub username**: `{github-username}`
 - **Portfolio repo**: `~/Dev/{portfolio-site}`
-- **Output file**: `~/Dev/{portfolio-site}/data/portfolio-apps.json`
+- **Output file**: `~/Dev/{portfolio-site}/public/data/portfolio-apps.json`
 
 ## Execution Flow
 
@@ -76,6 +76,12 @@ For each project with a `.portfolio.yml`, compare the manifest against the actua
 - Verify they are not empty
 - Do NOT auto-modify taglines or descriptions — these are creative content, not auto-generated
 
+**Surface type:**
+- Every manifest MUST have a `surface_type` field. Valid enum values: `flagship`, `personal-live`, `external-story`, `internal-story`, `tool-widget`, `meta`, `hidden`, `archived`, `hub`.
+- If the field is missing or holds an invalid value, this is a hard error — flag it in the Manual Actions section of the report. Do NOT guess a value; the owner assigns `surface_type`.
+- `story_slug` is required when `surface_type` ∈ {`personal-live`, `internal-story`, `tool-widget`}. If missing in those cases, flag for manual action.
+- `story_slug` must be a kebab-case string. No validation that the story exists yet — stories are written in Phase 3+.
+
 **Sort order:**
 - Verify `sort_order` exists and is a number
 - If missing, set to `99` and add a comment: `# TODO: assign final sort_order`
@@ -114,9 +120,27 @@ Collect their reports for the consolidated output in Step 7.
 
 To detect "changed since last run", check if any commits exist after the most recent `chore: sync .portfolio.yml` commit. If no such commit exists, treat the project as never synced and dispatch the sub-agents.
 
-### Step 6 — Generate portfolio-apps.json (bilingual)
+### Step 5b — Stories collection validation
 
-Read all `.portfolio.yml` files where `portfolio_card: true`. The manifests are written in French.
+Read every MDX file under `~/Dev/{portfolio-site}/src/content/stories-fr/` and `stories-en/`. For each, parse the YAML frontmatter and verify:
+
+- `modalities` is present and non-empty; values must be a subset of `[static, playable, usable, live]`.
+- `featured_rank` is either `null` or an integer in `[1, 4]`.
+- If `usable` or `live` is in `modalities`: `live_url` must be a non-empty string and a valid URL.
+- `keywords` is an array (may be empty).
+- `seo_description` is either `null` or a string ≤180 characters.
+
+Across each language pair (FR / EN):
+- `featured_rank` values must be unique within a language.
+- If any non-null `featured_rank` is set, the values must be contiguous from 1 (no gaps).
+
+Flag every violation in the consolidated report under "Stories needing attention". Do NOT auto-fix story frontmatter — story content is creative.
+
+### Step 6 — Generate portfolio-apps.json (legacy / audit-only)
+
+NOTE: As of the 2026-04-26 hub redesign, the portfolio site no longer renders from this JSON. The hub homepage and `/stories` feed read directly from the Astro stories collection via `getCollection`. This step is preserved for cross-portfolio audits and external tooling that still consume the JSON. Do NOT remove the file or this step without an explicit owner decision.
+
+Read all `.portfolio.yml` files where `surface_type` ∈ {`flagship`, `personal-live`, `external-story`, `internal-story`, `tool-widget`, `meta`}. The legacy `portfolio_card` boolean is retained for backwards compatibility but is no longer the filter key — `surface_type` is authoritative. If a manifest has `surface_type: hidden | archived | hub`, exclude it from the generated JSON regardless of `portfolio_card`. The manifests are written in French.
 
 **Translation step**: for each app's `tagline` and `description`, produce an English translation. Use your own judgment — these are short creative texts, not technical docs. Keep the same tone (personal, witty, not corporate). If a tagline uses a French cultural reference that doesn't translate well, adapt it rather than translate literally.
 
@@ -137,6 +161,8 @@ For each app, produce a JSON entry with bilingual fields:
   "audience": "family",
   "visibility": "private",
   "status": "production",
+  "surface_type": "personal-live",
+  "story_slug": "outils-perso",
   "url": "https://budget.example.com",
   "portfolio_link": false,
   "badge": {
@@ -149,18 +175,20 @@ For each app, produce a JSON entry with bilingual fields:
 }
 ```
 
+`surface_type` and `story_slug` are passed through verbatim from the manifest so the hub's renderer (and future story-stitching logic) can group tiles by story.
+
 Fields with `null` badge remain `null` (not translated).
 
 **Icon copy**: for each app where `icon_file` is not null and `portfolio_card` is true, copy the icon into the portfolio repo:
 
 ```bash
 # Determine extension from icon_file
-cp ~/Dev/{slug}/{icon_file} ~/Dev/{portfolio-site}/icons/{slug}.{ext}
+cp ~/Dev/{slug}/{icon_file} ~/Dev/{portfolio-site}/public/icons/{slug}.{ext}
 ```
 
 In the JSON output, set `icon_file` to the relative path within the portfolio: `icons/{slug}.svg` (or `.png`). This way the portfolio site can reference icons locally without depending on external URLs.
 
-Write the array to `~/Dev/{portfolio-site}/data/portfolio-apps.json` (create the `data/` directory if it doesn't exist).
+Write the array to `~/Dev/{portfolio-site}/public/data/portfolio-apps.json` (the directory already exists from Phase 1). Also copy each referenced icon to `~/Dev/{portfolio-site}/public/icons/` (not the old repo-root `icons/`).
 
 Sort the array by `sort_order` (ascending). Apps without a `sort_order` (or `sort_order: 99`) go at the end, sorted alphabetically.
 
