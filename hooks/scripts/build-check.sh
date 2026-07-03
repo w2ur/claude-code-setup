@@ -3,6 +3,15 @@
 # Runs after any agent completes. Verifies the project builds with zero warnings.
 # Advisory only — prints warnings but does not block.
 
+# Guard: Stop fires on every turn. Only build when there is uncommitted work in
+# a git repo, so pure-conversation turns and clean trees skip the build entirely.
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  exit 0
+fi
+if git diff --quiet 2>/dev/null && git diff --cached --quiet 2>/dev/null; then
+  exit 0
+fi
+
 # Detect project type and build command
 if [ -f "package.json" ]; then
   # Check if a build script exists

@@ -27,7 +27,8 @@ Default to parallel dispatch for any 2+ independent tasks. Specify the model whe
 
 - **haiku** — passive audits (portfolio-audit, docs-checker).
 - **sonnet** — default implementation, single-file changes, clear scope.
-- **opus** — 4+ files across layers, architecture analysis, retry after failed sonnet.
+- **opus** (4.8) — 4+ files across layers, architecture analysis, retry after failed sonnet. Opus 4.8 supports fast mode for latency-sensitive loops.
+- **Escalation tier (L3 / troubleshooter)** — must inherit the session model so it is never weaker than the caller. The current lineup is Fable 5 (above Opus) > Opus 4.8 > Sonnet 4.6 > Haiku 4.5; on a Fable 5 session the troubleshooter runs on Fable 5, not a lower tier.
 
 ## Session handoff and memory
 

@@ -63,7 +63,7 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 ┌───────────────────────────────────────────────────────────┐
 │                          Hooks                            │
 │                                                           │
-│  doc-guard ──────── "Did you update the docs?" (advisory) │
+│  stale-readme-guard  "Docs still current?"     (advisory) │
 │  build-check ────── "Any warnings left?"       (advisory) │
 │  memory-reminder ── "Save what you learned"    (advisory) │
 │  fix-loop-detector  "Same file 3× in 30min?"  (advisory) │
@@ -135,7 +135,7 @@ Why skills instead of just writing longer agent prompts? Because skills are reus
 - **secret-scan** (PreToolUse → Write|Edit): blocks writes containing API key patterns (`sk-`, `AKIA`, `ghp_`, etc.), excludes `.env.example` *(blocking)*
 - **fix-loop-detector** (PostToolUse → Bash): warns when the same file gets 3+ `fix:` commits in 30 minutes — a signal to escalate *(advisory)*
 - **auto-format** (PostToolUse → Write|Edit): runs Prettier / Ruff / rustfmt on the edited file if the project has the corresponding config — silent if not *(advisory)*
-- **portfolio-yml-validate** (PostToolUse → Write|Edit `*.portfolio.yml`): checks required fields, slug = folder name, numeric `sort_order` *(advisory)*
+- **portfolio-yml-validate** (PostToolUse → Write|Edit `*.portfolio.yml`): checks required fields, slug = folder name, numeric `sort_order`, valid `surface_type` *(advisory)*
 - **portfolio-drift** (PreToolUse → Bash `git commit`): warns when dependency/deploy files are staged but `.portfolio.yml` / README.md aren't *(advisory)*
 - **stale-readme-guard** (PreToolUse → Bash `git push`): checks unpushed commits for deploy/dep changes without a README.md update *(advisory)*
 

@@ -15,8 +15,9 @@ except Exception:
     pass
 " 2>/dev/null)
 
-# Only intercept git commit commands
-echo "$cmd" | grep -qE "^git[[:space:]]+commit" || exit 0
+# Only intercept git commit commands (match anywhere, so chained forms like
+# `git add -A && git commit ...` or `cd repo && git commit ...` are caught too)
+echo "$cmd" | grep -qE "git[[:space:]]+commit" || exit 0
 
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ -f "$repo/.portfolio.yml" ] || exit 0

@@ -42,7 +42,7 @@ These are the active portfolio-wide rules. This skill is preloaded — do not in
 Required fields: name, slug, tagline, description, audience, visibility, status, surface_type, url, portfolio_card, portfolio_link, badge, icon_emoji, icon_file, stack, sort_order.
 Optional: story_slug (required when surface_type implies a hub story or merged story — see below).
 - slug = folder name = GitHub repo name (source of truth: repo)
-- name = README title (source of truth: README)
+- name = deliberately chosen portfolio display name (source of truth: .portfolio.yml — NEVER overwrite it from the README title)
 - Taglines and descriptions are creative content — never auto-generated.
 
 ### surface_type taxonomy

@@ -25,7 +25,7 @@ yml_field() {
 }
 
 # Required fields per portfolio-conventions skill
-required="name slug tagline description audience visibility status url portfolio_card portfolio_link badge icon_emoji icon_file stack sort_order"
+required="name slug tagline description audience visibility status surface_type url portfolio_card portfolio_link badge icon_emoji icon_file stack sort_order"
 
 missing=""
 for field in $required; do
@@ -36,12 +36,26 @@ done
 folder=$(basename "$(dirname "$file_path")")
 slug=$(yml_field slug)
 
+# surface_type must be one of the 9 valid values; some values require story_slug
+surface_type=$(yml_field surface_type)
+valid_surface="flagship personal-live external-story internal-story tool-widget meta hidden archived hub"
+story_slug=$(yml_field story_slug)
+if [ -n "$surface_type" ]; then
+  echo "$valid_surface" | grep -qw "$surface_type" || surface_bad=1
+  case "$surface_type" in
+    personal-live|internal-story|tool-widget|archived)
+      [ -z "$story_slug" ] && surface_needs_story=1 ;;
+  esac
+fi
+
 # sort_order must be numeric
 sort_order=$(yml_field sort_order)
 
 warnings=""
 [ -n "$missing" ] && warnings+="   Missing fields:$missing\n"
 [ -n "$slug" ] && [ "$slug" != "$folder" ] && warnings+="   slug '$slug' does not match folder '$folder'\n"
+[ -n "$surface_bad" ] && warnings+="   surface_type '$surface_type' is not one of: $valid_surface\n"
+[ -n "$surface_needs_story" ] && warnings+="   surface_type '$surface_type' requires a story_slug\n"
 if [ -n "$sort_order" ]; then
   case "$sort_order" in
     ''|*[!0-9]*) warnings+="   sort_order '$sort_order' is not a number\n" ;;

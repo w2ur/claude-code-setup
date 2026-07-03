@@ -18,7 +18,7 @@
 <!--
   ============================================================================
   DATA SECTION — Claude Code: edit data here, don't touch the renderer below.
-  Last updated: 2026-04-17
+  Last updated: 2026-07-03
   ============================================================================
 -->
 <script id="workflow-data">
@@ -29,7 +29,7 @@ const COMMANDS = [
   { name: "/audit", args: "[URL canonique optionnelle]", desc: "Lance docs-checker (sonnet) et portfolio-audit (haiku) en parallèle sur le projet courant. Produit un rapport consolidé.", agents: ["docs-checker", "portfolio-audit"], when: "Avant un release, une publication, ou pendant un compliance sweep" },
   { name: "/troubleshoot", args: "$0 (problème + ce qui a été tenté)", desc: "Escalade directe vers l'agent troubleshooter (opus). Diagnostic structural après 2 échecs d'implémentation. Produit un plan, jamais du code.", agents: ["troubleshooter"], when: "Escalade après 2 échecs sur /fix, ou override manuel" },
   { name: "/cleanup", args: "[plans-only | plugins-only | memory-only]", desc: "Nettoie les plans orphelins dans les repos, audite les plugins installés, compacte la mémoire agent si > 200 lignes, et vérifie si le workflow guide et les docs stratégiques sont à jour par rapport à la config réelle.", agents: [], when: "1×/semaine en hygiène, ou quand les plans s'accumulent" },
-  { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2+1 phases. Phase 1 : triage rapide avec score readiness (harness-engineering). Phase 2 : revue approfondie + delta readiness avant/après fixes. Auto-fix ce qui est safe, flag le reste.", agents: ["implementer (auto-fix)", "troubleshooter (si migration majeure)"], when: "1×/mois en session dédiée" },
+  { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2 phases. Phase 1 : triage rapide (activité commits, proéminence portfolio, ancienneté du dernier scan, problèmes détectés). Phase 2 : revue approfondie sur les apps sélectionnées. Auto-fix ce qui est safe, flag le reste.", agents: ["implementer (auto-fix)", "troubleshooter (si migration majeure)"], when: "1×/mois en session dédiée" },
   { name: "/sync-setup", args: "[--dry-run | --audit-only]", desc: "Synchronise le repo claude-code-setup depuis ~/.claude/. Copie + anonymise les fichiers, nettoie les fichiers obsolètes, met à jour le README (compteurs, noms), vérifie l'absence de données personnelles.", agents: [], when: "Après des changements de workflow (nouvel agent, commande renommée, nouveau hook)" },
 ];
 
@@ -80,7 +80,7 @@ const SCENARIOS = [
       {action:"Si 2 échecs → escalade",where:"Claude Code",tool:"/troubleshoot description + contexte des échecs",detail:"STOP obligatoire. Le troubleshooter diagnostique le problème structurel"},
       {action:"Vérifier le build",where:"Claude Code",tool:"Hook auto (build-check)",detail:"Le hook Stop vérifie automatiquement les warnings"},
       {action:"Commit + push",where:"Claude Code",tool:"git push",detail:"La mémoire agent est auto-sauvegardée en fin de session"}],
-    traps:["Le piège #1 : service worker cache → toujours tester en navigation privée d'abord","Itérer 3+ fois sur le même bug au lieu d'escalader","Oublier que le hook memory-reminder sauve les leçons — pas besoin de le faire manuellement"]},
+    traps:["Le piège #1 : service worker cache → toujours tester en navigation privée d'abord","Itérer 3+ fois sur le même bug au lieu d'escalader","Le hook memory-reminder (Stop) rappelle de sauver les leçons quand des commits ont été faits — ne pas l'ignorer"]},
   { id:"big-feature",icon:"◆",title:"Grosse feature",when:"Ajout structurant (sync, nouvelle section, refacto majeur)",category:"dev",frequency:"Régulier",
     steps:[
       {action:"Design upfront",where:"Claude Code",tool:"Plan mode ou brainstorm",detail:"Utiliser le plan mode natif ou /superpowers:brainstorm pour concevoir la feature"},
@@ -241,7 +241,7 @@ function App(){
           <p style={{fontSize:11,color:"#94A3B8",lineHeight:1.5}}>{h.desc}</p>
         </div>))}
         <div style={{padding:"12px 16px",borderRadius:8,background:"#1E293B",marginTop:8}}>
-          <p style={{fontSize:11,color:"#64748B",lineHeight:1.6}}>Tous les hooks sont <strong style={{color:"#10B981"}}>advisory</strong> — ils affichent des warnings mais ne bloquent jamais l'exécution. Pour passer en mode strict (exit code non-zero), modifier les scripts dans <code>~/.claude/hooks/scripts/</code>.</p>
+          <p style={{fontSize:11,color:"#64748B",lineHeight:1.6}}>La plupart des hooks sont <strong style={{color:"#10B981"}}>advisory</strong> (ils affichent des warnings sans bloquer) — <strong>sauf secret-scan qui bloque</strong> (exit 2) si un secret est détecté. Chaque hook vit dans son dossier <code>~/.claude/hooks/&lt;nom&gt;/</code> ; les deux hooks Stop (build-check, memory-reminder) sont sous <code>~/.claude/hooks/scripts/</code>.</p>
         </div>
       </div>)}
 
