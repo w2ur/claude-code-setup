@@ -14,7 +14,9 @@ try:
 except Exception:
     pass" 2>/dev/null)
 
-echo "$cmd" | grep -qE "^git[[:space:]]+push" || exit 0
+# Match anywhere so chained forms (`npm test && git push`, `cd repo && git push`)
+# are caught too, not only commands that literally start with `git push`.
+echo "$cmd" | grep -qE "git[[:space:]]+push" || exit 0
 
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ -f "$repo/.portfolio.yml" ] || exit 0

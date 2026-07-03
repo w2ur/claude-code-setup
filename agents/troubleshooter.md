@@ -5,7 +5,6 @@ description: |
   Evaluates root cause, recommends solutions including rearchitecture,
   stack changes, or rewrites. Does NOT write production code — produces
   a plan for the implementer.
-model: opus
 tools: Read, Bash, Glob, Grep
 memory: project
 skills:
