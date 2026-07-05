@@ -1,15 +1,12 @@
 #!/bin/bash
 # hook.sh — PostToolUse hook (Bash matcher)
 # Detects fix-loop patterns: multiple fix: commits touching the same file in a short window.
-# Advisory only — outputs a warning but always exits 0.
+# Advisory only — always exits 0, surfaces findings via hookSpecificOutput.additionalContext.
 #
-# Stdin format: {"tool_name": "Bash", "tool_input": {"command": "git commit ..."}}
+# Stdin format: {"tool_name": "Bash", "tool_input": {"command": "git commit ..."}, "cwd": "..."}
 
-# Read stdin into a variable
 INPUT=$(cat)
 
-# Extract the command string from the JSON payload.
-# Use python3 for reliable JSON parsing (available on macOS).
 COMMAND=$(echo "$INPUT" | python3 -c "
 import sys, json
 try:
@@ -24,17 +21,22 @@ if ! echo "$COMMAND" | grep -q "git commit"; then
     exit 0
 fi
 
-# Only care about fix: or fix( commits (Conventional Commits format)
-# Check the commit message embedded in the command, OR inspect the most recent commit.
-# The commit may already be recorded by the time PostToolUse fires, so we check git log.
+# Resolve target repo dir: stdin cwd first (PostToolUse — the cd already ran
+# by the time this fires), fall back to parsing a leading `cd <path> &&`.
+DIR=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('cwd', ''))" 2>/dev/null)
+if [ -z "$DIR" ]; then
+  DIR=$(echo "$COMMAND" | sed -E -n 's/^[[:space:]]*cd[[:space:]]+([^&]*)&&.*/\1/p' | sed -E -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  DIR="${DIR/#\~/$HOME}"
+fi
+[ -z "$DIR" ] && DIR="$PWD"
 
 # Verify we are inside a git repository
-if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+if ! git -C "$DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
     exit 0
 fi
 
 # Collect fix: commits from the last 30 minutes
-RECENT_FIX_COMMITS=$(git log \
+RECENT_FIX_COMMITS=$(git -C "$DIR" log \
     --since="30 minutes ago" \
     --format="%H %s" \
     2>/dev/null | grep -E "^[a-f0-9]+ fix[:(]")
@@ -55,7 +57,7 @@ fi
 # For each fix: commit, list the files it touched, then count per-file occurrences
 FILE_COUNTS=$(
     for HASH in $COMMIT_HASHES; do
-        git diff-tree --no-commit-id -r --name-only "$HASH" 2>/dev/null
+        git -C "$DIR" diff-tree --no-commit-id -r --name-only "$HASH" 2>/dev/null
     done | sort | uniq -c | sort -rn
 )
 
@@ -70,21 +72,12 @@ if [ -z "$LOOPING_FILES" ]; then
     exit 0
 fi
 
-# Emit warning
-echo ""
-echo "WARNING fix-loop-detector: possible fix loop detected in the last 30 minutes."
-echo ""
-echo "  The following file(s) have been modified across 3+ fix: commits:"
-echo ""
-while IFS= read -r LINE; do
-    COUNT=$(echo "$LINE" | awk '{print $1}')
-    FILE=$(echo "$LINE" | awk '{print $2}')
-    echo "    $FILE  ($COUNT fix: commits)"
-done <<< "$LOOPING_FILES"
-echo ""
-echo "  This matches the escalation rule: after 2 failed fix attempts, STOP."
-echo "  Consider invoking the troubleshooter agent to diagnose the root cause"
-echo "  instead of continuing to patch the same file."
-echo ""
+FILE_LIST=$(echo "$LOOPING_FILES" | awk '{print $2 " (" $1 " fix: commits)"}' | tr '\n' '; ')
+MSG="fix-loop-detector: possible fix loop detected in the last 30 minutes. Files modified across 3+ fix: commits: $FILE_LIST This matches the escalation rule: after 2 failed fix attempts, STOP and consider invoking the troubleshooter agent instead of continuing to patch the same file."
+
+MSG="$MSG" python3 -c "
+import json, os
+print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PostToolUse', 'additionalContext': os.environ['MSG']}}))
+"
 
 exit 0

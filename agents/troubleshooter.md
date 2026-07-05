@@ -6,6 +6,7 @@ description: |
   stack changes, or rewrites. Does NOT write production code — produces
   a plan for the implementer.
 tools: Read, Bash, Glob, Grep
+model: inherit
 memory: project
 skills:
   - portfolio-conventions

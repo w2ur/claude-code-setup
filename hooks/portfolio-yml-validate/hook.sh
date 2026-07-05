@@ -63,7 +63,11 @@ if [ -n "$sort_order" ]; then
 fi
 
 if [ -n "$warnings" ]; then
-  printf "⚠️  .portfolio.yml validation:\n%b" "$warnings" >&2
+  msg=$(printf ".portfolio.yml validation:\n%b" "$warnings")
+  MSG="$msg" python3 -c "
+import json, os
+print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PostToolUse', 'additionalContext': os.environ['MSG']}}))
+"
 fi
 
 exit 0

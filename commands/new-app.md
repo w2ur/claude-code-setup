@@ -34,13 +34,14 @@ git init
 ```
 
 ### .portfolio.yml
-Create with all required fields. Set:
+Create with all required fields per the `portfolio-conventions` skill's manifest spec, including the current `surface_type` taxonomy. Set:
 - `portfolio_card: false` with comment `# TODO: set to true when ready to publish`
 - `sort_order: 99` with comment `# TODO: assign final sort_order`
 - `visibility` based on audience answer
+- `surface_type` based on the audience/deploy answers (ask the owner if it's not obvious which of the valid values applies)
 
 ### CLAUDE.md
-Create from the project template (see global CLAUDE.md instructions for expected sections). Include:
+Create covering: project overview, tech stack, dev/build commands, deployment, and any conventions that override or extend the global CLAUDE.md. Include:
 - Project overview from the owner's description
 - Tech stack from chosen stack
 - User-facing language

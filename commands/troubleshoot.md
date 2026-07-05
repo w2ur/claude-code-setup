@@ -1,7 +1,6 @@
 ---
 description: Escalate to the troubleshooter agent after 2 failed fix attempts.
 argument-hint: [problem description + what was tried]
-model: opus
 allowed-tools: Read, Bash, Glob, Grep, Agent(troubleshooter)
 ---
 
