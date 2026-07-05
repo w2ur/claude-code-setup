@@ -155,7 +155,7 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     """
     warnings: list[str] = []
 
-    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml")
+    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml", "*.sh")
     all_files: list[Path] = []
     for ext in audit_extensions:
         all_files.extend(target_dir.rglob(ext))
@@ -177,6 +177,85 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
                     warnings.append(f"  {rel}:{i}  matches '{pattern}': {line.strip()[:120]}")
 
     return warnings
+
+
+# ── Orphan pruning ──────────────────────────────────────────────
+
+
+def synced_roots(file_map: dict) -> list[str]:
+    """Top-level repo directories that are fully owned by the sync.
+
+    These are the directory destinations in file_map (e.g. 'commands/',
+    'agents/'). Root-level file destinations (e.g. 'CLAUDE.md') are NOT
+    roots — the sync never prunes outside a directory root it owns.
+    """
+    roots: set[str] = set()
+    for dest in file_map.values():
+        if dest.endswith("/"):
+            roots.add(dest.split("/")[0])
+    return sorted(roots)
+
+
+def prune_orphans(produced_dests: set[Path], file_map: dict, dry_run: bool) -> int:
+    """Delete repo files under a synced root whose live source disappeared.
+
+    For each synced root (commands/, agents/, skills/, hooks/, rules/), any
+    non-gitignored file that was NOT produced by this run is an orphan
+    (e.g. a renamed/deleted agent or a retired hook script). Orphans are
+    deleted on a real run, reported on a dry run.
+
+    Owner-maintained trees (docs/, README.md, root-level files) are never
+    touched because they are not directory roots in file_map. Gitignored
+    files are excluded via `git ls-files --exclude-standard`.
+    """
+    roots = synced_roots(file_map)
+    produced_rel = {str(p.relative_to(REPO_ROOT)) for p in produced_dests}
+    removed = 0
+    orphans: list[str] = []
+
+    for root in roots:
+        root_dir = REPO_ROOT / root
+        if not root_dir.exists():
+            continue
+        # Candidate set = tracked + untracked-but-not-ignored files under root.
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", root],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        candidates = [ln for ln in result.stdout.splitlines() if ln.strip()]
+        for rel in candidates:
+            # Skip phantoms: files already unlinked this session but still in the
+            # git index because the deletion has not been committed yet.
+            if rel not in produced_rel and (REPO_ROOT / rel).exists():
+                orphans.append(rel)
+
+    if not orphans:
+        return 0
+
+    log.info("")
+    log.info("── Orphans ─────────────────────────────")
+    for rel in sorted(orphans):
+        abs_path = REPO_ROOT / rel
+        if dry_run:
+            log.info("  ORPHAN (would delete): %s", rel)
+        else:
+            abs_path.unlink(missing_ok=True)
+            log.info("  DELETED orphan: %s", rel)
+        removed += 1
+
+    # Remove now-empty directories left behind by real deletions.
+    if not dry_run:
+        for root in roots:
+            root_dir = REPO_ROOT / root
+            if not root_dir.exists():
+                continue
+            for sub in sorted(root_dir.rglob("*"), reverse=True):
+                if sub.is_dir() and not any(sub.iterdir()):
+                    sub.rmdir()
+
+    return removed
 
 
 # ── Main operations ─────────────────────────────────────────────
@@ -229,6 +308,16 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
             copied += 1
             log.info("  %s → %s (%d replacements)", rel_src, rel_dest, count)
 
+    # Generate the workflow guide DATA section from live config.
+    # Local import to avoid a circular import at module load time.
+    from generate_workflow_guide import generate_guide
+
+    guide_todos = generate_guide(source, replacements, patterns, dry_run)
+
+    # Prune orphaned repo files under synced roots (renamed/deleted sources).
+    produced_dests = {dest for _, dest in pairs}
+    orphan_count = prune_orphans(produced_dests, file_map, dry_run)
+
     # Audit
     if not dry_run and audit_patterns:
         log.info("")
@@ -248,6 +337,11 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
         log.info("  DRY RUN — no files written")
     log.info("  Files:        %d", len(pairs) if dry_run else copied)
     log.info("  Replacements: %d", total_replacements)
+    log.info("  Orphans:      %d %s", orphan_count, "(would delete)" if dry_run else "(deleted)")
+    if guide_todos:
+        log.info("  Guide TODOs:  %d (new entries need a hand-written desc)", len(guide_todos))
+        for t in guide_todos:
+            log.info("    - %s", t)
     if not dry_run and audit_patterns:
         warning_count = len(warnings) if not dry_run else 0
         log.info("  Audit warns:  %d", warning_count)

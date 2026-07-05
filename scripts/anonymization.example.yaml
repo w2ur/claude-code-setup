@@ -35,6 +35,9 @@ replacements:
 patterns:
   '/Users/[^/\s]+/': '/Users/{username}/'
   '/home/[^/\s]+/': '/home/{username}/'
+  # Dash-flattened home paths (e.g. project dirs like -Users-<name>-Dev)
+  '-Users-[^-/\s]+-': '-Users-{username}-'
+  '-home-[^-/\s]+-': '-home-{username}-'
 
 audit_patterns:
   - 'your-gh-user'
@@ -56,9 +59,13 @@ file_map:
   'commands/*.md': 'commands/'
   'agents/*.md': 'agents/'
   'skills/**/*.md': 'skills/'
+  'skills/**/*.sh': 'skills/'
+  'hooks/**/*.sh': 'hooks/'
   'hooks/*.md': 'hooks/'
   'rules/*.md': 'rules/'
 
-# Extra files outside ~/.claude/ that should also be synced + anonymized
-extra_files:
-  '~/Dev/my-workflow-guide.html': 'docs/workflow-guide.html'
+# Extra files outside ~/.claude/ that should also be synced + anonymized.
+# NOTE: docs/workflow-guide.html is generated from live config by
+# scripts/generate_workflow_guide.py (invoked by sync.py), which anonymizes
+# its own output — do not list it here or it would be double-written.
+extra_files: {}
