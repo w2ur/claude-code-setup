@@ -16,3 +16,7 @@ Output columns: status emoji · slug · HTTP code · CI status · URL.
 
 Only scans projects whose `.portfolio.yml` has `status: production` and a defined `url`.
 Results: ✅ 200/301/302 · ⚠️ 3xx or unusual · ❌ 4xx/5xx/network error.
+
+## On failure
+
+For each ❌ result, dispatch the `deploy-doctor` agent with the app's slug, URL, and CI status to get a root-cause hypothesis, then hand off to `/fix` with that diagnosis.

@@ -45,9 +45,9 @@ Report how many stale plans exist. Ask before deleting.
 
 ## Step 2 — Plugin Audit
 
-List all installed plugins and their agents:
+List all installed plugins and their agents (`ls ~/.claude/plugins/` only lists cache/data directories, not the enabled registry — use the CLI):
 ```bash
-ls ~/.claude/plugins/ 2>/dev/null
+claude plugin list 2>/dev/null
 ```
 
 For each plugin, check:
@@ -69,7 +69,7 @@ Total context cost at startup: ~X lines injected by SessionStart hooks
 ```
 
 Flag any conflicts:
-- Plugins whose agents overlap with your custom agents (architect, implementer, etc.)
+- Plugins whose agents overlap with your custom agents (troubleshooter, implementer, etc.)
 - Plugins that write plans or files inside project repos
 - Plugins you haven't used in the last 30 days (check ~/.claude command history if available)
 
@@ -106,10 +106,10 @@ diff /tmp/cc-commands-actual /tmp/cc-commands-guide
 
 If there's a diff, report which commands are missing from or extra in the guide.
 
-Do the same for agents:
+Do the same for agents (the guide's `AGENTS` array uses unquoted keys, e.g. `{ name: "implementer", ... }` — scope the extraction to that array so skill/hook `name:` fields scattered elsewhere in the file aren't picked up):
 ```bash
 ls ~/.claude/agents/*.md 2>/dev/null | xargs -I{} basename {} .md | sort > /tmp/cc-agents-actual
-grep -oP '"name":\s*"[^"]*"' ~/Dev/workflow-guide.html 2>/dev/null | grep -oP '"[^"]*"$' | tr -d '"' | sort -u > /tmp/cc-agents-guide
+sed -n '/^const AGENTS = \[/,/^\];/p' ~/Dev/workflow-guide.html 2>/dev/null | grep -oP 'name:\s*"[^"]*"' | grep -oP '"[^"]*"$' | tr -d '"' | sort -u > /tmp/cc-agents-guide
 diff /tmp/cc-agents-actual /tmp/cc-agents-guide
 ```
 
@@ -126,22 +126,14 @@ fi
 **claude-code-setup repo:**
 ```bash
 # Check if claude-code-setup is stale vs live config
-LIVE_HASH=$(find ~/.claude/commands ~/.claude/agents ~/.claude/skills ~/.claude/hooks ~/.claude/rules ~/.claude/CLAUDE.md -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
-REPO_HASH=$(find ~/Dev/claude-code-setup/commands ~/Dev/claude-code-setup/agents ~/Dev/claude-code-setup/skills ~/Dev/claude-code-setup/hooks ~/Dev/claude-code-setup/rules ~/Dev/claude-code-setup/CLAUDE.md -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
+LIVE_HASH=$(find ~/.claude/commands ~/.claude/agents ~/.claude/skills ~/.claude/hooks ~/.claude/CLAUDE.md -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
+REPO_HASH=$(find ~/Dev/claude-code-setup/commands ~/Dev/claude-code-setup/agents ~/Dev/claude-code-setup/skills ~/Dev/claude-code-setup/hooks ~/Dev/claude-code-setup/CLAUDE.md -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
 if [ "$LIVE_HASH" != "$REPO_HASH" ]; then
-  echo "⚠️  claude-code-setup is stale — running sync.py..."
+  echo "⚠️  claude-code-setup is stale — running /sync-setup..."
 fi
 ```
 
-If claude-code-setup is stale, **auto-run the sync**:
-```bash
-cd ~/Dev/claude-code-setup && python scripts/sync.py
-```
-
-After the sync completes:
-1. Run `git status` to see what changed.
-2. If there are changes, commit them: `chore: sync with live ~/.claude/ config`
-3. Do NOT push — just commit locally. The owner pushes manually.
+If claude-code-setup is stale, delegate to the `/sync-setup` command rather than duplicating its logic here — it already handles copying, anonymizing, stale-file cleanup, README counts, and the leak audit. Do NOT push — `/sync-setup` commits locally only; the owner pushes manually.
 
 Report any staleness found for workflow guide and strategic docs. Do NOT fix those — just flag them for the owner.
 

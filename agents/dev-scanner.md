@@ -17,16 +17,7 @@ You are a project discovery agent. You scan the local development directory to b
 
 - **Dev directory**: `~/Dev`
 - **GitHub username**: `{github-username}`
-- **Known portfolio apps** (from the strategic inventory):
-  1. {portfolio-site-url} (portfolio)
-  2. I P Yeah! (ipyeah)
-  3. My Fitness App
-  4. Sttew
-  5. Untilt (ex-Unbiasor)
-  6. My Budget App (ex-My Budget App)
-  7. My Tsundoku (ex-Tsundoku)
-  8. My Art Tool
-  9. My Roadmap App
+- **Known portfolio apps**: read `~/Dev/{portfolio-site}/strategy/inventaire.md` as the source of truth at scan start. Do not hardcode the app list here — it drifts.
 
 ## Step 1 — Enumerate directories
 
@@ -143,12 +134,6 @@ For each project that matches a known portfolio app, compare three names:
 3. **Official name / expected slug**: from the known inventory
 
 Flag any mismatch. The target convention is: folder name = GitHub repo name = kebab-case slug.
-
-Known renames to watch for:
-- Unbiasor → Untilt (folder or repo might still say "unbiasor")
-- My Budget App → My Budget App (folder or repo might still say "my-budget-app")
-- Tsundoku → My Tsundoku (folder or repo might still say "tsundoku")
-- ipyeah.com → I P Yeah! (folder might say "ipyeah.com" or "ipyeah")
 
 ## Step 7 — Orphan detection
 

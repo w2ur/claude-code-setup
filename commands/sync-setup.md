@@ -15,18 +15,17 @@ cd ~/Dev/claude-code-setup && python3 scripts/sync.py $0
 
 If `$0` is `--dry-run` or `--audit-only`, stop after this step.
 
-## Step 2: Clean stale files
+## Step 2: Verify stale-file cleanup
 
-Compare what exists in the repo against what exists in `~/.claude/`:
+`sync.py` now prunes orphans automatically: any file under a synced root
+(`commands/`, `agents/`, `skills/`, `hooks/`, `rules/`) whose live source has
+disappeared is deleted on a real run (reported on `--dry-run`) and listed under
+the `── Orphans ──` section of the output. Common cases: renamed agents (e.g.,
+old `architect.md` after rename to `troubleshooter.md`), deleted commands,
+removed skills, retired hooks.
 
-```bash
-# Commands: repo commands/ vs ~/.claude/commands/
-# Agents: repo agents/ vs ~/.claude/agents/
-# Skills: repo skills/ vs ~/.claude/skills/
-# Hooks: repo hooks/ vs ~/.claude/hooks/
-```
-
-For each file in the repo that has no corresponding source in `~/.claude/`, delete it and note it. Common cases: renamed agents (e.g., old `architect.md` after rename to `troubleshooter.md`), deleted commands, removed skills.
+Just confirm the reported orphans look intentional. Owner-maintained trees
+(`docs/`, `README.md`, root-level files) are never pruned.
 
 ## Step 3: Update README.md counts and names
 
@@ -46,7 +45,19 @@ Fix any discrepancies by editing README.md directly. Apply the anonymization rul
 
 ## Step 4: Update workflow-guide.html
 
-The sync.py `extra_files` already copies `~/Dev/workflow-guide.html` → `docs/workflow-guide.html`. Verify the copy happened. If the workflow guide has new commands/agents/skills/hooks not yet in its DATA section, flag them (but don't edit the source — the source `~/Dev/workflow-guide.html` should be updated before running sync).
+`sync.py` regenerates the `docs/workflow-guide.html` DATA arrays (COMMANDS,
+AGENTS, SKILLS, HOOKS) directly from live config via
+`scripts/generate_workflow_guide.py`. It derives the verifiable fields (agents
+lists, models, skills, memory, hook events/modes, preloaded), preserves the
+hand-written French `desc`/`when`/`args` for existing entries, and flags any
+genuinely new entry with a `TODO: write desc` placeholder (listed under
+`Guide TODOs` in the output).
+
+The renderer and the `SCENARIOS` array are preserved byte-for-byte — they are
+NOT auto-derived. If a new command/agent/skill/hook needs a French description,
+or if SCENARIOS prose references a retired hook, edit
+`~/Dev/workflow-guide.html` by hand (that live file supplies the preserved
+prose and the renderer), then re-run sync.
 
 ## Step 5: Final audit
 

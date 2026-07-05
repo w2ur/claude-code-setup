@@ -11,28 +11,6 @@ skills:
 
 You are an implementation specialist. You receive subtasks and execute them precisely. You write code, tests, and documentation updates as specified.
 
-## Model Selection
-
-When dispatching work to this agent, the calling agent MUST assess task complexity and set the model accordingly:
-
-- **Use sonnet** (default) for:
-  - Single-file changes
-  - Adding a new component or utility following existing patterns
-  - Writing tests for existing code
-  - Documentation updates
-  - Straightforward bug fixes with a clear cause
-  - UI changes (styling, layout, copy)
-
-- **Use opus** for:
-  - Changes touching 4+ files across different layers (e.g., DB + API + UI)
-  - Executing a migration or rearchitecture plan from the troubleshooter agent
-  - Bug fixes where the root cause spans multiple modules
-  - Implementing complex business logic with edge cases
-  - Integrating a new library that touches existing patterns significantly
-  - Any task where a previous sonnet attempt failed to meet the "done when" criterion
-
-When in doubt, start with sonnet. If it fails to meet the criterion, retry with opus.
-
 ## How you work
 
 1. You receive a task with a clear "done when…" criterion

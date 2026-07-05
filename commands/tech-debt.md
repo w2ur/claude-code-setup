@@ -81,12 +81,12 @@ Sort by priority score (descending) and present as a table:
 
 | # | App | Score | Commits (30d) | Last Scan | Vulns | Outdated | Issues |
 |---|-----|-------|---------------|-----------|-------|----------|--------|
-| 1 | untilt | 10 | 23 | never | L1 | 2 high | 14 | 3 console.log |
-| 2 | my-budget-app | 7 | 12 | 2026-01-15 | L2 | 0 | 8 | Node 18 (.nvmrc) |
-| 3 | birdie | 7 | 0 | never | L1 | 1 high | 22 | — |
-| 4 | my-tsundoku | 5 | 5 | 2026-02-20 | L3 | 0 | 3 | — |
-| ... | ... | ... | ... | ... | ... | ... | ... | ... |
-| 12 | kairos | 0 | 0 | 2026-03-01 | L4 | 0 | 1 | — |
+| 1 | untilt | 10 | 23 | never | 2 high | 14 | 3 console.log |
+| 2 | my-budget-app | 7 | 12 | 2026-01-15 | 0 | 8 | Node 18 (.nvmrc) |
+| 3 | birdie | 7 | 0 | never | 1 high | 22 | — |
+| 4 | my-tsundoku | 5 | 5 | 2026-02-20 | 0 | 3 | — |
+| ... | ... | ... | ... | ... | ... | ... | ... |
+| 12 | kairos | 0 | 0 | 2026-03-01 | 0 | 1 | — |
 
 💡 Recommended: review the top 3-4 (untilt, my-budget-app, birdie, my-tsundoku)
 ```
@@ -153,7 +153,6 @@ If an item has been flagged 2+ months without action, mark it as **ESCALATE**.
 ## Deep Review: {app-name}
 
 Scanned: {today} | Previous: {last scan date or "never"}
-Readiness: L{X} → L{Y} ({delta})
 
 ### 🔴 Critical (fix now)
 - ...
@@ -217,14 +216,9 @@ Write a summary to agent memory:
 - Apps reviewed (deep): {count} — {list}
 
 ### Results
-| App | Readiness | Critical | Major | Minor | Auto-fixed | Needs Manual | Escalated |
-|-----|-----------|----------|-------|-------|------------|--------------|-----------|
-| ... | L2→L3 (+1) | ... | ... | ... | ... | ... | ... |
-
-### Readiness Summary
-| App | Before | After | Delta |
-|-----|--------|-------|-------|
-| ... | L2 (12/37) | L3 (18/37) | +6 |
+| App | Critical | Major | Minor | Auto-fixed | Needs Manual | Escalated |
+|-----|----------|-------|-------|------------|--------------|-----------|
+| ... | ... | ... | ... | ... | ... | ... |
 
 ### Next Month
 Top candidates for next session (based on today's triage):

@@ -7,13 +7,17 @@
 INPUT=$(cat)
 
 TOOL_NAME=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_name', ''))" 2>/dev/null)
-FILE_PATH=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('file_path', ''))" 2>/dev/null)
 
-# Determine content field based on tool
+# Determine content and file-path fields based on tool
 if [ "$TOOL_NAME" = "Write" ]; then
+  FILE_PATH=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('file_path', ''))" 2>/dev/null)
   CONTENT=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('content', ''))" 2>/dev/null)
 elif [ "$TOOL_NAME" = "Edit" ]; then
+  FILE_PATH=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('file_path', ''))" 2>/dev/null)
   CONTENT=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('new_string', ''))" 2>/dev/null)
+elif [ "$TOOL_NAME" = "NotebookEdit" ]; then
+  FILE_PATH=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('notebook_path', ''))" 2>/dev/null)
+  CONTENT=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('new_source', ''))" 2>/dev/null)
 else
   exit 0
 fi
@@ -54,6 +58,7 @@ check_regex '(^|[^A-Za-z0-9_])ghs_[A-Za-z0-9]{30,}'    "GitHub app token (ghs_..
 check_regex '(^|[^A-Za-z0-9_])glpat-[A-Za-z0-9_-]{20,}' "GitLab personal access token (glpat-...)"
 
 # Hardcoded assignments — require a non-empty, non-placeholder value
-check_regex '(token|password|secret|api[_-]?key)[[:space:]]*[:=][[:space:]]*"[A-Za-z0-9_\-]{12,}"' "hardcoded credential assignment"
+# (matches both double- and single-quoted values)
+check_regex "(token|password|secret|api[_-]?key)[[:space:]]*[:=][[:space:]]*[\"'][A-Za-z0-9_\-]{12,}[\"']" "hardcoded credential assignment"
 
 exit 0

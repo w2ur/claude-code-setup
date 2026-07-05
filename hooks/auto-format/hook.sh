@@ -25,7 +25,13 @@ dir=$(dirname "$file_path")
 while [ "$dir" != "/" ] && [ "$dir" != "$HOME" ]; do
   case "$file_path" in
     *.js|*.jsx|*.ts|*.tsx|*.json|*.md|*.css|*.scss|*.html|*.yaml|*.yml|*.mjs|*.cjs)
-      if [ -f "$dir/.prettierrc" ] || [ -f "$dir/.prettierrc.json" ] || [ -f "$dir/.prettierrc.js" ] || [ -f "$dir/prettier.config.js" ] || [ -f "$dir/prettier.config.mjs" ]; then
+      has_prettier_config=0
+      if [ -f "$dir/.prettierrc" ] || [ -f "$dir/.prettierrc.json" ] || [ -f "$dir/.prettierrc.js" ] || [ -f "$dir/.prettierrc.yaml" ] || [ -f "$dir/.prettierrc.yml" ] || [ -f "$dir/.prettierrc.toml" ] || [ -f "$dir/.prettierrc.json5" ] || [ -f "$dir/prettier.config.js" ] || [ -f "$dir/prettier.config.mjs" ]; then
+        has_prettier_config=1
+      elif [ -f "$dir/package.json" ] && node -e "const p=require('$dir/package.json'); process.exit(p.prettier ? 0 : 1)" 2>/dev/null; then
+        has_prettier_config=1
+      fi
+      if [ "$has_prettier_config" = "1" ]; then
         (cd "$dir" && npx --no-install prettier --write "$file_path" >/dev/null 2>&1) || true
         exit 0
       fi
