@@ -45,11 +45,11 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 │                          Agents                           │
 │                                                           │
 │  implementer ───── sonnet (simple) / opus (complex)       │
-│  troubleshooter ── opus only (diagnoses, never codes)     │
+│  troubleshooter ── inherit (never weaker than the caller) │
 │  docs-checker ─── sonnet (audits README, CLAUDE.md)       │
 │  portfolio-sync ─ sonnet (cross-repo coherence)           │
 │  portfolio-audit  haiku (compliance checks)               │
-│  dev-scanner ──── sonnet (discovers & inventories)        │
+│  dev-scanner ──── haiku (discovers & inventories)         │
 │                                                           │
 │  ┌────────────┐  ┌──────────────────────────────────┐     │
 │  │   Memory   │  │  Skills (preloaded knowledge)    │     │
@@ -100,9 +100,9 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 | Agent | Model | Memory | What it does | What it doesn't do |
 |-------|-------|--------|--------------|--------------------|
 | **implementer** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) → ![opus](https://img.shields.io/badge/opus-8B5CF6?style=flat-square) | ✅ | Executes tasks with "done when" criteria | Architecture decisions |
-| **troubleshooter** | ![opus](https://img.shields.io/badge/opus-8B5CF6?style=flat-square) | ✅ | Diagnoses structural problems after 2 failed fixes, produces plans | Write production code |
-| **portfolio-sync** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | ✅ | Cross-repo coherence (manifests, JSON, docs) | Creative content |
-| **docs-checker** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | ✅ | Audits + fixes README, CLAUDE.md, URLs | Compliance standards |
+| **troubleshooter** | `inherit` (session model — never weaker than the caller) | ✅ | Diagnoses structural problems after 2 failed fixes, produces plans | Write production code |
+| **portfolio-sync** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Cross-repo coherence (manifests, JSON, docs) | Creative content |
+| **docs-checker** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Audits + fixes README, CLAUDE.md, URLs | Compliance standards |
 | **portfolio-audit** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Read-only compliance check (signature, secrets, tests) | Fix anything |
 | **dev-scanner** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Discovers projects, detects drift, finds orphans | Modify files |
 | **dummy-visitor** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Bilingual FR/EN naive visitor — two-phase perception vs. intent review | Compare to competitors |
