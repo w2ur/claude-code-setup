@@ -210,7 +210,6 @@ cp -r claude-code-setup/commands/ ~/.claude/commands/
 cp -r claude-code-setup/agents/ ~/.claude/agents/
 cp -r claude-code-setup/skills/ ~/.claude/skills/
 cp -r claude-code-setup/hooks/ ~/.claude/hooks/
-cp -r claude-code-setup/rules/ ~/.claude/rules/
 cp claude-code-setup/CLAUDE.md ~/.claude/CLAUDE.md
 ```
 
