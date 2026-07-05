@@ -59,7 +59,7 @@ const HOOKS = [
   { name: "portfolio-yml-validate", event: "PostToolUse → Write|Edit", desc: "Après édition d'un .portfolio.yml : vérifie les champs requis, slug = nom du dossier, sort_order numérique.", mode: "Advisory" },
   { name: "portfolio-drift", event: "PreToolUse → Bash(git commit)", desc: "Warn si package.json / config deploy modifiés dans les fichiers staged mais .portfolio.yml ou README pas touchés.", mode: "Advisory" },
   { name: "stale-readme-guard", event: "PreToolUse → Bash(git push)", desc: "Avant push : vérifie qu'aucun commit non-pushé ne change les deps / config deploy sans toucher au README.md.", mode: "Advisory" },
-  { name: "push-build-gate", event: "PreToolUse → Bash(git push)", desc: "TODO: write desc", mode: "Blocking" },
+  { name: "push-build-gate", event: "PreToolUse → Bash(git push)", desc: "Avant push : lance npm run build dans le repo ciblé. Bloque (exit 2) si le build échoue ou si des warnings apparaissent — remplace l'ancien hook Stop build-check.", mode: "Blocking" },
 ];
 
 const SCENARIOS = [
@@ -79,9 +79,8 @@ const SCENARIOS = [
       {action:"Triage environnement",where:"Navigateur",tool:"Manuel",detail:"Cache ? Service worker ? Hard refresh ? Build stale ?"},
       {action:"Lancer le fix",where:"Claude Code",tool:"/fix description du bug",detail:"Charge la mémoire agent + CLAUDE.md projet, évalue la complexité"},
       {action:"Si 2 échecs → escalade",where:"Claude Code",tool:"/troubleshoot description + contexte des échecs",detail:"STOP obligatoire. Le troubleshooter diagnostique le problème structurel"},
-      {action:"Vérifier le build",where:"Claude Code",tool:"Hook auto (build-check)",detail:"Le hook Stop vérifie automatiquement les warnings"},
-      {action:"Commit + push",where:"Claude Code",tool:"git push",detail:"La mémoire agent est auto-sauvegardée en fin de session"}],
-    traps:["Le piège #1 : service worker cache → toujours tester en navigation privée d'abord","Itérer 3+ fois sur le même bug au lieu d'escalader","Le hook memory-reminder (Stop) rappelle de sauver les leçons quand des commits ont été faits — ne pas l'ignorer"]},
+      {action:"Commit + push",where:"Claude Code",tool:"git push",detail:"Le hook push-build-gate lance le build et bloque le push si erreur ou warning"}],
+    traps:["Le piège #1 : service worker cache → toujours tester en navigation privée d'abord","Itérer 3+ fois sur le même bug au lieu d'escalader"]},
   { id:"big-feature",icon:"◆",title:"Grosse feature",when:"Ajout structurant (sync, nouvelle section, refacto majeur)",category:"dev",frequency:"Régulier",
     steps:[
       {action:"Design upfront",where:"Claude Code",tool:"Plan mode ou brainstorm",detail:"Utiliser le plan mode natif ou /superpowers:brainstorm pour concevoir la feature"},
@@ -120,7 +119,7 @@ const SCENARIOS = [
       {action:"Audit sur une app",where:"Claude Code (dans le projet)",tool:"/audit https://url-de-l-app",detail:"Lance docs-checker + portfolio-audit en parallèle"},
       {action:"Audit sur tout le portfolio",where:"Claude Code",tool:"/sync puis rapports sub-agents",detail:"Le sync dispatche docs-checker et portfolio-audit sur chaque projet modifié"},
       {action:"Fixer les violations",where:"Claude Code",tool:"/fix violation décrite",detail:"Footer manquant, console.log, secrets, .gitignore incomplet..."},
-      {action:"Vérifier zero-warning",where:"Claude Code",tool:"npm run build",detail:"Le hook build-check le fait auto, mais double-check avant publish"}],
+      {action:"Vérifier zero-warning",where:"Claude Code",tool:"npm run build",detail:"Le hook push-build-gate le vérifie auto au push, mais double-check avant publish reste utile"}],
     traps:["Publier sur LinkedIn une app qui n'a pas le footer signature","Oublier les secrets dans un repo rendu public","Ignorer les warnings 'non critiques' — ils s'accumulent"]},
   { id:"tech-debt",icon:"⚙",title:"Tech debt (mensuel)",when:"Session technique mensuelle — triage tout, deep review sur ton choix",category:"maintenance",frequency:"Mensuel",
     steps:[
@@ -242,7 +241,7 @@ function App(){
           <p style={{fontSize:11,color:"#94A3B8",lineHeight:1.5}}>{h.desc}</p>
         </div>))}
         <div style={{padding:"12px 16px",borderRadius:8,background:"#1E293B",marginTop:8}}>
-          <p style={{fontSize:11,color:"#64748B",lineHeight:1.6}}>La plupart des hooks sont <strong style={{color:"#10B981"}}>advisory</strong> (ils affichent des warnings sans bloquer) — <strong>sauf secret-scan qui bloque</strong> (exit 2) si un secret est détecté. Chaque hook vit dans son dossier <code>~/.claude/hooks/&lt;nom&gt;/</code> ; les deux hooks Stop (build-check, memory-reminder) sont sous <code>~/.claude/hooks/scripts/</code>.</p>
+          <p style={{fontSize:11,color:"#64748B",lineHeight:1.6}}>La plupart des hooks sont <strong style={{color:"#10B981"}}>advisory</strong> (ils affichent des warnings sans bloquer) — <strong>sauf secret-scan et push-build-gate qui bloquent</strong> (exit 2) si un secret est détecté ou si le build échoue/a des warnings. Chaque hook vit dans son dossier <code>~/.claude/hooks/&lt;nom&gt;/</code>.</p>
         </div>
       </div>)}
 
