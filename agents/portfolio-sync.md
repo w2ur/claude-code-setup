@@ -11,6 +11,7 @@ description: |
   - "Run portfolio-sync --report-only" — scan and report without fixing
   - "Run portfolio-sync my-editor-app" — sync a single project
 model: sonnet
+memory: project
 tools: Read, Write, Edit, Bash, Glob, Grep
 skills:
   - portfolio-conventions
