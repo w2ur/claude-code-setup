@@ -168,8 +168,8 @@ Scanned: {today} | Previous: {last scan date or "never"}
 
 ### Recommended Actions
 1. Auto-fixable: npm audit fix, remove 2 unused deps, remove 4 console.log
-2. Needs review: Next.js 15→16 migration (schedule /troubleshoot)
-3. Escalate: localStorage migration (3 months unfixed → /troubleshoot)
+2. Needs review: Next.js 15→16 migration (dispatch the `troubleshooter` agent)
+3. Escalate: localStorage migration (3 months unfixed → `troubleshooter` agent)
 ```
 
 ## Phase 3 — Fix (if owner approves)
@@ -191,9 +191,9 @@ git add -A && git commit -m "chore(tech-debt): {description}"
 ```
 
 **Flag for later:**
-- Major upgrades → note for next `/troubleshoot` session
+- Major upgrades → note for a dedicated follow-up session
 - Performance regressions → note for investigation
-- Escalated items → create a concrete plan or escalate to `/troubleshoot`
+- Escalated items → create a concrete plan, or escalate to the `troubleshooter` agent (cascade L3)
 
 Do NOT push. The owner reviews and pushes.
 
@@ -227,6 +227,6 @@ Top candidates for next session (based on today's triage):
 
 ### Manual Actions
 1. Review and push commits: {list of apps with commits}
-2. Schedule /troubleshoot for: {list of major migrations}
+2. Dispatch the `troubleshooter` agent for: {list of major migrations}
 3. Escalated items requiring decision: {list}
 ```

@@ -25,7 +25,7 @@ All code, comments, identifiers, commit messages → English. User-facing conten
 
 Default to parallel dispatch for any 2+ independent tasks. Specify the model when dispatching:
 
-- **haiku** — passive audits (portfolio-audit, docs-checker).
+- **haiku** — passive audits (portfolio-audit). `docs-checker` is sonnet: it edits files and verifies URLs, so it is not a passive audit.
 - **sonnet** — default implementation, single-file changes, clear scope.
 - **opus** — 4+ files across layers, architecture analysis, retry after failed sonnet. Supports fast mode for latency-sensitive loops.
 
@@ -35,13 +35,16 @@ For multi-stage fan-outs (audit/migrate/review across many targets), use the Wor
 
 ## Session handoff and memory
 
-Three memory systems, each with a distinct role — don't duplicate across them:
+Two memory systems, each with a distinct role — don't duplicate across them:
 
 - **Auto-memory** (`~/.claude/projects/-Users-{username}-Dev/memory/`, indexed by `MEMORY.md`): session handoffs and durable cross-session knowledge (user preferences, project state, feedback). Write a condensed version automatically at the end of significant work — no permission needed.
 - **Per-agent memory** (`~/.claude/agent-memory/<agent>/`): operational knowledge scoped to one agent (patterns, past corrections for that agent's domain).
-- **claude-mem**: session narrative and observation history. Don't duplicate its content into the other two.
 
 Stop using the bare phrase "agent memory" for auto-memory — it collides with the per-agent system's name.
+
+Plans are not a memory system: they live in `~/.claude/plans/`, never in a repo.
+
+**claude-mem was removed on 2026-07-25 (decision M13).** It was a third system holding session narrative and observation history. It went unretrieved through a five-hour, 27-repo review while costing ~1.4 GB on disk and a `$CMEM` injection at every session start. Do not reinstall it, and do not compensate by writing session narrative into the two systems above — that narrative already lives in the transcripts.
 
 ## Context management
 
@@ -56,14 +59,21 @@ Stop using the bare phrase "agent memory" for auto-memory — it collides with t
 - New projects default `sort_order: 99`.
 - Strategic docs live in `~/Dev/{portfolio-site}/strategy/`: `inventaire.md`, `charte-coherence.md`, `pipeline.md`, `strategie-visibilite.md`. Read when relevant; flag in handoff when they need updating (owner commits separately).
 - When changing commands/agents/skills/hooks in `~/.claude/`: update `~/Dev/workflow-guide.html` DATA section; if architectural, flag `strategy/charte-coherence.md`.
-- Monthly `/tech-debt` Phase 1 triage runs via a local crontab entry (1st of month, 8:07am — `/tech-debt --triage-only`, output logged to `~/.claude/tech-debt-cron.log`), not a cloud `/schedule` routine: cloud routines run in an isolated sandbox with no access to the local `~/Dev` filesystem, so they can't read `.portfolio.yml`/git state. Phase 2 deep-review selections stay manual. Items flagged 2+ months without action escalate to `/troubleshoot`.
+- When changing commands/agents/skills/hooks, also sweep **every kept command** for references to what you deleted — not just CLAUDE.md. A prune that only cleans the global file leaves dangling `/command` refs inside commands that still run.
+- **Two local crontab entries, deliberately offset.** Both are local, not cloud `/schedule` routines: cloud routines run in an isolated sandbox with no access to the local `~/Dev` filesystem, so they can't read `.portfolio.yml`/git state.
+  - **1st, 8:07am** — `/tech-debt --triage-only` → `~/.claude/tech-debt-cron.log`. Phase 2 deep-review selections stay manual. Items flagged 2+ months without action escalate via the L1→L2→L3 cascade (see Bug handling) to the `troubleshooter` agent.
+  - **15th, 8:07am** — `scripts/cleanup-cron.sh` → `~/.claude/cleanup-cron.log`. Runs the **script, not `claude -p "/cleanup"`**: `/cleanup` makes git commits at Step 1 and can fire `/sync-setup` at Step 4, and its CONFIRM tier is interactive by design — none of that is safe unattended. The wrapper covers **Step 0's AUTO tier only** and logs everything else as an `owner action:` line.
+  - Any cron entry invoking these scripts **needs an explicit `PATH=`**. Under cron's default PATH `claude` is unresolvable, and `disk-hygiene.sh` guards its marketplace check with `command -v claude` — so the check silently degrades to a skip, permanently, which is exactly the orphan-marketplace failure the sweep exists to catch.
+- **`~/.claude/scripts/` holds three no-model scripts** — deterministic work gets a script, not an agent. `dev-scanner.sh` (read-only `~/Dev` survey, `--json`), `disk-hygiene.sh` (the disk sweep; **the source of truth for every retention number** — never restate them in command prose, they drift), `cleanup-cron.sh` (the unattended wrapper). All honour `CLAUDE_DIR` so they can be tested against a dirtied copy.
+- `/cleanup` opens with **Step 0 — Disk Hygiene**, which calls `disk-hygiene.sh`. Two tiers: **AUTO** applies unasked (ephemeral state to stated retentions, plus plan *archiving* — it never deletes a plan); **CONFIRM** (stale `projects/` transcript dirs, plugin temp dirs) only under `--yes-projects` / `--yes-plugins`. Orphan marketplaces are **reported, never auto-removed** — deleting the directory alone lets `plugins/known_marketplaces.json` re-clone it on the next session, daemons included. Deregister first with `claude plugin marketplace remove <name>`, then delete, then re-check in a fresh session.
+- Plans archive after **21 days**, not 90; long-running working documents stay alive via the script's HOLD list, not by widening the cutoff.
 
 ## Quality
 
 - Zero build warnings. Exceptions → documented in the project CLAUDE.md with justification.
 - Conventional Commits. One logical change per commit.
-- Tests are systematic: unit for all logic, property tests for pure transforms (see `property-testing` skill), regression test alongside every bug fix.
-- Implementer checklist (pre/during/post code): `code-quality` skill.
+- Tests are systematic: unit for all logic, regression test alongside every bug fix (comment format: `// Regression: <commit-hash> — <bug description>`); property tests for pure transforms via `fast-check` (TS) / `hypothesis` (Python), file `foo.property.test.ts`. Financial-math arbitraries: `noNaN`/`noDefaultInfinity`, ≥1000 runs, 1e-6 tolerance (not 1e-10 — too tight at scale).
+- After plan-driven sub-agent work, re-check every plan requirement against the code before reporting done (skip for direct single-file fixes). Service worker cache is the #1 false positive for "my change isn't showing" — rule it out before deeper debugging.
 - Before merging any nontrivial diff: run `/code-review` (high effort; ultra for multi-file or cross-layer changes). Sub-agent-produced diffs are always reviewed before merge; pair with `/verify` when the change has a runtime surface.
 
 ## Generalization check
