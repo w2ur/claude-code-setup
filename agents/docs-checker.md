@@ -50,7 +50,7 @@ Compare the README.md against the actual project state:
 
 - **Tech stack listed** vs **dependencies in package.json / requirements.txt / pyproject.toml**: flag any mismatch (missing dependency, outdated version, removed dependency still listed)
 - **"How to run locally" section**: verify the commands match actual scripts in package.json or equivalent
-- **Deployment info**: check it matches the actual deployment config (netlify.toml, vercel.json, wrangler.toml)
+- **Deployment info**: check it matches the actual deployment config (netlify.toml, vercel.json, wrangler.toml). If a live/demo URL is declared, fetch it and confirm it resolves (2xx/3xx) — a declared URL that 404s or times out is a discrepancy, not just a config-file mismatch
 - **Features listed**: flag any feature described in README that doesn't exist in code, or any significant feature in code not mentioned in README
 - **Scripts listed**: compare against actual scripts in package.json or Makefile
 - **Author signature**: verify footer "Made with care by {author-first-name}" with link to https://{portfolio-site-url} is present
@@ -63,7 +63,7 @@ If a project-level CLAUDE.md exists:
 - Verify the Project Overview is still accurate
 - Verify the Tech Stack section matches actual dependencies
 - Verify Development commands match actual scripts
-- Verify Deployment info is current
+- Verify Deployment info is current. If a live/demo URL is declared, fetch it and confirm it resolves — don't trust the string alone
 - Check for any duplicated rules from the global CLAUDE.md — remove them
 
 If no project-level CLAUDE.md exists, create one covering: project overview, tech stack, dev/build commands, deployment, and any project-specific conventions that override or extend the global CLAUDE.md.
@@ -72,7 +72,7 @@ For each discrepancy found, fix the CLAUDE.md directly. Commit: `docs: update CL
 
 ## 5. URL verification (if a canonical URL is provided)
 
-If the user specifies a canonical URL for the project (e.g., "this site is available at https://budget.example.com"), verify that all references to the app's URL are correct across:
+If the user specifies a canonical URL for the project (e.g., "this site is available at https://budget.example.com"), first fetch that URL and confirm it actually resolves (2xx/3xx) — do not assume it's live just because it was stated. Then verify that all references to the app's URL are correct across:
 
 - README.md (live site links, deployment section, badges)
 - CLAUDE.md (deployment section, project overview)
@@ -86,7 +86,7 @@ Search broadly:
 grep -rn "https\?://" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.html" --include="*.json" --include="*.toml" --include="*.md" . | grep -v node_modules | grep -v .next | grep -v dist
 ```
 
-For each outdated or mismatched URL found, fix it directly. Commit: `fix: update URLs to canonical domain`
+Report both directions: any reference pointing to a URL other than the canonical one (declared-but-wrong), and any live/demo URL hardcoded in the codebase that isn't the canonical one and wasn't declared to you (present-but-undeclared). For each outdated or mismatched URL found, fix it directly. Commit: `fix: update URLs to canonical domain`
 
 If no canonical URL is provided, skip this step.
 

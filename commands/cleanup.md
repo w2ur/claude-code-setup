@@ -1,6 +1,6 @@
 ---
-description: Clean up stale plans from repos, audit plugin health, and compact agent memory files.
-argument-hint: [optional: plans-only | plugins-only | memory-only]
+description: Sweep ~/.claude disk hygiene to stated retentions, clean up stale plans from repos, audit plugin health, and compact agent memory files.
+argument-hint: [optional: disk-only | plans-only | plugins-only | memory-only]
 model: sonnet
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
@@ -9,10 +9,48 @@ Run housekeeping tasks across the development environment.
 
 ## Scope
 
+- If `$0` is `disk-only`: run only Step 0 (disk hygiene).
 - If `$0` is `plans-only`: run only the plans cleanup.
 - If `$0` is `plugins-only`: run only the plugin audit.
 - If `$0` is `memory-only`: run only the memory compaction.
-- If `$0` is empty: run all three.
+- If `$0` is empty: run all steps.
+
+## Step 0 — Disk Hygiene
+
+Run the deterministic disk-hygiene sweep. It is the source of truth for all
+retention numbers (AUTO tier days/keep-counts, CONFIRM tier rules) — do not
+restate those numbers here, they will drift out of sync with the script.
+
+1. Show the owner every action the sweep would take:
+   ```bash
+   ~/.claude/scripts/disk-hygiene.sh plan
+   ```
+   Present the grouped, per-category report as-is.
+
+2. Apply the AUTO tier without asking (it never touches anything outside
+   the retention rules encoded in the script, and plans are archived, never
+   deleted):
+   ```bash
+   ~/.claude/scripts/disk-hygiene.sh apply
+   ```
+
+3. For the CONFIRM tier — stale `projects/` transcript dirs and plugin
+   temp/whitespace dirs reported by the `plan` run above — present the
+   owner with the specific paths and their sizes (e.g. `du -sh <path>`
+   for each) and ask for explicit confirmation. Only on an explicit yes,
+   re-run with the corresponding flag(s):
+   ```bash
+   ~/.claude/scripts/disk-hygiene.sh apply --yes-projects
+   ~/.claude/scripts/disk-hygiene.sh apply --yes-plugins
+   ```
+   (both flags can be combined in one `apply` call if the owner confirms both.)
+
+4. Any `REPORT`-verb lines (currently: marketplaces with no enabled plugin)
+   are owner actions, surfaced verbatim with the `run: claude plugin
+   marketplace remove <name> (then delete)` instruction from the script's
+   reason field. Do NOT run `claude plugin marketplace remove` yourself —
+   deregistering a marketplace is a decision for the owner, not something
+   this command automates.
 
 ## Step 1 — Plans Cleanup
 
@@ -35,13 +73,6 @@ For each file found:
 2. If tracked: `git rm --cached <file>` (untrack but keep on disk)
 3. Check if the parent directory pattern is in `.gitignore`. If not, add it.
 4. Commit: `chore: remove plan files from git tracking`
-
-Also clean up stale plans in `~/.claude/plans/`:
-```bash
-# Show plans older than 30 days
-find ~/.claude/plans/ -name "*.md" -mtime +30 -type f 2>/dev/null
-```
-Report how many stale plans exist. Ask before deleting.
 
 ## Step 2 — Plugin Audit
 
@@ -124,14 +155,19 @@ fi
 ```
 
 **claude-code-setup repo:**
+**Do NOT compare live and repo file hashes.** The repo copy is deliberately anonymized by `sync.py` (personal paths, usernames and app names are rewritten), so its bytes can never equal the live bytes. A hash comparison reports "stale" on every run, for ever, and is therefore no signal at all.
+
+The real question is whether the repo is a faithful *anonymized image* of live. `sync.py --dry-run` answers it directly — it is read-only and writes nothing:
+
 ```bash
-# Check if claude-code-setup is stale vs live config
-LIVE_HASH=$(find ~/.claude/commands ~/.claude/agents ~/.claude/skills ~/.claude/hooks ~/.claude/CLAUDE.md -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
-REPO_HASH=$(find ~/Dev/claude-code-setup/commands ~/Dev/claude-code-setup/agents ~/Dev/claude-code-setup/skills ~/Dev/claude-code-setup/hooks ~/Dev/claude-code-setup/CLAUDE.md -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1)
-if [ "$LIVE_HASH" != "$REPO_HASH" ]; then
-  echo "⚠️  claude-code-setup is stale — running /sync-setup..."
-fi
+cd ~/Dev/claude-code-setup && python3 scripts/sync.py --dry-run
 ```
+
+Read two lines of its summary:
+- `Orphans: N` — files in the repo whose live source is gone. **N > 0 means stale.**
+- Whether any per-file line says `(would update)` / `(would create)` rather than `(no changes)` — **any of those means stale.**
+
+Both clean, and an untracked-file check on the repo comes back empty → in sync.
 
 If claude-code-setup is stale, delegate to the `/sync-setup` command rather than duplicating its logic here — it already handles copying, anonymizing, stale-file cleanup, README counts, and the leak audit. Do NOT push — `/sync-setup` commits locally only; the owner pushes manually.
 
@@ -142,11 +178,16 @@ Report any staleness found for workflow guide and strategic docs. Do NOT fix tho
 ```
 ## Cleanup Report
 
+### Disk hygiene
+- AUTO tier actions applied: [count] (breakdown per category from the script's SUMMARY line)
+- Space freed: [size, e.g. via `du -sh` before/after or summed deleted file sizes]
+- Awaiting owner confirmation: [count] stale projects/ dirs, [count] plugin temp/whitespace dirs
+- Marketplace REPORT items (owner action needed): [list or "none"]
+
 ### Plans
 - Found in repos: [count] files across [count] projects
 - Untracked from git: [count]
 - .gitignore updated: [count] projects
-- Stale plans in ~/.claude/plans/: [count] (older than 30 days)
 
 ### Plugins
 - Installed: [count]

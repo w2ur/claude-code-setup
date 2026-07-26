@@ -37,26 +37,26 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 ```
 ┌───────────────────────────────────────────────────────────┐
 │                    You type a command                     │
-│       /fix  /sync  /audit  /troubleshoot  ...              │
+│   /audit  /cleanup  /new-app  /next  /sync  /tech-debt    │
+│                        /sync-setup                        │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
 ┌───────────────────────────────────────────────────────────┐
 │                          Agents                           │
 │                                                           │
-│  implementer ───── sonnet (simple) / opus (complex)       │
+│  implementer ───── sonnet                                 │
 │  troubleshooter ── inherit (never weaker than the caller) │
 │  docs-checker ─── sonnet (audits README, CLAUDE.md)       │
 │  portfolio-sync ─ sonnet (cross-repo coherence)           │
 │  portfolio-audit  haiku (compliance checks)               │
-│  dev-scanner ──── haiku (discovers & inventories)         │
+│  dummy-visitor ── sonnet (bilingual naive-visitor review) │
 │                                                           │
 │  ┌────────────┐  ┌──────────────────────────────────┐     │
 │  │   Memory   │  │  Skills (preloaded knowledge)    │     │
 │  │ per agent  │  │  • portfolio-conventions         │     │
-│  │ per project│  │  • code-quality                  │     │
-│  └────────────┘  │  • property-testing              │     │
-│                  └──────────────────────────────────┘     │
+│  │ per project│  │                                  │     │
+│  └────────────┘  └──────────────────────────────────┘     │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
@@ -64,10 +64,11 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 │                          Hooks                            │
 │                                                           │
 │  stale-readme-guard  "Docs still current?"     (advisory) │
-│  build-check ────── "Any warnings left?"       (advisory) │
-│  memory-reminder ── "Save what you learned"    (advisory) │
-│  fix-loop-detector  "Same file 3× in 30min?"  (advisory) │
-│  secret-scan ────── "API key in source?"       (blocking) │
+│  auto-format ─────── "Format the file"         (advisory) │
+│  portfolio-yml-validate "Manifest valid?"      (advisory) │
+│  portfolio-drift ─── "Docs staged with code?"  (advisory) │
+│  secret-scan ─────── "API key in source?"      (blocking) │
+│  push-build-gate ─── "Build clean before push?" (blocking)│
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -75,71 +76,66 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 > For a visual, interactive version of this architecture, [open the workflow guide](https://w2ur.github.io/claude-code-setup/workflow-guide.html).
 
 <details>
-<summary><strong>Commands (8)</strong> — entry points that orchestrate everything</summary>
+<summary><strong>Commands (7)</strong> — entry points that orchestrate everything</summary>
 
 <br>
 
 | Command | What it does | When to use it |
 |---------|-------------|----------------|
-| `/fix` | Bug fix with 3-level escalation cascade (direct → debugging → troubleshooter) | Something's broken |
 | `/sync` | Portfolio-wide manifest sync + JSON generation | Weekly maintenance |
 | `/audit` | Parallel docs-checker + portfolio-audit | Before releases, compliance sweeps |
-| `/troubleshoot` | Escalate to opus for structural diagnosis after 2 failed fixes | Fix keeps failing |
 | `/new-app` | Full scaffold with portfolio compliance from day one | Starting a new project |
-| `/cleanup` | Stale plans, plugin audit, memory compaction | Weekly housekeeping |
-| `/tech-debt` | Monthly triage (with readiness scoring) → deep review → auto-fix | Monthly health check |
+| `/next` | Executes the next unblocked task from a multi-phase plan track, then stops | One session per phase of a large plan |
+| `/cleanup` | Disk hygiene sweep of `~/.claude` first, then stale plans, plugin audit, memory compaction | Weekly housekeeping |
+| `/tech-debt` | Monthly triage → deep review → auto-fix | Monthly health check |
 | `/sync-setup` | Sync this repo from live `~/.claude/` config (anonymize + audit) | After workflow changes |
 
 </details>
 
 <details>
-<summary><strong>Agents (8)</strong> — the workers, each with a specific role and model</summary>
+<summary><strong>Agents (6)</strong> — the workers, each with a specific role and model</summary>
 
 <br>
 
 | Agent | Model | Memory | What it does | What it doesn't do |
 |-------|-------|--------|--------------|--------------------|
-| **implementer** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) → ![opus](https://img.shields.io/badge/opus-8B5CF6?style=flat-square) | ✅ | Executes tasks with "done when" criteria | Architecture decisions |
+| **implementer** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | ✅ | Executes tasks with "done when" criteria | Architecture decisions |
 | **troubleshooter** | `inherit` (session model — never weaker than the caller) | ✅ | Diagnoses structural problems after 2 failed fixes, produces plans | Write production code |
 | **portfolio-sync** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Cross-repo coherence (manifests, JSON, docs) | Creative content |
-| **docs-checker** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Audits + fixes README, CLAUDE.md, URLs | Compliance standards |
+| **docs-checker** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Audits + fixes README, CLAUDE.md, verifies declared URLs actually resolve | Compliance standards |
 | **portfolio-audit** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Read-only compliance check (signature, secrets, tests) | Fix anything |
-| **dev-scanner** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Discovers projects, detects drift, finds orphans | Modify files |
 | **dummy-visitor** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Bilingual FR/EN naive visitor — two-phase perception vs. intent review | Compare to competitors |
-| **deploy-doctor** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Pattern-matches deploy logs, returns root-cause hypothesis | Edit code or rerun builds |
 
-The model selection matters. I don't pay opus prices for a compliance check that haiku handles perfectly. And I don't trust sonnet with a migration that touches 8 files across 3 layers — that's opus territory.
+The model selection matters. I don't pay opus prices for a compliance check that haiku handles perfectly. Heavier, cross-file work doesn't live on a fixed agent — it escalates by dispatch, at the model tier the task calls for.
 
 </details>
 
 <details>
-<summary><strong>Skills (5)</strong> — preloaded knowledge and user-invocable utilities</summary>
+<summary><strong>Skills (1)</strong> — preloaded knowledge and user-invocable utilities</summary>
 
 <br>
 
 - **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, manifest format, quality gates, display order). Loaded into `troubleshooter` and `portfolio-sync`.
-- **code-quality**: before/during/after checklist, common pitfalls, elegance check, spec compliance check. Loaded into `implementer`.
-- **property-testing**: patterns for property-based tests (roundtrip, conservation, idempotence, no-crash) using fast-check (TS) or hypothesis (Python). Loaded into `implementer`.
-- **deploy-status** *(user-only)*: HTTP status + latest CI run for every production app in the portfolio, in one command.
-- **fresh-session** *(user-only)*: audits `~/.claude/` for startup-cost drift (CLAUDE.md size, plugin count, registered agents) and flags the biggest contributor.
+
+The other four skills I used to run here are gone — their content was either already inferable by the agents that needed it, or better placed directly in the global CLAUDE.md's quality section, where it can't drift out of sync with a separate file.
 
 Why skills instead of just writing longer agent prompts? Because skills are reusable across agents, versionable independently, and don't bloat agents that don't need them.
 
 </details>
 
 <details>
-<summary><strong>Hooks (6)</strong> — 5 advisory + 1 blocking</summary>
+<summary><strong>Hooks (6)</strong> — 4 advisory + 2 blocking</summary>
 
 <br>
 
 - **secret-scan** (PreToolUse → Write|Edit): blocks writes containing API key patterns (`sk-`, `AKIA`, `ghp_`, etc.), excludes `.env.example` *(blocking)*
-- **fix-loop-detector** (PostToolUse → Bash): warns when the same file gets 3+ `fix:` commits in 30 minutes — a signal to escalate *(advisory)*
+- **push-build-gate** (PreToolUse → Bash `git push`): runs the build before the push goes out and blocks on failure or compiler warnings *(blocking)*
 - **auto-format** (PostToolUse → Write|Edit): runs Prettier / Ruff / rustfmt on the edited file if the project has the corresponding config — silent if not *(advisory)*
 - **portfolio-yml-validate** (PostToolUse → Write|Edit `*.portfolio.yml`): checks required fields, slug = folder name, numeric `sort_order`, valid `surface_type` *(advisory)*
 - **portfolio-drift** (PreToolUse → Bash `git commit`): warns when dependency/deploy files are staged but `.portfolio.yml` / README.md aren't *(advisory)*
 - **stale-readme-guard** (PreToolUse → Bash `git push`): checks unpushed commits for deploy/dep changes without a README.md update *(advisory)*
 
-Most hooks are advisory — in a system where I don't review code, I need Claude Code to exercise judgment, not pass checklists. The one exception is secret scanning: accidentally committing an API key is irreversible enough to justify blocking.
+Most hooks are advisory — in a system where I don't review code, I need Claude Code to exercise judgment, not pass checklists. There are two blocking exceptions now: secret scanning, because accidentally committing an API key is irreversible, and the push build gate, because shipping a broken build is a different kind of irreversible — it's live the moment it deploys.
 
 </details>
 
@@ -160,7 +156,7 @@ flowchart LR
     C -->|works| Z
     C -->|"still broken"| D["🛑 STOP"]
     D --> E["L3: Troubleshooter
-    opus · structural diagnosis"]
+    inherit · structural diagnosis"]
     E --> F["📋 New plan"]
     F --> G["🔧 Implementer
     executes plan"]
@@ -190,7 +186,7 @@ These aren't arbitrary choices. Each one came from a specific failure. Read [the
 |----------|------------------------|-------------------|
 | 3-level escalation cascade | Binary "2 fails → architect" | The old binary rule skipped a crucial step: structured debugging. Level 2 (systematic debugging skill) catches tricky-but-not-architectural bugs without invoking opus. |
 | Troubleshooter never codes | One agent diagnoses and implements | When the same agent diagnoses and codes, it's biased toward solutions it can implement quickly rather than the right solution. |
-| Advisory hooks + 1 blocker | All advisory or all blocking | Most hooks should nudge, not gate. The exception: secret scanning is blocking because committing an API key is irreversible. |
+| Advisory hooks + 2 blockers | All advisory or all blocking | Most hooks should nudge, not gate. The exceptions: secret scanning (an irreversible leak) and the push build gate (an irreversible bad deploy) both block. |
 | Property-based tests for invariants | Unit tests only | Unit tests verify examples. Property tests verify *laws* — "transfers preserve totals" catches edge cases no human would write. |
 | Model selection per task | Always use the best model | Haiku is perfect for audits. Sonnet handles 80% of implementation. Opus is for architecture and complex cross-file work. Matching model to task is a quality decision, not just a cost one. |
 | Agent memory over lesson files | Flat markdown files per project | Files had no structure, no auto-injection, no compaction. Agent memory is read at startup, written automatically after corrections, and split when it grows too large. |
@@ -217,7 +213,7 @@ Then edit `CLAUDE.md` and the agent files to replace `w2ur`, `{portfolio-site}`,
 
 ### Option B: Cherry-pick what you need
 
-The setup is modular. Want just the escalation system? Copy `/fix`, the `implementer` agent, and the `troubleshooter` agent. Want just the maintenance workflow? Copy `/cleanup` and `/tech-debt`. Each piece works independently — the full system is better, but partial adoption works fine.
+The setup is modular. Want just the escalation system? Copy the global `CLAUDE.md`'s bug-handling cascade, the `implementer` agent, and the `troubleshooter` agent. Want just the maintenance workflow? Copy `/cleanup` and `/tech-debt`. Each piece works independently — the full system is better, but partial adoption works fine.
 
 ### Option C: Read and adapt
 
@@ -230,7 +226,7 @@ Browse the files, understand the patterns, and build your own version. The [phil
 
 <br>
 
-**If you have 1-3 apps:** You don't need half of this. Drop `portfolio-sync`, `portfolio-audit`, `dev-scanner` — they exist because I have 10+ repos to keep in sync. Keep `/fix`, `/troubleshoot`, the two core agents, and the global `CLAUDE.md`. That alone is a massive upgrade over bare Claude Code.
+**If you have 1-3 apps:** You don't need half of this. Drop `portfolio-sync` and `portfolio-audit` — they exist because I have 10+ repos to keep in sync. Keep the `implementer` and `troubleshooter` agents, the escalation cascade in the global `CLAUDE.md`, and the two blocking hooks. That alone is a massive upgrade over bare Claude Code.
 
 **If you work in a team:** The escalation rules still apply — they're about AI behavior, not team size. The `implementer`/`troubleshooter` split actually maps well to teams where juniors implement and seniors review. The memory system needs thought, though — per-developer or shared? I haven't solved that one.
 
@@ -250,6 +246,8 @@ Browse the files, understand the patterns, and build your own version. The [phil
 ## Maintenance
 
 This repo stays in sync with my actual `~/.claude/` setup via `/sync-setup` — a command that runs a Python sync script to copy, anonymize, and audit for data leaks. After any workflow change (new agent, renamed command, new hook), I run `/sync-setup` and the repo updates itself. See [`scripts/`](scripts/) for details.
+
+Known gap: the global `CLAUDE.md` also references three helper shell scripts under `~/.claude/scripts/` (`dev-scanner.sh`, `disk-hygiene.sh`, `cleanup-cron.sh`) that aren't published in this repo yet.
 
 If something looks outdated, it probably means I changed my setup and haven't synced yet. Open an issue — it's a good nudge.
 

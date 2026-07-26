@@ -4,9 +4,6 @@ description: Executes well-scoped implementation tasks with clear specifications
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 memory: project
-skills:
-  - code-quality
-  - property-testing
 ---
 
 You are an implementation specialist. You receive subtasks and execute them precisely. You write code, tests, and documentation updates as specified.

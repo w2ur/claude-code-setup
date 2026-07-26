@@ -18,43 +18,35 @@
 <!--
   ============================================================================
   DATA SECTION — Claude Code: edit data here, don't touch the renderer below.
-  Last updated: 2026-07-03
+  Last updated: 2026-07-26
   ============================================================================
 -->
 <script id="workflow-data">
 const COMMANDS = [
   { name: "/sync", args: "[project-name | --report-only]", desc: "Synchronise le portfolio : scanne les .portfolio.yml, cross-check avec les repos, fixe les divergences, régénère portfolio-apps.json.", agents: ["portfolio-sync", "docs-checker", "portfolio-audit"], when: "Après des changements sur une ou plusieurs apps, ou 1×/semaine" },
-  { name: "/fix", args: "$0 (description du problème)", desc: "Charge la mémoire agent et le CLAUDE.md du projet, évalue la complexité, dispatche à l'implementer (sonnet ou opus selon la taille). Cascade d'escalade auto : Level 1 → Level 2 (systematic-debugging) → Level 3 (troubleshooter).", agents: ["implementer", "troubleshooter (si escalade L3)"], when: "Bug fix, petite feature, correction rapide" },
   { name: "/new-app", args: "$0 (nom-en-kebab-case)", desc: "Scaffold complet conforme à la charte : repo Git, README, CLAUDE.md, .portfolio.yml, .gitignore, premier commit, repo GitHub privé.", agents: ["implementer"], when: "Création d'une nouvelle app dans le portfolio" },
   { name: "/audit", args: "[URL canonique optionnelle]", desc: "Lance docs-checker (sonnet) et portfolio-audit (haiku) en parallèle sur le projet courant. Produit un rapport consolidé.", agents: ["docs-checker", "portfolio-audit"], when: "Avant un release, une publication, ou pendant un compliance sweep" },
-  { name: "/troubleshoot", args: "$0 (problème + ce qui a été tenté)", desc: "Escalade directe vers l'agent troubleshooter (opus). Diagnostic structural après 2 échecs d'implémentation. Produit un plan, jamais du code.", agents: ["troubleshooter"], when: "Escalade après 2 échecs sur /fix, ou override manuel" },
-  { name: "/cleanup", args: "[plans-only | plugins-only | memory-only]", desc: "Nettoie les plans orphelins dans les repos, audite les plugins installés, compacte la mémoire agent si > 200 lignes, et vérifie si le workflow guide et les docs stratégiques sont à jour par rapport à la config réelle.", agents: [], when: "1×/semaine en hygiène, ou quand les plans s'accumulent" },
+  { name: "/cleanup", args: "[disk-only | plans-only | plugins-only | memory-only]", desc: "Step 0 — hygiène disque de ~/.claude via scripts/disk-hygiene.sh : deux tiers, AUTO appliqué sans demander (état éphémère aux rétentions annoncées + archivage des plans, jamais de suppression de plan), CONFIRM derrière --yes-projects / --yes-plugins (dossiers projects/ obsolètes, dossiers plugins temporaires). Puis : plans orphelins dans les repos, audit des plugins, compactage de la mémoire agent > 200 lignes, et check de staleness du workflow guide / docs stratégiques / claude-code-setup. Les rétentions vivent dans le script, jamais dans la commande.", agents: [], when: "1×/semaine en hygiène. Le tier AUTO tourne aussi sans modèle en cron le 15 du mois à 8h07 (scripts/cleanup-cron.sh → cleanup-cron.log), décalé du /tech-debt du 1er" },
   { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2 phases. Phase 1 : triage rapide (activité commits, proéminence portfolio, ancienneté du dernier scan, problèmes détectés). Phase 2 : revue approfondie sur les apps sélectionnées. Auto-fix ce qui est safe, flag le reste.", agents: ["implementer (auto-fix)", "troubleshooter (si migration majeure)"], when: "1×/mois en session dédiée" },
   { name: "/sync-setup", args: "[--dry-run | --audit-only]", desc: "Synchronise le repo claude-code-setup depuis ~/.claude/. Copie + anonymise les fichiers, nettoie les fichiers obsolètes, met à jour le README (compteurs, noms), vérifie l'absence de données personnelles.", agents: [], when: "Après des changements de workflow (nouvel agent, commande renommée, nouveau hook)" },
+  { name: "/next", args: "A | B | un task id (ex. A1.2, B0)", desc: "Exécute la prochaine tâche non bloquée d'un track du master plan, puis s'arrête. Lit le ledger du track, vérifie les gates et les règles cross-track, dispatche le travail aux sub-agents plutôt que de le faire en contexte, vérifie contre la réalité (pas contre le diff), met à jour le ledger. Une session = une phase.", agents: [], when: "Exécution d'un plan multi-phase approuvé — A = portfolio (~/Dev), B = setup (~/.claude)" },
 ];
 
 const AGENTS = [
-  { name: "implementer", model: "sonnet (→ opus si complexe)", skills: ["code-quality", "property-testing"], memory: true, desc: "Exécute les tâches d'implémentation avec un critère 'done when' clair. Ne prend pas de décisions d'architecture." },
-  { name: "troubleshooter", model: "inherit", skills: ["portfolio-conventions"], memory: true, desc: "Diagnostique les problèmes structurels après 2 échecs d'implémentation. Évalue les options, produit un plan. Ne code jamais." },
-  { name: "portfolio-sync", model: "sonnet", skills: ["portfolio-conventions"], memory: false, desc: "Orchestre la cohérence entre repos, manifests .portfolio.yml et portfolio-apps.json." },
-  { name: "docs-checker", model: "sonnet", skills: [], memory: false, desc: "Audite et corrige README, CLAUDE.md, .gitignore, URLs. Fixe les problèmes mécaniques directement." },
+  { name: "implementer", model: "sonnet", skills: [], memory: true, desc: "Exécute les tâches d'implémentation avec un critère 'done when' clair. Ne prend pas de décisions d'architecture. Plus de skills préchargées — les standards non déductibles vivent dans la section Quality du CLAUDE.md global." },
+  { name: "troubleshooter", model: "inherit", skills: ["portfolio-conventions"], memory: true, desc: "Diagnostique les problèmes structurels après 2 échecs d'implémentation. Évalue les options, produit un plan. Ne code jamais. Hérite du modèle de la session — jamais plus faible que l'appelant." },
+  { name: "portfolio-sync", model: "sonnet", skills: ["portfolio-conventions"], memory: false, desc: "Orchestre la cohérence entre repos, manifests .portfolio.yml et portfolio-apps.json. Ne déclare pas memory: project, alors qu'un agent-memory/portfolio-sync/MEMORY.md existe sur disque — il n'est donc jamais relu automatiquement." },
+  { name: "docs-checker", model: "sonnet", skills: [], memory: false, desc: "Audite et corrige README, CLAUDE.md, .gitignore, URLs. Fixe les problèmes mécaniques directement. Vérifie que les URLs live/demo déclarées répondent vraiment (2xx/3xx) et signale les deux sens : déclaré-mais-absent et présent-mais-non-déclaré." },
   { name: "portfolio-audit", model: "haiku", skills: [], memory: false, desc: "Audit compliance read-only : signature auteur, secrets, .gitignore, dead code, tests, commits." },
-  { name: "dev-scanner", model: "haiku", skills: [], memory: false, desc: "Scanne ~/Dev pour découvrir les projets et comparer à l'inventaire. Read-only — aucune modification." },
   { name: "dummy-visitor", model: "sonnet", skills: [], memory: false, desc: "Visiteur naïf bilingue FR/EN qui découvre un site sans contexte, puis réagit au gap perception/intention après lecture du README." },
-  { name: "deploy-doctor", model: "haiku", skills: [], memory: false, desc: "Pattern-matching sur logs de déploiement (GitHub Actions / Netlify / Vercel / Cloudflare). Retourne une hypothèse, pas un fix." },
 ];
 
 const SKILLS = [
   { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["troubleshooter", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, manifest, quality standards, display order." },
-  { name: "code-quality", file: "~/.claude/skills/code-quality/SKILL.md", preloaded: ["implementer"], desc: "Checklist qualité : conventions à vérifier avant/pendant/après le code, pièges courants." },
-  { name: "property-testing", file: "~/.claude/skills/property-testing/SKILL.md", preloaded: ["implementer"], desc: "Patterns de tests property-based : roundtrip, conservation, idempotence, no-crash. fast-check (TS) / hypothesis (Python)." },
-  { name: "deploy-status", file: "~/.claude/skills/deploy-status/SKILL.md", preloaded: [], desc: "User-only. Lance un check HTTP + dernier run CI pour chaque app 'production' du portfolio. Sortie tabulaire." },
-  { name: "fresh-session", file: "~/.claude/skills/fresh-session/SKILL.md", preloaded: [], desc: "User-only. Audit de santé du setup ~/.claude/ : taille CLAUDE.md, nombre de plugins, agents enregistrés. Flag le principal contributeur à la dérive." },
 ];
 
 const HOOKS = [
   { name: "secret-scan", event: "PreToolUse → Write|Edit|NotebookEdit", desc: "Bloque l'écriture de fichiers contenant des patterns de secrets (sk-, AKIA, ghp_, etc.). Exclut .env.example.", mode: "Blocking" },
-  { name: "fix-loop-detector", event: "PostToolUse → Bash(git commit)", desc: "Détecte si un même fichier est modifié 3+ fois par des commits fix: en 30 min. Signal d'escalade.", mode: "Advisory" },
   { name: "auto-format", event: "PostToolUse → Write|Edit", desc: "Lance Prettier / Ruff / rustfmt sur le fichier édité si le projet a la config correspondante. Silencieux si absent.", mode: "Advisory" },
   { name: "portfolio-yml-validate", event: "PostToolUse → Write|Edit", desc: "Après édition d'un .portfolio.yml : vérifie les champs requis, slug = nom du dossier, sort_order numérique.", mode: "Advisory" },
   { name: "portfolio-drift", event: "PreToolUse → Bash(git commit)", desc: "Warn si package.json / config deploy modifiés dans les fichiers staged mais .portfolio.yml ou README pas touchés.", mode: "Advisory" },
@@ -77,15 +69,17 @@ const SCENARIOS = [
   { id:"bug-fix",icon:"⚡",title:"Bug fix",when:"Tu as repéré un bug sur une app existante",category:"dev",frequency:"Fréquent",
     steps:[
       {action:"Triage environnement",where:"Navigateur",tool:"Manuel",detail:"Cache ? Service worker ? Hard refresh ? Build stale ?"},
-      {action:"Lancer le fix",where:"Claude Code",tool:"/fix description du bug",detail:"Charge la mémoire agent + CLAUDE.md projet, évalue la complexité"},
-      {action:"Si 2 échecs → escalade",where:"Claude Code",tool:"/troubleshoot description + contexte des échecs",detail:"STOP obligatoire. Le troubleshooter diagnostique le problème structurel"},
+      {action:"L1 — fix direct",where:"Claude Code",tool:"Prompt direct (hypothèse de root cause obligatoire)",detail:"Pas d'édition sans hypothèse énoncée. 'Essayer autre chose' sans nouvelle hypothèse est interdit"},
+      {action:"L2 — si L1 échoue",where:"Claude Code",tool:"superpowers:systematic-debugging",detail:"Cascade à sens unique : pas de retry au même niveau"},
+      {action:"L3 — si L2 échoue",where:"Claude Code",tool:"Agent troubleshooter (model: inherit)",detail:"STOP obligatoire. Diagnostic structural, produit un plan, jamais du code"},
+      {action:"Test de régression",where:"Claude Code",tool:"// Regression: <hash> — <bug>",detail:"Tout bug fix vient avec son test de régression, écrit avant le fix"},
       {action:"Commit + push",where:"Claude Code",tool:"git push",detail:"Le hook push-build-gate lance le build et bloque le push si erreur ou warning"}],
     traps:["Le piège #1 : service worker cache → toujours tester en navigation privée d'abord","Itérer 3+ fois sur le même bug au lieu d'escalader"]},
   { id:"big-feature",icon:"◆",title:"Grosse feature",when:"Ajout structurant (sync, nouvelle section, refacto majeur)",category:"dev",frequency:"Régulier",
     steps:[
       {action:"Design upfront",where:"Claude Code",tool:"Plan mode ou brainstorm",detail:"Utiliser le plan mode natif ou /superpowers:brainstorm pour concevoir la feature"},
       {action:"Valider le plan",where:"Claude Code",tool:"Review manuel",detail:"Toi seul approuves — le plan ne s'exécute pas sans ton OK"},
-      {action:"Implémenter par subtask",where:"Claude Code",tool:"/fix subtask N (ou dispatch auto)",detail:"Chaque subtask a un 'done when' clair, dispatché à l'implementer"},
+      {action:"Implémenter par subtask",where:"Claude Code",tool:"Dispatch à l'agent implementer",detail:"Chaque subtask a un 'done when' clair et atomique, dispatché à l'implementer"},
       {action:"Review intermédiaire",where:"Claude Code",tool:"superpowers:code-reviewer ou prompt",detail:"Review entre chaque phase si multi-phase"},
       {action:"Tests",where:"Claude Code",tool:"npm test",detail:"Tests écrits avec l'implémentation, pas après"},
       {action:"Audit final",where:"Claude Code",tool:"/audit",detail:"Vérifie docs, compliance, zero-warning"},
@@ -96,16 +90,16 @@ const SCENARIOS = [
       {action:"Reprendre la session",where:"Terminal",tool:"claude --continue ou --resume",detail:"--continue = dernière session, --resume = picker pour choisir"},
       {action:"Si contexte perdu",where:"Claude Code",tool:"/context puis relire CLAUDE.md",detail:"Vérifier le % de contexte, relire les fichiers clés si besoin"},
       {action:"Consulter la mémoire",where:"Claude Code",tool:"Automatique via memory: project",detail:"L'agent relit son MEMORY.md au démarrage — le handoff y est"},
-      {action:"Reprendre le travail",where:"Claude Code",tool:"Prompt ou /fix",detail:"Continuer là où le handoff s'est arrêté"}],
+      {action:"Reprendre le travail",where:"Claude Code",tool:"Prompt direct (ou /next A|B sur un plan multi-phase)",detail:"Continuer là où le handoff s'est arrêté"}],
     traps:["Ne pas vérifier /context avant de commencer — risque de dumb zone","Relancer une nouvelle session au lieu de --resume (perd le contexte)","Oublier /rename sur les sessions importantes pour les retrouver"]},
   { id:"hygiene",icon:"♻",title:"Hygiène Dev/",when:"Nettoyage régulier — idéalement 1×/semaine",category:"maintenance",frequency:"Hebdomadaire",
     steps:[
-      {action:"Nettoyer les plans orphelins",where:"Claude Code",tool:"/cleanup plans-only",detail:"Supprime les plans dans les repos, met à jour les .gitignore"},
-      {action:"Auditer les plugins",where:"Claude Code",tool:"/cleanup plugins-only",detail:"Liste les plugins, détecte les conflits, signale les inutilisés"},
+      {action:"Hygiène disque ~/.claude",where:"Claude Code",tool:"/cleanup disk-only",detail:"Step 0. Le tier AUTO (état éphémère + archivage des plans) s'applique sans demander ; projects/ et les dossiers plugins restent derrière --yes-projects / --yes-plugins"},
+      {action:"Nettoyer les plans orphelins",where:"Claude Code",tool:"/cleanup plans-only",detail:"Sort les plans des repos, met à jour les .gitignore. Les plans vivent dans ~/.claude/plans/, jamais dans un repo"},
+      {action:"Auditer les plugins",where:"Claude Code",tool:"/cleanup plugins-only",detail:"Liste les plugins, détecte les conflits, signale les inutilisés. Les marketplaces orphelines sont signalées, jamais supprimées automatiquement"},
       {action:"Compacter la mémoire agent",where:"Claude Code",tool:"/cleanup memory-only",detail:"Si MEMORY.md > 200 lignes, split en fichiers thématiques"},
-      {action:"Vérifier les stale plans",where:"Terminal",tool:"ls ~/.claude/plans/",detail:"Supprimer les plans de plus de 30 jours manuellement"},
       {action:"Mettre à jour Claude Code",where:"Terminal",tool:"claude update",detail:"Lire le changelog pour les nouvelles features"}],
-    traps:["Laisser les plans s'accumuler pendant des semaines → bruit dans les repos","Garder des plugins inutilisés → contexte gaspillé à chaque session","Ne pas lire le changelog → rater des features utiles"]},
+    traps:["Supprimer un dossier de marketplace sans faire claude plugin marketplace remove d'abord → known_marketplaces.json le re-clone à la session suivante, plugin et daemons compris","Laisser les plans s'accumuler pendant des semaines → bruit dans les repos","Garder des plugins inutilisés → contexte gaspillé à chaque session","Ne pas lire le changelog → rater des features utiles"]},
   { id:"portfolio-sync",icon:"⟐",title:"Portfolio sync",when:"Après des changements sur plusieurs apps, ou 1×/semaine minimum",category:"maintenance",frequency:"Hebdomadaire",
     steps:[
       {action:"Lancer le scan complet",where:"Claude Code",tool:"/sync",detail:"Scanne tous les .portfolio.yml, cross-check avec les repos"},
@@ -118,7 +112,7 @@ const SCENARIOS = [
     steps:[
       {action:"Audit sur une app",where:"Claude Code (dans le projet)",tool:"/audit https://url-de-l-app",detail:"Lance docs-checker + portfolio-audit en parallèle"},
       {action:"Audit sur tout le portfolio",where:"Claude Code",tool:"/sync puis rapports sub-agents",detail:"Le sync dispatche docs-checker et portfolio-audit sur chaque projet modifié"},
-      {action:"Fixer les violations",where:"Claude Code",tool:"/fix violation décrite",detail:"Footer manquant, console.log, secrets, .gitignore incomplet..."},
+      {action:"Fixer les violations",where:"Claude Code",tool:"Prompt direct ou dispatch implementer",detail:"Footer manquant, console.log, secrets, .gitignore incomplet..."},
       {action:"Vérifier zero-warning",where:"Claude Code",tool:"npm run build",detail:"Le hook push-build-gate le vérifie auto au push, mais double-check avant publish reste utile"}],
     traps:["Publier sur LinkedIn une app qui n'a pas le footer signature","Oublier les secrets dans un repo rendu public","Ignorer les warnings 'non critiques' — ils s'accumulent"]},
   { id:"tech-debt",icon:"⚙",title:"Tech debt (mensuel)",when:"Session technique mensuelle — triage tout, deep review sur ton choix",category:"maintenance",frequency:"Mensuel",
@@ -127,7 +121,7 @@ const SCENARIOS = [
       {action:"Choisir les apps à reviewer",where:"Claude Code",tool:"Réponse à la question",detail:"Claude propose un ordre de priorité — tu choisis 3-4 apps (ou plus, ou moins)"},
       {action:"Deep review",where:"Claude Code",tool:"Automatique (phase 2)",detail:"Dépendances, sécurité, dead code, performance, versions, dette des sessions précédentes"},
       {action:"Approuver les auto-fix",where:"Claude Code",tool:"Réponse à la question",detail:"Claude propose de fixer les items safe (patches sécu, console.log, deps inutilisées)"},
-      {action:"Planifier les majors",where:"Claude Code",tool:"/troubleshoot si migration framework",detail:"Migrations majeures → session troubleshooter dédiée. Items 2+ mois non résolus → escalade"},
+      {action:"Planifier les majors",where:"Claude Code",tool:"Agent troubleshooter si migration framework",detail:"Migrations majeures → session troubleshooter dédiée. Items 2+ mois non résolus → escalade L1→L2→L3"},
       {action:"Reviewer et pousser",where:"Terminal",tool:"git log + git push par app",detail:"Chaque app a ses commits chore(tech-debt) à reviewer avant push"}],
     traps:[
       "Faire npm update --latest aveuglément → breaking changes non testées",
@@ -160,7 +154,7 @@ const CATEGORIES={dev:{label:"Développement",color:"#3B82F6",bg:"#1E3A5F"},main
 <!-- ======= RENDERER — Claude Code: do NOT edit below this line. ======= -->
 <script type="text/babel">
 const{useState}=React;
-const TC={"\/sync":"#3B82F6","\/fix":"#3B82F6","\/new-app":"#3B82F6","\/audit":"#3B82F6","\/troubleshoot":"#3B82F6","\/cleanup":"#3B82F6","\/plan":"#3B82F6","\/context":"#3B82F6","\/rename":"#3B82F6","superpowers":"#A855F7","hook":"#F59E0B","conversation":"#64748B","manuel":"#64748B","claude":"#8B5CF6","npm":"#EF4444","git":"#F97316","gh ":"#F97316","skill":"#10B981","rapport":"#10B981","automatique":"#10B981","review":"#A855F7","prompt":"#8B5CF6","\u00e9dition":"#64748B","william":"#64748B"};
+const TC={"\/sync":"#3B82F6","\/next":"#3B82F6","\/new-app":"#3B82F6","\/audit":"#3B82F6","\/cleanup":"#3B82F6","\/plan":"#3B82F6","\/context":"#3B82F6","\/rename":"#3B82F6","superpowers":"#A855F7","hook":"#F59E0B","conversation":"#64748B","manuel":"#64748B","claude":"#8B5CF6","npm":"#EF4444","git":"#F97316","gh ":"#F97316","skill":"#10B981","rapport":"#10B981","automatique":"#10B981","review":"#A855F7","prompt":"#8B5CF6","\u00e9dition":"#64748B","william":"#64748B"};
 function gtc(t){const l=t.toLowerCase();for(const[k,c]of Object.entries(TC)){if(l.includes(k))return c}return"#94A3B8"}
 const F="'JetBrains Mono','SF Mono','Fira Code','Cascadia Code',monospace";
 const pill=(bg,color,text)=>(<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:bg,color,fontWeight:600}}>{text}</span>);
