@@ -89,7 +89,7 @@ const SCENARIOS = [
     steps:[
       {action:"Reprendre la session",where:"Terminal",tool:"claude --continue ou --resume",detail:"--continue = dernière session, --resume = picker pour choisir"},
       {action:"Si contexte perdu",where:"Claude Code",tool:"/context puis relire CLAUDE.md",detail:"Vérifier le % de contexte, relire les fichiers clés si besoin"},
-      {action:"Consulter la mémoire",where:"Claude Code",tool:"Automatique via memory: project",detail:"L'agent relit son MEMORY.md au démarrage — le handoff y est"},
+      {action:"Consulter la mémoire",where:"Claude Code",tool:"Automatique via memory: project",detail:"L'agent relit son MEMORY.md au démarrage — le handoff y est. Scope project = <racine projet>/.claude/agent-memory/<agent>/, à côté du code, pas dans ~/.claude"},
       {action:"Reprendre le travail",where:"Claude Code",tool:"Prompt direct (ou /next A|B sur un plan multi-phase)",detail:"Continuer là où le handoff s'est arrêté"}],
     traps:["Ne pas vérifier /context avant de commencer — risque de dumb zone","Relancer une nouvelle session au lieu de --resume (perd le contexte)","Oublier /rename sur les sessions importantes pour les retrouver"]},
   { id:"hygiene",icon:"♻",title:"Hygiène Dev/",when:"Nettoyage régulier — idéalement 1×/semaine",category:"maintenance",frequency:"Hebdomadaire",
@@ -97,9 +97,9 @@ const SCENARIOS = [
       {action:"Hygiène disque ~/.claude",where:"Claude Code",tool:"/cleanup disk-only",detail:"Step 0. Le tier AUTO (état éphémère + archivage des plans) s'applique sans demander ; projects/ et les dossiers plugins restent derrière --yes-projects / --yes-plugins"},
       {action:"Nettoyer les plans orphelins",where:"Claude Code",tool:"/cleanup plans-only",detail:"Sort les plans des repos, met à jour les .gitignore. Les plans vivent dans ~/.claude/plans/, jamais dans un repo"},
       {action:"Auditer les plugins",where:"Claude Code",tool:"/cleanup plugins-only",detail:"Liste les plugins, détecte les conflits, signale les inutilisés. Les marketplaces orphelines sont signalées, jamais supprimées automatiquement"},
-      {action:"Compacter la mémoire agent",where:"Claude Code",tool:"/cleanup memory-only",detail:"Si MEMORY.md > 200 lignes, split en fichiers thématiques"},
+      {action:"Compacter la mémoire agent",where:"Claude Code",tool:"/cleanup memory-only",detail:"Si MEMORY.md > 200 lignes, split en fichiers thématiques. Les stores sont par racine de projet (~130 fichiers sur 15 repos), pas centralisés dans ~/.claude"},
       {action:"Mettre à jour Claude Code",where:"Terminal",tool:"claude update",detail:"Lire le changelog pour les nouvelles features"}],
-    traps:["Supprimer un dossier de marketplace sans faire claude plugin marketplace remove d'abord → known_marketplaces.json le re-clone à la session suivante, plugin et daemons compris","Laisser les plans s'accumuler pendant des semaines → bruit dans les repos","Garder des plugins inutilisés → contexte gaspillé à chaque session","Ne pas lire le changelog → rater des features utiles"]},
+    traps:["Supprimer un dossier de marketplace sans faire claude plugin marketplace remove d'abord → known_marketplaces.json le re-clone à la session suivante, plugin et daemons compris","Croire que .claude/agent-memory/ est ignoré par défaut : le harness n'ignore d'office que agent-memory-local/. Tout repo avec un store a besoin de .claude/ (ou .claude/agent-memory/) dans son .gitignore","Laisser les plans s'accumuler pendant des semaines → bruit dans les repos","Garder des plugins inutilisés → contexte gaspillé à chaque session","Ne pas lire le changelog → rater des features utiles"]},
   { id:"portfolio-sync",icon:"⟐",title:"Portfolio sync",when:"Après des changements sur plusieurs apps, ou 1×/semaine minimum",category:"maintenance",frequency:"Hebdomadaire",
     steps:[
       {action:"Lancer le scan complet",where:"Claude Code",tool:"/sync",detail:"Scanne tous les .portfolio.yml, cross-check avec les repos"},

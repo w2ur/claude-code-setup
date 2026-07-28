@@ -163,11 +163,13 @@ The real question is whether the repo is a faithful *anonymized image* of live. 
 cd ~/Dev/claude-code-setup && python3 scripts/sync.py --dry-run
 ```
 
-Read two lines of its summary:
+Read two counts from its summary — both are machine-checkable, so this is an assertion, not a judgement:
+- `Stale: N (would write)` — mapped files plus the generated workflow guide whose anonymized output differs from what is in the repo (or is missing). **N > 0 means stale.**
 - `Orphans: N` — files in the repo whose live source is gone. **N > 0 means stale.**
-- Whether any per-file line says `(would update)` / `(would create)` rather than `(no changes)` — **any of those means stale.**
 
-Both clean, and an untracked-file check on the repo comes back empty → in sync.
+Both `0`, and an untracked-file check on the repo comes back empty → in sync.
+
+**Do not read the per-file replacement counts as a staleness signal.** `(4 replacements)` describes the anonymization pass, not whether the destination is current — a file can be fully rewritten by the anonymizer and still be byte-identical to what the repo already has. Each per-file line now carries its own verdict (`up to date` / `would update` / `would create`) alongside the count, but the `Stale:` total is the one to bind to.
 
 If claude-code-setup is stale, delegate to the `/sync-setup` command rather than duplicating its logic here — it already handles copying, anonymizing, stale-file cleanup, README counts, and the leak audit. Do NOT push — `/sync-setup` commits locally only; the owner pushes manually.
 
