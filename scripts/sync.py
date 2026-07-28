@@ -286,6 +286,7 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
 
     total_replacements = 0
     copied = 0
+    stale = 0
 
     for src, dest in pairs:
         try:
@@ -300,8 +301,21 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
         total_replacements += count
 
         if dry_run:
-            status = f"({count} replacements)" if count else "(no changes)"
-            log.info("  %s → %s %s", rel_src, rel_dest, status)
+            # Compare against what is actually on disk. A replacement count says
+            # nothing about whether the destination is current — reporting it as
+            # the status made every mapped file look fine even when stale, so
+            # /cleanup's Step 4 could never detect drift. Mirrors the comparison
+            # generate_guide() has always done for the workflow guide.
+            current = dest.read_text(encoding="utf-8") if dest.exists() else None
+            if current is None:
+                status = "would create"
+                stale += 1
+            elif anonymized != current:
+                status = "would update"
+                stale += 1
+            else:
+                status = "up to date"
+            log.info("  %s → %s (%s, %d replacements)", rel_src, rel_dest, status, count)
         else:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(anonymized, encoding="utf-8")
@@ -312,7 +326,9 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
     # Local import to avoid a circular import at module load time.
     from generate_workflow_guide import generate_guide
 
-    guide_todos = generate_guide(source, replacements, patterns, dry_run)
+    guide_todos, guide_stale = generate_guide(source, replacements, patterns, dry_run)
+    if guide_stale:
+        stale += 1
 
     # Prune orphaned repo files under synced roots (renamed/deleted sources).
     produced_dests = {dest for _, dest in pairs}
@@ -338,6 +354,10 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
     log.info("  Files:        %d", len(pairs) if dry_run else copied)
     log.info("  Replacements: %d", total_replacements)
     log.info("  Orphans:      %d %s", orphan_count, "(would delete)" if dry_run else "(deleted)")
+    if dry_run:
+        # Single staleness signal, covering mapped files and the generated guide.
+        # 0 means the repo is a faithful anonymized image of the live config.
+        log.info("  Stale:        %d (would write)", stale)
     if guide_todos:
         log.info("  Guide TODOs:  %d (new entries need a hand-written desc)", len(guide_todos))
         for t in guide_todos:

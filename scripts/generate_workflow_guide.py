@@ -333,14 +333,18 @@ def _replace_block(html: str, name: str, body_lines: list[str]) -> str:
     )
 
 
-def generate_guide(source: Path, replacements, patterns, dry_run: bool) -> list[str]:
+def generate_guide(
+    source: Path, replacements, patterns, dry_run: bool
+) -> tuple[list[str], bool]:
     """Rewrite docs/workflow-guide.html DATA arrays from live config.
 
-    Returns the list of TODO notes for genuinely new entries.
+    Returns (TODO notes for genuinely new entries, whether the destination is
+    stale). The staleness flag is only meaningful under --dry-run; callers fold
+    it into a single reported count so there is one staleness signal, not two.
     """
     if not LIVE_GUIDE.exists():
         log.warning("Workflow guide source not found: %s (skipping)", LIVE_GUIDE)
-        return []
+        return [], False
 
     html = LIVE_GUIDE.read_text(encoding="utf-8")
 
@@ -359,16 +363,24 @@ def generate_guide(source: Path, replacements, patterns, dry_run: bool) -> list[
     anonymized, _count = anonymize(html, replacements, patterns)
 
     rel = DEST_GUIDE.relative_to(REPO_ROOT)
+    is_stale = False
     if dry_run:
-        current = DEST_GUIDE.read_text(encoding="utf-8") if DEST_GUIDE.exists() else ""
-        status = "would update" if anonymized != current else "up to date"
-        log.info("  workflow-guide.html %s (%s)", ARROW, status)
+        exists = DEST_GUIDE.exists()
+        current = DEST_GUIDE.read_text(encoding="utf-8") if exists else ""
+        if not exists:
+            status = "would create"
+        elif anonymized != current:
+            status = "would update"
+        else:
+            status = "up to date"
+        is_stale = status != "up to date"
+        log.info("  workflow-guide.html %s %s (%s)", ARROW, rel, status)
     else:
         DEST_GUIDE.parent.mkdir(parents=True, exist_ok=True)
         DEST_GUIDE.write_text(anonymized, encoding="utf-8")
         log.info("  generated %s", rel)
 
-    return all_todos
+    return all_todos, is_stale
 
 
 def main() -> None:
@@ -383,7 +395,7 @@ def main() -> None:
     config = load_config(Path(__file__).resolve().parent / "anonymization.yaml")
     replacements = build_replacements(config["replacements"])
     patterns = config.get("patterns")
-    todos = generate_guide(args.source, replacements, patterns, args.dry_run)
+    todos, _stale = generate_guide(args.source, replacements, patterns, args.dry_run)
     if todos:
         log.info("New entries needing a hand-written desc:")
         for t in todos:
