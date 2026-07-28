@@ -38,9 +38,13 @@ For multi-stage fan-outs (audit/migrate/review across many targets), use the Wor
 Two memory systems, each with a distinct role — don't duplicate across them:
 
 - **Auto-memory** (`~/.claude/projects/-Users-{username}-Dev/memory/`, indexed by `MEMORY.md`): session handoffs and durable cross-session knowledge (user preferences, project state, feedback). Write a condensed version automatically at the end of significant work — no permission needed.
-- **Per-agent memory** (`~/.claude/agent-memory/<agent>/`): operational knowledge scoped to one agent (patterns, past corrections for that agent's domain).
+- **Per-agent memory** (`<project root>/.claude/agent-memory/<agent>/`): operational knowledge scoped to one agent (patterns, past corrections for that agent's domain). **It lives next to the code, not in `~/.claude`.**
 
 Stop using the bare phrase "agent memory" for auto-memory — it collides with the per-agent system's name.
+
+**Per-agent memory is project-scoped, and that is deliberate.** The agent frontmatter key `memory:` takes three values, which the harness resolves as: `user` → `~/.claude/agent-memory/<agent>/` · `project` → `<project root>/.claude/agent-memory/<agent>/` · `local` → `<project root>/.claude/agent-memory-local/<agent>/`. Three agents declare it — `implementer`, `portfolio-sync`, `troubleshooter` — and **all three declare `project`. None declares `user`.** So a store appears wherever a session's project root was: one per repo, plus one per nested working dir (`untilt/client/`) and per worktree a session was launched from (`midas/.worktrees/backtester-plan-1/`, `pogofish/.worktrees/webapp/`). ~130 files across 15 repos, against ~14 in `~/.claude/agent-memory/` — and those 14 are residue from sessions whose project root *was* `~/.claude`, not a separate tier. Do not "consolidate" them upward; that fights the resolver.
+
+**Per-agent memory must never be committed.** The harness default-ignores only `agent-memory-local/`, **not** `agent-memory/` — so a repo trusting that default will happily stage its memory files. Every repo with a store needs `.claude/` (or at minimum `.claude/agent-memory/`) in `.gitignore`. `midas` is the model for repos that deliberately track other `.claude/` content: ignore `.claude/agent-memory/` specifically rather than the whole directory.
 
 Plans are not a memory system: they live in `~/.claude/plans/`, never in a repo.
 
