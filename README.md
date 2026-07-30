@@ -1,3 +1,11 @@
+---
+name: "Claude Code Setup"
+tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
+tagline_en: "My Claude Code workflow, anonymized and documented."
+facts_fr: "7 commandes, 6 agents, 6 hooks — dont 2 bloquants."
+facts_en: "7 commands, 6 agents, 6 hooks — 2 of them blocking."
+---
+
 <div align="center">
 
 # claude-code-setup
