@@ -18,16 +18,16 @@
 <!--
   ============================================================================
   DATA SECTION — Claude Code: edit data here, don't touch the renderer below.
-  Last updated: 2026-07-26
+  Last updated: 2026-07-30
   ============================================================================
 -->
 <script id="workflow-data">
 const COMMANDS = [
-  { name: "/sync", args: "[project-name | --report-only]", desc: "Synchronise le portfolio : scanne les .portfolio.yml, cross-check avec les repos, fixe les divergences, régénère portfolio-apps.json.", agents: ["portfolio-sync", "docs-checker", "portfolio-audit"], when: "Après des changements sur une ou plusieurs apps, ou 1×/semaine" },
-  { name: "/new-app", args: "$0 (nom-en-kebab-case)", desc: "Scaffold complet conforme à la charte : repo Git, README, CLAUDE.md, .portfolio.yml, .gitignore, premier commit, repo GitHub privé.", agents: ["implementer"], when: "Création d'une nouvelle app dans le portfolio" },
+  { name: "/sync", args: "(aucun argument)", desc: "Valide le frontmatter de la collection stories du hub (modalities, featured_rank, live_url, keywords, seo_description) et rapporte les violations. Depuis la décision M12, ne scanne plus de manifest et ne régénère plus rien.", agents: ["portfolio-sync"], when: "Après un ajout/edit de story, ou en session hygiène" },
+  { name: "/new-app", args: "$0 (nom-en-kebab-case)", desc: "Scaffold complet conforme à la charte : repo Git, README (avec frontmatter Layer 2 : name/tagline_fr/tagline_en), CLAUDE.md, .gitignore, premier commit, repo GitHub privé, et une entrée editorial.ts si l'app doit avoir une tile sur le hub.", agents: ["implementer"], when: "Création d'une nouvelle app dans le portfolio" },
   { name: "/audit", args: "[URL canonique optionnelle]", desc: "Lance docs-checker (sonnet) et portfolio-audit (haiku) en parallèle sur le projet courant. Produit un rapport consolidé.", agents: ["docs-checker", "portfolio-audit"], when: "Avant un release, une publication, ou pendant un compliance sweep" },
   { name: "/cleanup", args: "[disk-only | plans-only | plugins-only | memory-only]", desc: "Step 0 — hygiène disque de ~/.claude via scripts/disk-hygiene.sh : deux tiers, AUTO appliqué sans demander (état éphémère aux rétentions annoncées + archivage des plans, jamais de suppression de plan), CONFIRM derrière --yes-projects / --yes-plugins (dossiers projects/ obsolètes, dossiers plugins temporaires). Puis : plans orphelins dans les repos, audit des plugins, compactage de la mémoire agent > 200 lignes, et check de staleness du workflow guide / docs stratégiques / claude-code-setup. Les rétentions vivent dans le script, jamais dans la commande.", agents: [], when: "1×/semaine en hygiène. Le tier AUTO tourne aussi sans modèle en cron le 15 du mois à 8h07 (scripts/cleanup-cron.sh → cleanup-cron.log), décalé du /tech-debt du 1er" },
-  { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2 phases. Phase 1 : triage rapide (activité commits, proéminence portfolio, ancienneté du dernier scan, problèmes détectés). Phase 2 : revue approfondie sur les apps sélectionnées. Auto-fix ce qui est safe, flag le reste.", agents: ["implementer (auto-fix)", "troubleshooter (si migration majeure)"], when: "1×/mois en session dédiée" },
+  { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2 phases. Phase 1 : triage rapide via scripts/tech-debt-triage.sh — entièrement déterministe donc sans modèle (activité commits, proéminence portfolio via editorial.ts, ancienneté du dernier deep review, vulnérabilités / deps obsolètes / console.log). Le script est la source de vérité des 4 signaux et de leurs poids : la commande les décrit, ne les réimplémente jamais. Lecture seule — il n'écrit pas le rotation tracker, c'est la Phase 4 qui le fait. Phase 2 : revue approfondie sur les apps sélectionnées, seule partie qui demande du jugement. Auto-fix ce qui est safe, flag le reste.", agents: ["implementer (auto-fix)", "troubleshooter (si migration majeure)"], when: "1×/mois en session dédiée. La Phase 1 tourne aussi sans modèle en cron le 1er du mois à 8h07 (scripts/tech-debt-triage.sh → tech-debt-cron.log), décalée du /cleanup du 15" },
   { name: "/sync-setup", args: "[--dry-run | --audit-only]", desc: "Synchronise le repo claude-code-setup depuis ~/.claude/. Copie + anonymise les fichiers, nettoie les fichiers obsolètes, met à jour le README (compteurs, noms), vérifie l'absence de données personnelles.", agents: [], when: "Après des changements de workflow (nouvel agent, commande renommée, nouveau hook)" },
   { name: "/next", args: "A | B | un task id (ex. A1.2, B0)", desc: "Exécute la prochaine tâche non bloquée d'un track du master plan, puis s'arrête. Lit le ledger du track, vérifie les gates et les règles cross-track, dispatche le travail aux sub-agents plutôt que de le faire en contexte, vérifie contre la réalité (pas contre le diff), met à jour le ledger. Une session = une phase.", agents: [], when: "Exécution d'un plan multi-phase approuvé — A = portfolio (~/Dev), B = setup (~/.claude)" },
 ];
@@ -35,22 +35,20 @@ const COMMANDS = [
 const AGENTS = [
   { name: "implementer", model: "sonnet", skills: [], memory: true, desc: "Exécute les tâches d'implémentation avec un critère 'done when' clair. Ne prend pas de décisions d'architecture. Plus de skills préchargées — les standards non déductibles vivent dans la section Quality du CLAUDE.md global." },
   { name: "troubleshooter", model: "inherit", skills: ["portfolio-conventions"], memory: true, desc: "Diagnostique les problèmes structurels après 2 échecs d'implémentation. Évalue les options, produit un plan. Ne code jamais. Hérite du modèle de la session — jamais plus faible que l'appelant." },
-  { name: "portfolio-sync", model: "sonnet", skills: ["portfolio-conventions"], memory: true, desc: "Orchestre la cohérence entre repos, manifests .portfolio.yml et portfolio-apps.json." },
+  { name: "portfolio-sync", model: "sonnet", skills: ["portfolio-conventions"], memory: true, desc: "Valide le frontmatter de la collection stories du hub (modalities, featured_rank, live_url...). Read-only. Depuis la décision M12 (retrait de .portfolio.yml), c'est tout ce qui reste de cet agent — candidat à devenir un script déterministe." },
   { name: "docs-checker", model: "sonnet", skills: [], memory: false, desc: "Audite et corrige README, CLAUDE.md, .gitignore, URLs. Fixe les problèmes mécaniques directement. Vérifie que les URLs live/demo déclarées répondent vraiment (2xx/3xx) et signale les deux sens : déclaré-mais-absent et présent-mais-non-déclaré." },
   { name: "portfolio-audit", model: "haiku", skills: [], memory: false, desc: "Audit compliance read-only : signature auteur, secrets, .gitignore, dead code, tests, commits." },
   { name: "dummy-visitor", model: "sonnet", skills: [], memory: false, desc: "Visiteur naïf bilingue FR/EN qui découvre un site sans contexte, puis réagit au gap perception/intention après lecture du README." },
 ];
 
 const SKILLS = [
-  { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["troubleshooter", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, manifest, quality standards, display order." },
+  { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["troubleshooter", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, système de manifest à trois couches (inventaire dérivé / pitch en frontmatter README / editorial.ts), quality standards." },
 ];
 
 const HOOKS = [
   { name: "secret-scan", event: "PreToolUse → Write|Edit|NotebookEdit", desc: "Bloque l'écriture de fichiers contenant des patterns de secrets (sk-, AKIA, ghp_, etc.). Exclut .env.example.", mode: "Blocking" },
   { name: "auto-format", event: "PostToolUse → Write|Edit", desc: "Lance Prettier / Ruff / rustfmt sur le fichier édité si le projet a la config correspondante. Silencieux si absent.", mode: "Advisory" },
-  { name: "portfolio-yml-validate", event: "PostToolUse → Write|Edit", desc: "Après édition d'un .portfolio.yml : vérifie les champs requis, slug = nom du dossier, sort_order numérique.", mode: "Advisory" },
-  { name: "portfolio-drift", event: "PreToolUse → Bash(git commit)", desc: "Warn si package.json / config deploy modifiés dans les fichiers staged mais .portfolio.yml ou README pas touchés.", mode: "Advisory" },
-  { name: "stale-readme-guard", event: "PreToolUse → Bash(git push)", desc: "Avant push : vérifie qu'aucun commit non-pushé ne change les deps / config deploy sans toucher au README.md.", mode: "Advisory" },
+  { name: "stale-readme-guard", event: "PreToolUse → Bash(git push)", desc: "Avant push : vérifie qu'aucun commit non-pushé ne change les deps / config deploy sans toucher au README.md. Depuis la décision M12 s'applique à tout repo (l'ancien filtre .portfolio.yml aurait rendu ce hook silencieusement inopérant partout).", mode: "Advisory" },
   { name: "push-build-gate", event: "PreToolUse → Bash(git push)", desc: "Avant push : lance npm run build dans le repo ciblé. Bloque (exit 2) si le build échoue ou si des warnings apparaissent — remplace l'ancien hook Stop build-check.", mode: "Blocking" },
 ];
 
@@ -58,14 +56,14 @@ const SCENARIOS = [
   { id:"new-app",icon:"✦",title:"Nouvelle app",when:"Tu as une idée validée et tu veux la construire",category:"dev",frequency:"Ponctuel",
     steps:[
       {action:"Évaluer l'idée",where:"Projet Claude (ici)",tool:"Conversation",detail:"Utilité, faisabilité, cohérence portfolio, forme (PWA/site/local)"},
-      {action:"Scaffold le projet",where:"Claude Code",tool:"/new-app mon-app",detail:"Crée le repo, CLAUDE.md, README, .portfolio.yml, .gitignore, premier commit"},
+      {action:"Scaffold le projet",where:"Claude Code",tool:"/new-app mon-app",detail:"Crée le repo, CLAUDE.md, README (avec frontmatter name/tagline_fr/tagline_en), .gitignore, premier commit"},
       {action:"Brainstorm si complexe",where:"Claude Code",tool:"/superpowers:brainstorm",detail:"Optionnel — utile pour clarifier les specs avant de coder"},
       {action:"Planifier",where:"Claude Code",tool:"/plan ou /superpowers:write-plan",detail:"Plan mode natif pour les features simples, Superpowers pour les gros projets"},
       {action:"Implémenter",where:"Claude Code",tool:"Prompt direct ou /superpowers:execute-plan",detail:"Vanilla CC pour les petites tasks, Superpowers pour exécution par batch avec review"},
       {action:"Vérifier",where:"Claude Code",tool:"/audit https://mon-app.example.com",detail:"Docs + compliance check avant publication"},
-      {action:"Mettre à jour le portfolio",where:"Claude Code",tool:"/sync mon-app",detail:"Sync le manifest, régénère portfolio-apps.json"},
+      {action:"Donner une tile au hub (si applicable)",where:"Claude Code",tool:"Édition manuelle de editorial.ts",detail:"Ajouter une entrée dans ~/Dev/{portfolio-site}/src/data/editorial.ts — l'ordre du tableau est l'ordre canonique"},
       {action:"Mettre à jour les docs stratégiques",where:"Projet Claude (ici)",tool:"Conversation",detail:"Inventaire + pipeline + éventuellement charte"}],
-    traps:["Oublier le .portfolio.yml → l'app n'apparaît pas dans le portfolio","Laisser portfolio_card: true avant que l'app soit prête","Ne pas mettre à jour l'inventaire dans le projet Claude"]},
+    traps:["Oublier le frontmatter README → build-inventory.mjs n'a pas de pitch à afficher","Ajouter une entrée editorial.ts avant que l'app soit prête","Ne pas mettre à jour l'inventaire dans le projet Claude"]},
   { id:"bug-fix",icon:"⚡",title:"Bug fix",when:"Tu as repéré un bug sur une app existante",category:"dev",frequency:"Fréquent",
     steps:[
       {action:"Triage environnement",where:"Navigateur",tool:"Manuel",detail:"Cache ? Service worker ? Hard refresh ? Build stale ?"},
@@ -100,18 +98,16 @@ const SCENARIOS = [
       {action:"Compacter la mémoire agent",where:"Claude Code",tool:"/cleanup memory-only",detail:"Si MEMORY.md > 200 lignes, split en fichiers thématiques. Les stores sont par racine de projet (~130 fichiers sur 15 repos), pas centralisés dans ~/.claude"},
       {action:"Mettre à jour Claude Code",where:"Terminal",tool:"claude update",detail:"Lire le changelog pour les nouvelles features"}],
     traps:["Supprimer un dossier de marketplace sans faire claude plugin marketplace remove d'abord → known_marketplaces.json le re-clone à la session suivante, plugin et daemons compris","Croire que .claude/agent-memory/ est ignoré par défaut : le harness n'ignore d'office que agent-memory-local/. Tout repo avec un store a besoin de .claude/ (ou .claude/agent-memory/) dans son .gitignore","Laisser les plans s'accumuler pendant des semaines → bruit dans les repos","Garder des plugins inutilisés → contexte gaspillé à chaque session","Ne pas lire le changelog → rater des features utiles"]},
-  { id:"portfolio-sync",icon:"⟐",title:"Portfolio sync",when:"Après des changements sur plusieurs apps, ou 1×/semaine minimum",category:"maintenance",frequency:"Hebdomadaire",
+  { id:"portfolio-sync",icon:"⟐",title:"Validation des stories",when:"Après un ajout/edit de story sur le hub, ou en session hygiène",category:"maintenance",frequency:"Ponctuel",
     steps:[
-      {action:"Lancer le scan complet",where:"Claude Code",tool:"/sync",detail:"Scanne tous les .portfolio.yml, cross-check avec les repos"},
-      {action:"Reviewer les divergences",where:"Claude Code",tool:"Rapport automatique",detail:"Le sync fixe les divergences auto et liste les actions manuelles"},
-      {action:"Pousser les changements",where:"Terminal",tool:"git push (par projet)",detail:"Le sync ne push jamais — toi seul décides"},
-      {action:"Vérifier le site portfolio",where:"Navigateur",tool:"{portfolio-site-url}/projects",detail:"Vérifier que portfolio-apps.json reflète les changements"},
-      {action:"Mettre à jour les docs stratégiques",where:"Projet Claude (ici)",tool:"Conversation",detail:"Si le sync a révélé des incohérences avec l'inventaire ou la charte"}],
-    traps:["Oublier de push après le sync → les fixes restent en local","Modifier les taglines manuellement dans le JSON au lieu du .portfolio.yml","Ne pas vérifier visuellement le site portfolio après le sync"]},
+      {action:"Lancer la validation",where:"Claude Code",tool:"/sync",detail:"Valide le frontmatter de chaque story (modalities, featured_rank, live_url, keywords, seo_description) — read-only, ne fixe rien"},
+      {action:"Corriger les violations signalées",where:"Claude Code (dans le hub)",tool:"Édition manuelle du MDX",detail:"Le contenu des stories est créatif, jamais auto-fixé"},
+      {action:"Vérifier le site portfolio",where:"Navigateur",tool:"{portfolio-site-url}/stories",detail:"Vérifier visuellement après correction"}],
+    traps:["Attendre qu'un manifest .portfolio.yml existe pour ce check — il n'y en a plus depuis la décision M12, /sync ne fait plus que valider les stories","Confondre cette validation avec une mise à jour du hub — build-inventory.mjs (Layer 1) et editorial.ts (Layer 3) sont indépendants de /sync"]},
   { id:"compliance",icon:"✓",title:"Compliance sweep",when:"Avant un release, une publication LinkedIn, ou 1×/mois",category:"maintenance",frequency:"Mensuel",
     steps:[
       {action:"Audit sur une app",where:"Claude Code (dans le projet)",tool:"/audit https://url-de-l-app",detail:"Lance docs-checker + portfolio-audit en parallèle"},
-      {action:"Audit sur tout le portfolio",where:"Claude Code",tool:"/sync puis rapports sub-agents",detail:"Le sync dispatche docs-checker et portfolio-audit sur chaque projet modifié"},
+      {action:"Audit sur plusieurs apps",where:"Claude Code",tool:"/audit répété par projet",detail:"Depuis la décision M12, /sync ne fait plus de fan-out multi-app — chaque app s'audite individuellement"},
       {action:"Fixer les violations",where:"Claude Code",tool:"Prompt direct ou dispatch implementer",detail:"Footer manquant, console.log, secrets, .gitignore incomplet..."},
       {action:"Vérifier zero-warning",where:"Claude Code",tool:"npm run build",detail:"Le hook push-build-gate le vérifie auto au push, mais double-check avant publish reste utile"}],
     traps:["Publier sur LinkedIn une app qui n'a pas le footer signature","Oublier les secrets dans un repo rendu public","Ignorer les warnings 'non critiques' — ils s'accumulent"]},
@@ -139,13 +135,13 @@ const SCENARIOS = [
   { id:"publish",icon:"▲",title:"Publication / visibilité",when:"Rendre une app publique ou la promouvoir",category:"strategy",frequency:"Ponctuel",
     steps:[
       {action:"Compliance check complet",where:"Claude Code",tool:"/audit https://url",detail:"Tout doit être propre : footer, secrets, docs, zero-warning"},
-      {action:"Mettre à jour .portfolio.yml",where:"Claude Code",tool:"Édition manuelle",detail:"portfolio_card: true, portfolio_link: true, badge adapté, sort_order final"},
+      {action:"Vérifier le frontmatter README",where:"Claude Code",tool:"Édition manuelle",detail:"name/tagline_fr/tagline_en à jour (et facts_fr/facts_en si l'app est une tile du hub) — Layer 2 du système de manifest"},
       {action:"Rendre le repo public (si décidé)",where:"Terminal",tool:"gh repo edit {github-username}/app --visibility public",detail:"Vérifier qu'il n'y a AUCUN secret dans l'historique git"},
-      {action:"Sync portfolio",where:"Claude Code",tool:"/sync mon-app",detail:"Met à jour portfolio-apps.json avec la nouvelle visibilité"},
+      {action:"Donner/ajuster la tile hub",where:"Claude Code",tool:"Édition manuelle de editorial.ts",detail:"Ajouter ou repositionner l'entrée dans ~/Dev/{portfolio-site}/src/data/editorial.ts — l'ordre du tableau reflète la visibilité voulue"},
       {action:"Rédiger le post LinkedIn",where:"Projet Claude (ici)",tool:"Skill linkedin-adaptation",detail:"Adapter le contenu pour LinkedIn"},
       {action:"Mettre à jour les liens",where:"LinkedIn + Steady",tool:"Manuel",detail:"Profil LinkedIn, newsletter, tout lien qui référence l'app"},
       {action:"Mettre à jour docs stratégiques",where:"Projet Claude (ici)",tool:"Conversation",detail:"Inventaire (statut), stratégie de visibilité"}],
-    traps:["Publier un repo avec des secrets dans l'historique git (pas juste le dernier commit !)","Oublier de mettre portfolio_link: true → l'app est dans le JSON mais pas cliquable","Publier sans avoir vérifié le rendu sur mobile"]}
+    traps:["Publier un repo avec des secrets dans l'historique git (pas juste le dernier commit !)","Oublier l'entrée editorial.ts → l'app est publique sur GitHub mais invisible sur le hub","Publier sans avoir vérifié le rendu sur mobile"]}
 ];
 
 const CATEGORIES={dev:{label:"Développement",color:"#3B82F6",bg:"#1E3A5F"},maintenance:{label:"Maintenance",color:"#10B981",bg:"#0F3D2E"},strategy:{label:"Stratégie",color:"#F59E0B",bg:"#4A3100"}};

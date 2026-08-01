@@ -65,7 +65,7 @@ prose and the renderer), then re-run sync.
 cd ~/Dev/claude-code-setup && python3 scripts/sync.py --audit-only
 ```
 
-If any audit warnings appear on synced files (not README.md or .portfolio.yml which are owner-maintained), fix the anonymization before committing.
+If any audit warnings appear on synced files (not README.md, which is owner-maintained), fix the anonymization before committing.
 
 ## Step 6: Present results
 

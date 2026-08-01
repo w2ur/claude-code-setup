@@ -73,8 +73,6 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 │                                                           │
 │  stale-readme-guard  "Docs still current?"     (advisory) │
 │  auto-format ─────── "Format the file"         (advisory) │
-│  portfolio-yml-validate "Manifest valid?"      (advisory) │
-│  portfolio-drift ─── "Docs staged with code?"  (advisory) │
 │  secret-scan ─────── "API key in source?"      (blocking) │
 │  push-build-gate ─── "Build clean before push?" (blocking)│
 └───────────────────────────────────────────────────────────┘
@@ -132,18 +130,16 @@ Why skills instead of just writing longer agent prompts? Because skills are reus
 </details>
 
 <details>
-<summary><strong>Hooks (6)</strong> — 4 advisory + 2 blocking</summary>
+<summary><strong>Hooks (4)</strong> — 2 advisory + 2 blocking</summary>
 
 <br>
 
 - **secret-scan** (PreToolUse → Write|Edit): blocks writes containing API key patterns (`sk-`, `AKIA`, `ghp_`, etc.), excludes `.env.example` *(blocking)*
 - **push-build-gate** (PreToolUse → Bash `git push`): runs the build before the push goes out and blocks on failure or compiler warnings *(blocking)*
 - **auto-format** (PostToolUse → Write|Edit): runs Prettier / Ruff / rustfmt on the edited file if the project has the corresponding config — silent if not *(advisory)*
-- **portfolio-yml-validate** (PostToolUse → Write|Edit `*.portfolio.yml`): checks required fields, slug = folder name, numeric `sort_order`, valid `surface_type` *(advisory)*
-- **portfolio-drift** (PreToolUse → Bash `git commit`): warns when dependency/deploy files are staged but `.portfolio.yml` / README.md aren't *(advisory)*
 - **stale-readme-guard** (PreToolUse → Bash `git push`): checks unpushed commits for deploy/dep changes without a README.md update *(advisory)*
 
-Most hooks are advisory — in a system where I don't review code, I need Claude Code to exercise judgment, not pass checklists. There are two blocking exceptions now: secret scanning, because accidentally committing an API key is irreversible, and the push build gate, because shipping a broken build is a different kind of irreversible — it's live the moment it deploys.
+Half the hooks are advisory — in a system where I don't review code, I need Claude Code to exercise judgment, not pass checklists. There are two blocking exceptions now: secret scanning, because accidentally committing an API key is irreversible, and the push build gate, because shipping a broken build is a different kind of irreversible — it's live the moment it deploys.
 
 </details>
 
@@ -255,7 +251,7 @@ Browse the files, understand the patterns, and build your own version. The [phil
 
 This repo stays in sync with my actual `~/.claude/` setup via `/sync-setup` — a command that runs a Python sync script to copy, anonymize, and audit for data leaks. After any workflow change (new agent, renamed command, new hook), I run `/sync-setup` and the repo updates itself. See [`scripts/`](scripts/) for details.
 
-Known gap: the global `CLAUDE.md` also references three helper shell scripts under `~/.claude/scripts/` (`dev-scanner.sh`, `disk-hygiene.sh`, `cleanup-cron.sh`) that aren't published in this repo yet.
+Known gap: the global `CLAUDE.md` also references four helper shell scripts under `~/.claude/scripts/` (`dev-scanner.sh`, `disk-hygiene.sh`, `cleanup-cron.sh`, `tech-debt-triage.sh`) that aren't published in this repo yet.
 
 If something looks outdated, it probably means I changed my setup and haven't synced yet. Open an issue — it's a good nudge.
 
