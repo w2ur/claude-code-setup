@@ -20,76 +20,26 @@ Monthly technical health review. Two phases: triage everything, then deep-dive o
 
 ---
 
-## Phase 1 — Fast Triage (~2 min for all apps)
+## Phase 1 — Fast Triage (~1 min for all apps)
 
-Scan every project in ~/Dev that has a `.portfolio.yml`. For each app, collect 4 scoring signals:
+**Phase 1 is fully deterministic, so it is a script and not model work** (CLAUDE.md: deterministic work gets a script, no model). Run it and present its output:
 
-### Signal A: Commit Activity (proxy for change velocity → more changes = more risk)
 ```bash
-cd ~/Dev/{slug}
-COMMITS_30D=$(git log --since="30 days ago" --oneline 2>/dev/null | wc -l | tr -d ' ')
+bash ~/.claude/scripts/tech-debt-triage.sh
 ```
 
-### Signal B: Portfolio Prominence (higher = more visible = higher stakes)
-```bash
-# Read sort_order from .portfolio.yml — lower sort_order = more prominent
-SORT_ORDER=$(grep "sort_order:" .portfolio.yml 2>/dev/null | awk '{print $2}')
-# Also check portfolio_card: true/false
-PORTFOLIO_CARD=$(grep "portfolio_card:" .portfolio.yml 2>/dev/null | awk '{print $2}')
-```
+It scans every git repo in `~/Dev` (via `dev-scanner.sh --json`), scores each on the four signals below, and prints a ranked markdown table ready to show the owner. `--json` gives the same data machine-readable. It is **read-only** — it never writes the rotation tracker, because "last scan" means last *deep review*, not last triage.
 
-### Signal C: Time Since Last Scan
-```bash
-# Read from rotation tracker
-LAST_SCAN=$(python3 -c "import json; d=json.load(open('$HOME/Dev/.tech-debt-rotation.json')); print(d.get('${slug}','never'))" 2>/dev/null || echo "never")
-```
+| Signal | Source | Weight |
+|---|---|---|
+| A — commit activity | `git log --since="30 days ago"` | 2 if >10, 1 if 1–10, 0 if none |
+| B — portfolio prominence | position of `repo: '<name>'` in `editorial.ts` (Layer 3, M12) | 2 if in the first 6, 1 if present later, 0 if absent |
+| C — time since last deep review | `~/Dev/.tech-debt-rotation.json` | 3 never, 2 if >60d, 1 if 30–60d, 0 if <30d |
+| D — quick issues | `npm outdated`, `npm audit`, `console.log` count, `.nvmrc` | +1 per high/critical vuln, +1 if >5 outdated, +1 if >3 `console.log` |
 
-### Signal D: Quick Issue Detection (lightweight, no install/build)
-```bash
-cd ~/Dev/{slug}
+**Do not re-implement these signals inline.** The script is the single source of truth for the scoring; restating the weights here in runnable form is exactly how the two drift apart.
 
-# Outdated deps count (fast — reads lock file, no network)
-OUTDATED=$(npm outdated --json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d))" 2>/dev/null || echo "?")
-
-# Security vulnerabilities (fast — reads local audit cache)
-VULNS=$(npm audit --json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); m=d.get('metadata',{}); print(m.get('vulnerabilities',{}).get('high',0)+m.get('vulnerabilities',{}).get('critical',0))" 2>/dev/null || echo "?")
-
-# Console.log count (instant grep)
-CONSOLE_LOGS=$(grep -rn "console\.log" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" . 2>/dev/null | grep -v node_modules | grep -v dist | grep -v ".test." | wc -l | tr -d ' ')
-
-# Node version check (if .nvmrc exists)
-NODE_FILE=$(cat .nvmrc .node-version 2>/dev/null | head -1)
-```
-
-### Scoring
-
-Compute a priority score for each app (higher = more urgent):
-
-| Signal | Weight | Score |
-|--------|--------|-------|
-| Commits in last 30 days | ×2 if >10, ×1 if 1-10, ×0 if 0 | 0-2 |
-| Portfolio prominence | ×2 if sort_order ≤ 6 and portfolio_card: true, ×1 if card true, ×0 if card false | 0-2 |
-| Time since last scan | ×3 if never, ×2 if >60 days, ×1 if 30-60 days, ×0 if <30 days | 0-3 |
-| Quick issues | ×1 per critical/high vuln, +1 if >5 outdated, +1 if >3 console.logs | 0-3+ |
-
-### Present Triage Results
-
-Sort by priority score (descending) and present as a table:
-
-```
-## Tech Debt Triage — {date}
-
-| # | App | Score | Commits (30d) | Last Scan | Vulns | Outdated | Issues |
-|---|-----|-------|---------------|-----------|-------|----------|--------|
-| 1 | untilt | 10 | 23 | never | 2 high | 14 | 3 console.log |
-| 2 | my-budget-app | 7 | 12 | 2026-01-15 | 0 | 8 | Node 18 (.nvmrc) |
-| 3 | birdie | 7 | 0 | never | 1 high | 22 | — |
-| 4 | my-tsundoku | 5 | 5 | 2026-02-20 | 0 | 3 | — |
-| ... | ... | ... | ... | ... | ... | ... | ... |
-| 12 | kairos | 0 | 0 | 2026-03-01 | 0 | 1 | — |
-
-💡 Recommended: review the top 3-4 (untilt, my-budget-app, birdie, my-tsundoku)
-```
+Exit codes: `0` clean · `2` ran but **degraded** (a required tool was missing, so the numbers are incomplete — say so before presenting them) · `1` hard error.
 
 Then ask: **"Which apps do you want me to review in depth? (names or numbers, or 'top N')"**
 

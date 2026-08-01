@@ -11,15 +11,15 @@ These are the active portfolio-wide rules. This skill is preloaded — do not in
 ## Identity
 
 - Each app has its own visual identity, name, and universe. No shared design system.
-- Coherence comes from: author signature, quality standards, portfolio site, and automated sync.
-- Portfolio site: {portfolio-site-url} — data-driven from portfolio-apps.json.
+- Coherence comes from: author signature, quality standards, portfolio site, and the three-layer data system below.
+- Portfolio site: {portfolio-site-url} — built from the three layers (see "Portfolio Manifest System" below), not from a hand-maintained JSON export.
 - GitHub username: {github-username}. Dev directory: ~/Dev.
 
 ## Naming
 
 - All repos use kebab-case matching the folder name in ~/Dev.
 - No unintentional naming patterns (the "-or" suffix issue prompted Unbiasor → Untilt).
-- New projects default to sort_order: 99.
+- New projects that get a hub tile are appended to `editorial.ts` (see below) — there is no numeric sort field to default.
 
 ## Signature
 
@@ -33,35 +33,45 @@ These are the active portfolio-wide rules. This skill is preloaded — do not in
 
 ## Documentation
 
-- README: description, stack, local dev, deployment. Created at project init, never boilerplate.
+- README: description, stack, local dev, deployment, plus the Layer 2 frontmatter block (below). Created at project init, never boilerplate.
 - CLAUDE.md: project-specific only, never duplicates global rules. Written in English.
-- .portfolio.yml: machine-readable manifest at repo root. Updated in same commit as any field change.
+- No per-repo manifest file. Decision M12 (2026-07) retired `.portfolio.yml` — 26 files × ~18 fields that nothing but the tooling policing them ever read. Three layers replace it.
 
-## Manifest (.portfolio.yml)
+## Portfolio Manifest System (three layers, decision M12)
 
-Required fields: name, slug, tagline, description, audience, visibility, status, surface_type, url, portfolio_card, portfolio_link, badge, icon_emoji, icon_file, stack, sort_order.
-Optional: story_slug (required when surface_type implies a hub story or merged story — see below).
-- slug = folder name = GitHub repo name (source of truth: repo)
-- name = deliberately chosen portfolio display name (source of truth: .portfolio.yml — NEVER overwrite it from the README title)
-- Taglines and descriptions are creative content — never auto-generated.
+### Layer 1 — Derived inventory. Nothing hand-typed.
 
-### surface_type taxonomy
+`~/Dev/{portfolio-site}/scripts/build-inventory.mjs`, run from `prebuild`, writes `~/Dev/{portfolio-site}/src/data/inventory.json`. Per repo it observes, via the GitHub API and the repo's own file tree — never declared by a human:
 
-Every manifest MUST declare `surface_type`. Valid values:
+| field | source |
+|---|---|
+| `visibility`, `archived`, `description`, `homepage`, `license`, `pushed_at`, `stars` | `GET /repos/{github-username}/<repo>` |
+| `stack` | presence of `package.json` / `pyproject.toml` / `Cargo.toml` / `requirements.txt` in the root tree |
+| `deploy` | presence of `vercel.json` / `netlify.toml` / `wrangler.toml` |
+| `pitch` | Layer 2 frontmatter parsed out of the repo's `README.md` |
 
-| Value | Meaning | story_slug required? |
-|---|---|---|
-| `flagship` | Promoted live app on its own subdomain | No |
-| `personal-live` | Family/personal live app, linked from a merged story | Yes |
-| `external-story` | Own subdomain, heavy stack, hub links out | No |
-| `internal-story` | Story on the hub at `/stories/<slug>`, original deploy (if any) slated for retirement | Yes |
-| `tool-widget` | Small embedded tool on the hub at `/tools/<slug>` | Yes |
-| `meta` | GitHub repo referenced from a meta story (infra, tooling) | Optional |
-| `hidden` | Not displayed on the hub; may or may not have a deploy | No |
-| `archived` | Read-only repo, no active surface (post-retirement) | Yes |
-| `hub` | The portfolio hub itself (`{portfolio-site}` only) | No |
+Plus URL liveness for every `liveUrl` declared in Layer 3. On any network/auth failure the build falls back to the committed `inventory.json` snapshot rather than failing — the snapshot is a cache, not a source of truth.
 
-Only manifests whose `surface_type` is in `{flagship, personal-live, external-story, internal-story, tool-widget, meta}` appear in the generated `portfolio-apps.json`. `hidden`, `archived`, and `hub` are validated but excluded from the hub index.
+### Layer 2 — The pitch. Lives in each repo's README.md frontmatter.
+
+```yaml
+---
+name: Untilt
+tagline_fr: "Parce que votre cerveau vous ment, et qu'il vaut mieux le savoir."
+tagline_en: "Because your brain lies to you, and it's better to know."
+facts_fr: "51 biais, 510 stratégies de prévention, 131 références vérifiées via Crossref."
+facts_en: "51 biases, 510 prevention strategies, 131 references checked against Crossref."
+---
+```
+
+- `name`, `tagline_fr`, `tagline_en` are required for any repo `editorial.ts` tiles. `facts_*` are required there too — every tile carries a facts line.
+- For repos the hub does not render, a single `tagline` in whichever language it was written is enough; skip translating a tagline nobody will render.
+- Taglines and descriptions are creative content — never auto-generated, never batch-translated without review.
+- `name` is the deliberately chosen display name (source of truth: the README frontmatter — never overwrite it with a different README heading/title).
+
+### Layer 3 — Editorial. One file in the hub.
+
+`~/Dev/{portfolio-site}/src/data/editorial.ts` decides which projects get a hub tile and in what order. Presentation only — array order IS the canonical order, no numeric sort field. Each entry names a `repo` (drawing Layer 1 + Layer 2 from it) or `repo: null` for a tile with no repo of its own (e.g. a hub tool page over another project's engine), plus `accent`, `liveUrl`, and optional story/date fields. See the file itself for the current interface.
 
 ## Visibility Tiers
 

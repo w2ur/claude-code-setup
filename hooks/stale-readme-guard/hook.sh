@@ -35,7 +35,6 @@ fi
 [ -z "$dir" ] && dir="$PWD"
 
 repo=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || exit 0
-[ -f "$repo/.portfolio.yml" ] || exit 0
 
 # Base: upstream of current branch, fallback to origin/main
 base=$(git -C "$repo" rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo "origin/main")

@@ -21,6 +21,7 @@ Before scaffolding, ask the owner:
 3. **Preferred stack?** (or "you choose")
 4. **User-facing language?** (French / English / Bilingual)
 5. **Deploy target?** (Netlify / Vercel / Cloudflare / local-only for now)
+6. **Should it get a tile on the hub ({portfolio-site-url})?** If yes, get a one-line French tagline, one-line English tagline, and (if it's a real project the hub would feature, not a personal-only tool) a facts line for each language.
 
 ## Scaffold
 
@@ -32,13 +33,6 @@ mkdir -p ~/Dev/$0
 cd ~/Dev/$0
 git init
 ```
-
-### .portfolio.yml
-Create with all required fields per the `portfolio-conventions` skill's manifest spec, including the current `surface_type` taxonomy. Set:
-- `portfolio_card: false` with comment `# TODO: set to true when ready to publish`
-- `sort_order: 99` with comment `# TODO: assign final sort_order`
-- `visibility` based on audience answer
-- `surface_type` based on the audience/deploy answers (ask the owner if it's not obvious which of the valid values applies)
 
 ### CLAUDE.md
 Create covering: project overview, tech stack, dev/build commands, deployment, and any conventions that override or extend the global CLAUDE.md. Include:
@@ -54,6 +48,17 @@ Write a real README (not boilerplate) with:
 - Tech stack
 - How to run locally
 - Deployment setup
+- **Layer 2 frontmatter** (per `portfolio-conventions`) at the very top of the file:
+  ```yaml
+  ---
+  name: [Display Name]
+  tagline_fr: "[one-line FR tagline]"
+  tagline_en: "[one-line EN tagline]"
+  facts_fr: "[facts line, only if the app will get a hub tile]"
+  facts_en: "[facts line, only if the app will get a hub tile]"
+  ---
+  ```
+  If the owner only gave one language's tagline (question 6), write only that `tagline_*` key — do not invent a translation nobody asked for. Omit `facts_*` entirely for apps that won't get a hub tile.
 
 ### .gitignore
 Appropriate for the chosen stack, including all standard exclusions.
@@ -78,6 +83,9 @@ gh repo create {github-username}/$0 --private --source=. --push
 ```
 Note: created as private by default. The owner decides when to make it public.
 
+### editorial.ts entry (only if the owner said yes to a hub tile)
+Read `~/Dev/{portfolio-site}/src/data/editorial.ts` and append one `EditorialEntry` for `$0`: `slug: "$0"`, `repo: "$0"`, an `accent` that doesn't collide with existing entries, the app's `liveUrl` once deployed (or omit/placeholder if not deployed yet), and `liveHost`. Append at the end of the array — array order is the canonical order, and the owner reorders manually when ready. Do not invent a `story` or `date` unless the owner specified one; leave it for the owner to add when the app has a story written. This is the only write this command makes inside `~/Dev/{portfolio-site}/` — do not touch anything else in that repo.
+
 ## Report
 
 After scaffolding:
@@ -88,13 +96,12 @@ After scaffolding:
 - GitHub: https://github.com/{github-username}/$0 (private)
 - Stack: [chosen stack]
 - Deploy: [not deployed yet / configured for X]
-- Portfolio: .portfolio.yml created (portfolio_card: false)
+- Portfolio: README frontmatter added (name/tagline_fr/tagline_en[/facts_fr/facts_en]); editorial.ts entry [added / skipped — no hub tile requested]
 
 ### Next steps:
-1. Review .portfolio.yml and set portfolio_card when ready
-2. Assign sort_order in .portfolio.yml
-3. Deploy when the app has enough content
-4. Run /sync to update portfolio-apps.json
+1. Deploy when the app has enough content
+2. If it wasn't given a hub tile yet and should get one later, add an entry to `~/Dev/{portfolio-site}/src/data/editorial.ts`
+3. Run /sync to validate the hub's stories collection frontmatter (unrelated to this app unless it ships a story)
 
 ### Documents to update:
 - Inventaire: add $0 entry
