@@ -62,7 +62,6 @@ file_map:
   'skills/**/*.sh': 'skills/'
   'hooks/**/*.sh': 'hooks/'
   'hooks/*.md': 'hooks/'
-  'rules/*.md': 'rules/'
 
 # Extra files outside ~/.claude/ that should also be synced + anonymized.
 # NOTE: docs/workflow-guide.html is generated from live config by

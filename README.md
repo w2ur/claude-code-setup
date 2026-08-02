@@ -176,7 +176,7 @@ flowchart LR
 > **Bug triage before code.** When I report a bug, Claude Code must rule out environment issues first — stale cache, service worker, old build. The most common "bugs" in my portfolio weren't bugs at all.
 
 > [!NOTE]
-> **Docs in the same commit as code.** README, CLAUDE.md, and `.portfolio.yml` updates ship with the feature, not as an afterthought. If the commit changes behavior, it changes documentation.
+> **Docs in the same commit as code.** There's no per-repo manifest file — docs are `README.md` (including its YAML frontmatter: `name`/`tagline_fr`/`tagline_en`/`facts_fr`/`facts_en`) and `CLAUDE.md`, and both ship with the feature, not as an afterthought. If the commit changes behavior, it changes documentation.
 
 **The elegance check.** Before presenting non-trivial work, pause and ask: "Is there a more elegant way?" I don't review code — Claude Code is the entire quality bar.
 
@@ -195,7 +195,7 @@ These aren't arbitrary choices. Each one came from a specific failure. Read [the
 | Model selection per task | Always use the best model | Haiku is perfect for audits. Sonnet handles 80% of implementation. Opus is for architecture and complex cross-file work. Matching model to task is a quality decision, not just a cost one. |
 | Agent memory over lesson files | Flat markdown files per project | Files had no structure, no auto-injection, no compaction. Agent memory is read at startup, written automatically after corrections, and split when it grows too large. |
 | Skills as preloaded context | Dynamic tool calls | Skills need to be available before the agent starts thinking. Dynamic loading means the agent might not know what it needs to know when making its first decision. |
-| One manifest per repo (.portfolio.yml) | Central inventory document only | Drift. A central doc goes stale the moment you rename an app. A manifest in the repo travels with the code and gets updated in the same commit. |
+| Derived inventory + README frontmatter + editorial file (no hand-typed manifest) | One manifest per repo (`.portfolio.yml`) | A hand-typed manifest went stale the moment you renamed an app — 26 files × ~18 fields nothing but the tooling policing them ever read. The inventory is built by observing GitHub, stack, and live-URL health at build time, so nothing hand-typed can drift. |
 
 ## Quick Start
 
