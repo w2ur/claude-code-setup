@@ -18,158 +18,216 @@
 <!--
   ============================================================================
   DATA SECTION — Claude Code: edit data here, don't touch the renderer below.
-  Last updated: 2026-07-30
+  Bilingual: every hand-written prose field has an `_en` sibling. The French
+  field stays canonical; a missing `_en` falls back to it at render time.
+  Last updated: 2026-08-02
   ============================================================================
 -->
 <script id="workflow-data">
 const COMMANDS = [
-  { name: "/sync", args: "(aucun argument)", desc: "Valide le frontmatter de la collection stories du hub (modalities, featured_rank, live_url, keywords, seo_description) et rapporte les violations. Depuis la décision M12, ne scanne plus de manifest et ne régénère plus rien.", agents: ["portfolio-sync"], when: "Après un ajout/edit de story, ou en session hygiène" },
-  { name: "/new-app", args: "$0 (nom-en-kebab-case)", desc: "Scaffold complet conforme à la charte : repo Git, README (avec frontmatter Layer 2 : name/tagline_fr/tagline_en), CLAUDE.md, .gitignore, premier commit, repo GitHub privé, et une entrée editorial.ts si l'app doit avoir une tile sur le hub.", agents: ["implementer"], when: "Création d'une nouvelle app dans le portfolio" },
-  { name: "/audit", args: "[URL canonique optionnelle]", desc: "Lance docs-checker (sonnet) et portfolio-audit (haiku) en parallèle sur le projet courant. Produit un rapport consolidé.", agents: ["docs-checker", "portfolio-audit"], when: "Avant un release, une publication, ou pendant un compliance sweep" },
-  { name: "/cleanup", args: "[disk-only | plans-only | plugins-only | memory-only]", desc: "Step 0 — hygiène disque de ~/.claude via scripts/disk-hygiene.sh : deux tiers, AUTO appliqué sans demander (état éphémère aux rétentions annoncées + archivage des plans, jamais de suppression de plan), CONFIRM derrière --yes-projects / --yes-plugins (dossiers projects/ obsolètes, dossiers plugins temporaires). Puis : plans orphelins dans les repos, audit des plugins, compactage de la mémoire agent > 200 lignes, et check de staleness du workflow guide / docs stratégiques / claude-code-setup. Les rétentions vivent dans le script, jamais dans la commande.", agents: [], when: "1×/semaine en hygiène. Le tier AUTO tourne aussi sans modèle en cron le 15 du mois à 8h07 (scripts/cleanup-cron.sh → cleanup-cron.log), décalé du /tech-debt du 1er" },
-  { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2 phases. Phase 1 : triage rapide via scripts/tech-debt-triage.sh — entièrement déterministe donc sans modèle (activité commits, proéminence portfolio via editorial.ts, ancienneté du dernier deep review, vulnérabilités / deps obsolètes / console.log). Le script est la source de vérité des 4 signaux et de leurs poids : la commande les décrit, ne les réimplémente jamais. Lecture seule — il n'écrit pas le rotation tracker, c'est la Phase 4 qui le fait. Phase 2 : revue approfondie sur les apps sélectionnées, seule partie qui demande du jugement. Auto-fix ce qui est safe, flag le reste.", agents: ["implementer (auto-fix)", "troubleshooter (si migration majeure)"], when: "1×/mois en session dédiée. La Phase 1 tourne aussi sans modèle en cron le 1er du mois à 8h07 (scripts/tech-debt-triage.sh → tech-debt-cron.log), décalée du /cleanup du 15" },
-  { name: "/sync-setup", args: "[--dry-run | --audit-only]", desc: "Synchronise le repo claude-code-setup depuis ~/.claude/. Copie + anonymise les fichiers, nettoie les fichiers obsolètes, met à jour le README (compteurs, noms), vérifie l'absence de données personnelles.", agents: [], when: "Après des changements de workflow (nouvel agent, commande renommée, nouveau hook)" },
-  { name: "/next", args: "A | B | un task id (ex. A1.2, B0)", desc: "Exécute la prochaine tâche non bloquée d'un track du master plan, puis s'arrête. Lit le ledger du track, vérifie les gates et les règles cross-track, dispatche le travail aux sub-agents plutôt que de le faire en contexte, vérifie contre la réalité (pas contre le diff), met à jour le ledger. Une session = une phase.", agents: [], when: "Exécution d'un plan multi-phase approuvé — A = portfolio (~/Dev), B = setup (~/.claude)" },
+  { name: "/sync", args: "(aucun argument)", args_en: "(no arguments)", desc: "Valide le frontmatter de la collection stories du hub (modalities, featured_rank, live_url, keywords, seo_description) et rapporte les violations. Depuis la décision M12, ne scanne plus de manifest et ne régénère plus rien.", desc_en: "Validates the frontmatter of the hub's stories collection (modalities, featured_rank, live_url, keywords, seo_description) and reports violations. Since decision M12 it no longer scans a manifest and no longer regenerates anything.", agents: ["portfolio-sync"], agents_en: ["portfolio-sync"], when: "Après un ajout/edit de story, ou en session hygiène", when_en: "After adding or editing a story, or during a hygiene session" },
+  { name: "/new-app", args: "$0 (nom-en-kebab-case)", args_en: "$0 (name-in-kebab-case)", desc: "Scaffold complet conforme à la charte : repo Git, README (avec frontmatter Layer 2 : name/tagline_fr/tagline_en), CLAUDE.md, .gitignore, premier commit, repo GitHub privé, et une entrée editorial.ts si l'app doit avoir une tile sur le hub.", desc_en: "Full scaffold that follows the conventions: Git repo, README (with Layer 2 frontmatter: name/tagline_fr/tagline_en), CLAUDE.md, .gitignore, first commit, private GitHub repo, and an editorial.ts entry if the app should get a hub tile.", agents: ["implementer"], agents_en: ["implementer"], when: "Création d'une nouvelle app dans le portfolio", when_en: "Creating a new app in the portfolio" },
+  { name: "/audit", args: "[URL canonique optionnelle]", args_en: "[optional canonical URL]", desc: "Lance docs-checker (sonnet) et portfolio-audit (haiku) en parallèle sur le projet courant. Produit un rapport consolidé.", desc_en: "Runs docs-checker (sonnet) and portfolio-audit (haiku) in parallel on the current project. Produces one consolidated report.", agents: ["docs-checker", "portfolio-audit"], agents_en: ["docs-checker", "portfolio-audit"], when: "Avant un release, une publication, ou pendant un compliance sweep", when_en: "Before a release, before publishing, or during a compliance sweep" },
+  { name: "/cleanup", args: "[disk-only | plans-only | plugins-only | memory-only]", args_en: "[disk-only | plans-only | plugins-only | memory-only]", desc: "Step 0 — hygiène disque de ~/.claude via scripts/disk-hygiene.sh : deux tiers, AUTO appliqué sans demander (état éphémère aux rétentions annoncées + archivage des plans, jamais de suppression de plan), CONFIRM derrière --yes-projects / --yes-plugins (dossiers projects/ obsolètes, dossiers plugins temporaires). Puis : plans orphelins dans les repos, audit des plugins, compactage de la mémoire agent > 200 lignes, et check de staleness du workflow guide / docs stratégiques / claude-code-setup. Les rétentions vivent dans le script, jamais dans la commande.", desc_en: "Step 0 — disk hygiene for ~/.claude via scripts/disk-hygiene.sh: two tiers, AUTO applied without asking (ephemeral state down to the stated retentions + plan archiving, never a plan deletion), CONFIRM behind --yes-projects / --yes-plugins (stale projects/ directories, plugin temp directories). Then: orphan plans inside repos, plugin audit, agent-memory compaction past 200 lines, and a staleness check on the workflow guide / strategic docs / claude-code-setup. The retention numbers live in the script, never in the command.", agents: [], agents_en: [], when: "1×/semaine en hygiène. Le tier AUTO tourne aussi sans modèle en cron le 15 du mois à 8h07 (scripts/cleanup-cron.sh → cleanup-cron.log), décalé du /tech-debt du 1er", when_en: "Once a week, as hygiene. The AUTO tier also runs model-free from cron on the 15th at 8:07am (scripts/cleanup-cron.sh → cleanup-cron.log), offset from the /tech-debt run on the 1st" },
+  { name: "/tech-debt", args: "[app1 app2 ... | --triage-only]", args_en: "[app1 app2 ... | --triage-only]", desc: "Revue technique mensuelle en 2 phases. Phase 1 : triage rapide via scripts/tech-debt-triage.sh — entièrement déterministe donc sans modèle (activité commits, proéminence portfolio via editorial.ts, ancienneté du dernier deep review, vulnérabilités / deps obsolètes / console.log). Le script est la source de vérité des 4 signaux et de leurs poids : la commande les décrit, ne les réimplémente jamais. Lecture seule — il n'écrit pas le rotation tracker, c'est la Phase 4 qui le fait. Phase 2 : revue approfondie sur les apps sélectionnées, seule partie qui demande du jugement. Auto-fix ce qui est safe, flag le reste.", desc_en: "Monthly technical review in 2 phases. Phase 1: fast triage via scripts/tech-debt-triage.sh — fully deterministic, therefore model-free (commit activity, portfolio prominence via editorial.ts, age of the last deep review, vulnerabilities / outdated deps / console.log). The script is the source of truth for the 4 signals and their weights: the command describes them, it never re-implements them. Read-only — it does not write the rotation tracker, Phase 4 does. Phase 2: deep review on the selected apps, the only part that takes judgement. Auto-fixes what is safe, flags the rest.", agents: ["implementer (auto-fix)", "troubleshooter (si migration majeure)"], agents_en: ["implementer (auto-fix)", "troubleshooter (for a major migration)"], when: "1×/mois en session dédiée. La Phase 1 tourne aussi sans modèle en cron le 1er du mois à 8h07 (scripts/tech-debt-triage.sh → tech-debt-cron.log), décalée du /cleanup du 15", when_en: "Once a month, in a dedicated session. Phase 1 also runs model-free from cron on the 1st at 8:07am (scripts/tech-debt-triage.sh → tech-debt-cron.log), offset from the /cleanup run on the 15th" },
+  { name: "/sync-setup", args: "[--dry-run | --audit-only]", args_en: "[--dry-run | --audit-only]", desc: "Synchronise le repo claude-code-setup depuis ~/.claude/. Copie + anonymise les fichiers, nettoie les fichiers obsolètes, met à jour le README (compteurs, noms), vérifie l'absence de données personnelles.", desc_en: "Syncs the claude-code-setup repo from ~/.claude/. Copies and anonymizes the files, removes the stale ones, updates the README (counts, names), and checks that no personal data leaked.", agents: [], agents_en: [], when: "Après des changements de workflow (nouvel agent, commande renommée, nouveau hook)", when_en: "After a workflow change (new agent, renamed command, new hook)" },
+  { name: "/next", args: "A | B | un task id (ex. A1.2, B0)", args_en: "A | B | a task id (e.g. A1.2, B0)", desc: "Exécute la prochaine tâche non bloquée d'un track du master plan, puis s'arrête. Lit le ledger du track, vérifie les gates et les règles cross-track, dispatche le travail aux sub-agents plutôt que de le faire en contexte, vérifie contre la réalité (pas contre le diff), met à jour le ledger. Une session = une phase.", desc_en: "Runs the next unblocked task of a master-plan track, then stops. Reads the track ledger, checks the gates and the cross-track rules, dispatches the work to sub-agents instead of doing it in context, verifies against reality (not against the diff), updates the ledger. One session = one phase.", agents: [], agents_en: [], when: "Exécution d'un plan multi-phase approuvé — A = portfolio (~/Dev), B = setup (~/.claude)", when_en: "Executing an approved multi-phase plan — A = portfolio (~/Dev), B = setup (~/.claude)" },
 ];
 
 const AGENTS = [
-  { name: "implementer", model: "sonnet", skills: [], memory: true, desc: "Exécute les tâches d'implémentation avec un critère 'done when' clair. Ne prend pas de décisions d'architecture. Plus de skills préchargées — les standards non déductibles vivent dans la section Quality du CLAUDE.md global." },
-  { name: "troubleshooter", model: "inherit", skills: ["portfolio-conventions"], memory: true, desc: "Diagnostique les problèmes structurels après 2 échecs d'implémentation. Évalue les options, produit un plan. Ne code jamais. Hérite du modèle de la session — jamais plus faible que l'appelant." },
-  { name: "portfolio-sync", model: "sonnet", skills: ["portfolio-conventions"], memory: true, desc: "Valide le frontmatter de la collection stories du hub (modalities, featured_rank, live_url...). Read-only. Depuis la décision M12 (retrait de .portfolio.yml), c'est tout ce qui reste de cet agent — candidat à devenir un script déterministe." },
-  { name: "docs-checker", model: "sonnet", skills: [], memory: false, desc: "Audite et corrige README, CLAUDE.md, .gitignore, URLs. Fixe les problèmes mécaniques directement. Vérifie que les URLs live/demo déclarées répondent vraiment (2xx/3xx) et signale les deux sens : déclaré-mais-absent et présent-mais-non-déclaré." },
-  { name: "portfolio-audit", model: "haiku", skills: [], memory: false, desc: "Audit compliance read-only : signature auteur, secrets, .gitignore, dead code, tests, commits." },
-  { name: "dummy-visitor", model: "sonnet", skills: [], memory: false, desc: "Visiteur naïf bilingue FR/EN qui découvre un site sans contexte, puis réagit au gap perception/intention après lecture du README." },
+  { name: "implementer", model: "sonnet", skills: [], memory: true, desc: "Exécute les tâches d'implémentation avec un critère 'done when' clair. Ne prend pas de décisions d'architecture. Plus de skills préchargées — les standards non déductibles vivent dans la section Quality du CLAUDE.md global.", desc_en: "Runs implementation tasks against a clear 'done when' criterion. Makes no architecture decisions. No preloaded skills anymore — the standards you cannot derive live in the Quality section of the global CLAUDE.md." },
+  { name: "troubleshooter", model: "inherit", skills: ["portfolio-conventions"], memory: true, desc: "Diagnostique les problèmes structurels après 2 échecs d'implémentation. Évalue les options, produit un plan. Ne code jamais. Hérite du modèle de la session — jamais plus faible que l'appelant.", desc_en: "Diagnoses structural problems after 2 failed implementation attempts. Weighs the options, produces a plan. Never writes code. Inherits the session model — never weaker than its caller." },
+  { name: "portfolio-sync", model: "sonnet", skills: ["portfolio-conventions"], memory: true, desc: "Valide le frontmatter de la collection stories du hub (modalities, featured_rank, live_url...). Read-only. Depuis la décision M12 (retrait de .portfolio.yml), c'est tout ce qui reste de cet agent — candidat à devenir un script déterministe.", desc_en: "Validates the frontmatter of the hub's stories collection (modalities, featured_rank, live_url...). Read-only. Since decision M12 (dropping .portfolio.yml) that is all this agent still does — a candidate for becoming a deterministic script." },
+  { name: "docs-checker", model: "sonnet", skills: [], memory: false, desc: "Audite et corrige README, CLAUDE.md, .gitignore, URLs. Fixe les problèmes mécaniques directement. Vérifie que les URLs live/demo déclarées répondent vraiment (2xx/3xx) et signale les deux sens : déclaré-mais-absent et présent-mais-non-déclaré.", desc_en: "Audits and fixes README, CLAUDE.md, .gitignore, URLs. Fixes the mechanical problems directly. Checks that the declared live/demo URLs actually answer (2xx/3xx) and reports both directions: declared-but-missing and present-but-undeclared." },
+  { name: "portfolio-audit", model: "haiku", skills: [], memory: false, desc: "Audit compliance read-only : signature auteur, secrets, .gitignore, dead code, tests, commits.", desc_en: "Read-only compliance audit: author signature, secrets, .gitignore, dead code, tests, commits." },
+  { name: "dummy-visitor", model: "sonnet", skills: [], memory: false, desc: "Visiteur naïf bilingue FR/EN qui découvre un site sans contexte, puis réagit au gap perception/intention après lecture du README.", desc_en: "A naive bilingual FR/EN visitor who discovers a site with no context, then reacts to the perception/intent gap after reading the README." },
 ];
 
 const SKILLS = [
-  { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["troubleshooter", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, système de manifest à trois couches (inventaire dérivé / pitch en frontmatter README / editorial.ts), quality standards." },
+  { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["troubleshooter", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, système de manifest à trois couches (inventaire dérivé / pitch en frontmatter README / editorial.ts), quality standards.", desc_en: "The consistency charter, condensed: naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, the three-layer manifest system (derived inventory / pitch in the README frontmatter / editorial.ts), quality standards." },
 ];
 
 const HOOKS = [
-  { name: "secret-scan", event: "PreToolUse → Write|Edit|NotebookEdit", desc: "Bloque l'écriture de fichiers contenant des patterns de secrets (sk-, AKIA, ghp_, etc.). Exclut .env.example.", mode: "Blocking" },
-  { name: "auto-format", event: "PostToolUse → Write|Edit", desc: "Lance Prettier / Ruff / rustfmt sur le fichier édité si le projet a la config correspondante. Silencieux si absent.", mode: "Advisory" },
-  { name: "stale-readme-guard", event: "PreToolUse → Bash(git push)", desc: "Avant push : vérifie qu'aucun commit non-pushé ne change les deps / config deploy sans toucher au README.md. Depuis la décision M12 s'applique à tout repo (l'ancien filtre .portfolio.yml aurait rendu ce hook silencieusement inopérant partout).", mode: "Advisory" },
-  { name: "push-build-gate", event: "PreToolUse → Bash(git push)", desc: "Avant push : lance npm run build dans le repo ciblé. Bloque (exit 2) si le build échoue ou si des warnings apparaissent — remplace l'ancien hook Stop build-check.", mode: "Blocking" },
+  { name: "secret-scan", event: "PreToolUse → Write|Edit|NotebookEdit", desc: "Bloque l'écriture de fichiers contenant des patterns de secrets (sk-, AKIA, ghp_, etc.). Exclut .env.example.", desc_en: "Blocks writing any file that contains secret patterns (sk-, AKIA, ghp_, etc.). Excludes .env.example.", mode: "Blocking" },
+  { name: "auto-format", event: "PostToolUse → Write|Edit", desc: "Lance Prettier / Ruff / rustfmt sur le fichier édité si le projet a la config correspondante. Silencieux si absent.", desc_en: "Runs Prettier / Ruff / rustfmt on the edited file when the project has the matching config. Silent when it does not.", mode: "Advisory" },
+  { name: "stale-readme-guard", event: "PreToolUse → Bash(git push)", desc: "Avant push : vérifie qu'aucun commit non-pushé ne change les deps / config deploy sans toucher au README.md. Depuis la décision M12 s'applique à tout repo (l'ancien filtre .portfolio.yml aurait rendu ce hook silencieusement inopérant partout).", desc_en: "Before a push: checks that no unpushed commit changes the deps / deploy config without touching README.md. Since decision M12 it applies to every repo (the old .portfolio.yml filter would have made this hook silently inert everywhere).", mode: "Advisory" },
+  { name: "push-build-gate", event: "PreToolUse → Bash(git push)", desc: "Avant push : lance npm run build dans le repo ciblé. Bloque (exit 2) si le build échoue ou si des warnings apparaissent — remplace l'ancien hook Stop build-check.", desc_en: "Before a push: runs npm run build in the target repo. Blocks (exit 2) if the build fails or emits warnings — replaces the old Stop build-check hook.", mode: "Blocking" },
 ];
 
 const SCENARIOS = [
-  { id:"new-app",icon:"✦",title:"Nouvelle app",when:"Tu as une idée validée et tu veux la construire",category:"dev",frequency:"Ponctuel",
+  { id:"new-app",icon:"✦",title:"Nouvelle app",title_en:"New app",when:"Tu as une idée validée et tu veux la construire",when_en:"You have a validated idea and you want to build it",category:"dev",frequency:"Ponctuel",frequency_en:"One-off",
     steps:[
-      {action:"Évaluer l'idée",where:"Projet Claude (ici)",tool:"Conversation",detail:"Utilité, faisabilité, cohérence portfolio, forme (PWA/site/local)"},
-      {action:"Scaffold le projet",where:"Claude Code",tool:"/new-app mon-app",detail:"Crée le repo, CLAUDE.md, README (avec frontmatter name/tagline_fr/tagline_en), .gitignore, premier commit"},
-      {action:"Brainstorm si complexe",where:"Claude Code",tool:"/superpowers:brainstorm",detail:"Optionnel — utile pour clarifier les specs avant de coder"},
-      {action:"Planifier",where:"Claude Code",tool:"/plan ou /superpowers:write-plan",detail:"Plan mode natif pour les features simples, Superpowers pour les gros projets"},
-      {action:"Implémenter",where:"Claude Code",tool:"Prompt direct ou /superpowers:execute-plan",detail:"Vanilla CC pour les petites tasks, Superpowers pour exécution par batch avec review"},
-      {action:"Vérifier",where:"Claude Code",tool:"/audit https://mon-app.example.com",detail:"Docs + compliance check avant publication"},
-      {action:"Donner une tile au hub (si applicable)",where:"Claude Code",tool:"Édition manuelle de editorial.ts",detail:"Ajouter une entrée dans ~/Dev/{portfolio-site}/src/data/editorial.ts — l'ordre du tableau est l'ordre canonique"},
-      {action:"Mettre à jour les docs stratégiques",where:"Projet Claude (ici)",tool:"Conversation",detail:"Inventaire + pipeline + éventuellement charte"}],
-    traps:["Oublier le frontmatter README → build-inventory.mjs n'a pas de pitch à afficher","Ajouter une entrée editorial.ts avant que l'app soit prête","Ne pas mettre à jour l'inventaire dans le projet Claude"]},
-  { id:"bug-fix",icon:"⚡",title:"Bug fix",when:"Tu as repéré un bug sur une app existante",category:"dev",frequency:"Fréquent",
+      {action:"Évaluer l'idée",action_en:"Evaluate the idea",where:"Projet Claude (ici)",where_en:"Claude project (here)",tool:"Conversation",tool_en:"Conversation",detail:"Utilité, faisabilité, cohérence portfolio, forme (PWA/site/local)",detail_en:"Usefulness, feasibility, portfolio fit, form factor (PWA/site/local)"},
+      {action:"Scaffold le projet",action_en:"Scaffold the project",where:"Claude Code",where_en:"Claude Code",tool:"/new-app mon-app",tool_en:"/new-app my-app",detail:"Crée le repo, CLAUDE.md, README (avec frontmatter name/tagline_fr/tagline_en), .gitignore, premier commit",detail_en:"Creates the repo, CLAUDE.md, README (with name/tagline_fr/tagline_en frontmatter), .gitignore, first commit"},
+      {action:"Brainstorm si complexe",action_en:"Brainstorm if it is complex",where:"Claude Code",where_en:"Claude Code",tool:"/superpowers:brainstorm",tool_en:"/superpowers:brainstorm",detail:"Optionnel — utile pour clarifier les specs avant de coder",detail_en:"Optional — useful to pin the specs down before writing code"},
+      {action:"Planifier",action_en:"Plan",where:"Claude Code",where_en:"Claude Code",tool:"/plan ou /superpowers:write-plan",tool_en:"/plan or /superpowers:write-plan",detail:"Plan mode natif pour les features simples, Superpowers pour les gros projets",detail_en:"Native plan mode for simple features, Superpowers for the big projects"},
+      {action:"Implémenter",action_en:"Implement",where:"Claude Code",where_en:"Claude Code",tool:"Prompt direct ou /superpowers:execute-plan",tool_en:"Direct prompt or /superpowers:execute-plan",detail:"Vanilla CC pour les petites tasks, Superpowers pour exécution par batch avec review",detail_en:"Vanilla CC for small tasks, Superpowers for batched execution with review"},
+      {action:"Vérifier",action_en:"Verify",where:"Claude Code",where_en:"Claude Code",tool:"/audit https://mon-app.example.com",tool_en:"/audit https://my-app.example.com",detail:"Docs + compliance check avant publication",detail_en:"Docs + compliance check before publishing"},
+      {action:"Donner une tile au hub (si applicable)",action_en:"Give it a hub tile (if applicable)",where:"Claude Code",where_en:"Claude Code",tool:"Édition manuelle de editorial.ts",tool_en:"Manual edit of editorial.ts",detail:"Ajouter une entrée dans ~/Dev/{portfolio-site}/src/data/editorial.ts — l'ordre du tableau est l'ordre canonique",detail_en:"Add an entry to ~/Dev/{portfolio-site}/src/data/editorial.ts — array order is the canonical order"},
+      {action:"Mettre à jour les docs stratégiques",action_en:"Update the strategic docs",where:"Projet Claude (ici)",where_en:"Claude project (here)",tool:"Conversation",tool_en:"Conversation",detail:"Inventaire + pipeline + éventuellement charte",detail_en:"Inventory + pipeline + possibly the charter"}],
+    traps:["Oublier le frontmatter README → build-inventory.mjs n'a pas de pitch à afficher","Ajouter une entrée editorial.ts avant que l'app soit prête","Ne pas mettre à jour l'inventaire dans le projet Claude"],
+    traps_en:["Forgetting the README frontmatter → build-inventory.mjs has no pitch to show","Adding an editorial.ts entry before the app is ready","Not updating the inventory in the Claude project"]},
+  { id:"bug-fix",icon:"⚡",title:"Bug fix",title_en:"Bug fix",when:"Tu as repéré un bug sur une app existante",when_en:"You spotted a bug in an existing app",category:"dev",frequency:"Fréquent",frequency_en:"Frequent",
     steps:[
-      {action:"Triage environnement",where:"Navigateur",tool:"Manuel",detail:"Cache ? Service worker ? Hard refresh ? Build stale ?"},
-      {action:"L1 — fix direct",where:"Claude Code",tool:"Prompt direct (hypothèse de root cause obligatoire)",detail:"Pas d'édition sans hypothèse énoncée. 'Essayer autre chose' sans nouvelle hypothèse est interdit"},
-      {action:"L2 — si L1 échoue",where:"Claude Code",tool:"superpowers:systematic-debugging",detail:"Cascade à sens unique : pas de retry au même niveau"},
-      {action:"L3 — si L2 échoue",where:"Claude Code",tool:"Agent troubleshooter (model: inherit)",detail:"STOP obligatoire. Diagnostic structural, produit un plan, jamais du code"},
-      {action:"Test de régression",where:"Claude Code",tool:"// Regression: <hash> — <bug>",detail:"Tout bug fix vient avec son test de régression, écrit avant le fix"},
-      {action:"Commit + push",where:"Claude Code",tool:"git push",detail:"Le hook push-build-gate lance le build et bloque le push si erreur ou warning"}],
-    traps:["Le piège #1 : service worker cache → toujours tester en navigation privée d'abord","Itérer 3+ fois sur le même bug au lieu d'escalader"]},
-  { id:"big-feature",icon:"◆",title:"Grosse feature",when:"Ajout structurant (sync, nouvelle section, refacto majeur)",category:"dev",frequency:"Régulier",
+      {action:"Triage environnement",action_en:"Triage the environment",where:"Navigateur",where_en:"Browser",tool:"Manuel",tool_en:"Manual",detail:"Cache ? Service worker ? Hard refresh ? Build stale ?",detail_en:"Cache? Service worker? Hard refresh? Stale build?"},
+      {action:"L1 — fix direct",action_en:"L1 — direct fix",where:"Claude Code",where_en:"Claude Code",tool:"Prompt direct (hypothèse de root cause obligatoire)",tool_en:"Direct prompt (root-cause hypothesis required)",detail:"Pas d'édition sans hypothèse énoncée. 'Essayer autre chose' sans nouvelle hypothèse est interdit",detail_en:"No edit without a stated hypothesis. 'Try something else' with no new hypothesis is banned"},
+      {action:"L2 — si L1 échoue",action_en:"L2 — if L1 fails",where:"Claude Code",where_en:"Claude Code",tool:"superpowers:systematic-debugging",tool_en:"superpowers:systematic-debugging",detail:"Cascade à sens unique : pas de retry au même niveau",detail_en:"One-way cascade: no retry at the same level"},
+      {action:"L3 — si L2 échoue",action_en:"L3 — if L2 fails",where:"Claude Code",where_en:"Claude Code",tool:"Agent troubleshooter (model: inherit)",tool_en:"troubleshooter agent (model: inherit)",detail:"STOP obligatoire. Diagnostic structural, produit un plan, jamais du code",detail_en:"Mandatory STOP. Structural diagnosis, produces a plan, never code"},
+      {action:"Test de régression",action_en:"Regression test",where:"Claude Code",where_en:"Claude Code",tool:"// Regression: <hash> — <bug>",tool_en:"// Regression: <hash> — <bug>",detail:"Tout bug fix vient avec son test de régression, écrit avant le fix",detail_en:"Every bug fix ships with its regression test, written before the fix"},
+      {action:"Commit + push",action_en:"Commit + push",where:"Claude Code",where_en:"Claude Code",tool:"git push",tool_en:"git push",detail:"Le hook push-build-gate lance le build et bloque le push si erreur ou warning",detail_en:"The push-build-gate hook runs the build and blocks the push on any error or warning"}],
+    traps:["Le piège #1 : service worker cache → toujours tester en navigation privée d'abord","Itérer 3+ fois sur le même bug au lieu d'escalader"],
+    traps_en:["Trap #1: service worker cache → always test in a private window first","Iterating 3+ times on the same bug instead of escalating"]},
+  { id:"big-feature",icon:"◆",title:"Grosse feature",title_en:"Big feature",when:"Ajout structurant (sync, nouvelle section, refacto majeur)",when_en:"A structural addition (sync, new section, major refactor)",category:"dev",frequency:"Régulier",frequency_en:"Regular",
     steps:[
-      {action:"Design upfront",where:"Claude Code",tool:"Plan mode ou brainstorm",detail:"Utiliser le plan mode natif ou /superpowers:brainstorm pour concevoir la feature"},
-      {action:"Valider le plan",where:"Claude Code",tool:"Review manuel",detail:"Toi seul approuves — le plan ne s'exécute pas sans ton OK"},
-      {action:"Implémenter par subtask",where:"Claude Code",tool:"Dispatch à l'agent implementer",detail:"Chaque subtask a un 'done when' clair et atomique, dispatché à l'implementer"},
-      {action:"Review intermédiaire",where:"Claude Code",tool:"superpowers:code-reviewer ou prompt",detail:"Review entre chaque phase si multi-phase"},
-      {action:"Tests",where:"Claude Code",tool:"npm test",detail:"Tests écrits avec l'implémentation, pas après"},
-      {action:"Audit final",where:"Claude Code",tool:"/audit",detail:"Vérifie docs, compliance, zero-warning"},
-      {action:"Sync portfolio si impact visible",where:"Claude Code",tool:"/sync mon-app",detail:"Si la feature change le tagline, la stack, ou le statut"}],
-    traps:["Commencer à coder avant d'avoir un plan validé","Laisser l'implementer prendre des décisions d'architecture","Oublier de mettre à jour le CLAUDE.md projet si la stack change"]},
-  { id:"resume",icon:"↻",title:"Reprise de session",when:"Tu reprends le travail après une interruption",category:"dev",frequency:"Quotidien",
+      {action:"Design upfront",action_en:"Design upfront",where:"Claude Code",where_en:"Claude Code",tool:"Plan mode ou brainstorm",tool_en:"Plan mode or brainstorm",detail:"Utiliser le plan mode natif ou /superpowers:brainstorm pour concevoir la feature",detail_en:"Use native plan mode or /superpowers:brainstorm to design the feature"},
+      {action:"Valider le plan",action_en:"Approve the plan",where:"Claude Code",where_en:"Claude Code",tool:"Review manuel",tool_en:"Manual review",detail:"Toi seul approuves — le plan ne s'exécute pas sans ton OK",detail_en:"You alone approve — the plan does not run without your OK"},
+      {action:"Implémenter par subtask",action_en:"Implement subtask by subtask",where:"Claude Code",where_en:"Claude Code",tool:"Dispatch à l'agent implementer",tool_en:"Dispatch to the implementer agent",detail:"Chaque subtask a un 'done when' clair et atomique, dispatché à l'implementer",detail_en:"Each subtask has a clear, atomic 'done when', dispatched to the implementer"},
+      {action:"Review intermédiaire",action_en:"Interim review",where:"Claude Code",where_en:"Claude Code",tool:"superpowers:code-reviewer ou prompt",tool_en:"superpowers:code-reviewer or a prompt",detail:"Review entre chaque phase si multi-phase",detail_en:"A review between phases when the work is multi-phase"},
+      {action:"Tests",action_en:"Tests",where:"Claude Code",where_en:"Claude Code",tool:"npm test",tool_en:"npm test",detail:"Tests écrits avec l'implémentation, pas après",detail_en:"Tests written with the implementation, not after it"},
+      {action:"Audit final",action_en:"Final audit",where:"Claude Code",where_en:"Claude Code",tool:"/audit",tool_en:"/audit",detail:"Vérifie docs, compliance, zero-warning",detail_en:"Checks docs, compliance, zero-warning"},
+      {action:"Sync portfolio si impact visible",action_en:"Portfolio sync if the change is visible",where:"Claude Code",where_en:"Claude Code",tool:"/sync mon-app",tool_en:"/sync my-app",detail:"Si la feature change le tagline, la stack, ou le statut",detail_en:"If the feature changes the tagline, the stack, or the status"}],
+    traps:["Commencer à coder avant d'avoir un plan validé","Laisser l'implementer prendre des décisions d'architecture","Oublier de mettre à jour le CLAUDE.md projet si la stack change"],
+    traps_en:["Starting to code before the plan is approved","Letting the implementer make architecture decisions","Forgetting to update the project CLAUDE.md when the stack changes"]},
+  { id:"resume",icon:"↻",title:"Reprise de session",title_en:"Resuming a session",when:"Tu reprends le travail après une interruption",when_en:"You are picking the work back up after an interruption",category:"dev",frequency:"Quotidien",frequency_en:"Daily",
     steps:[
-      {action:"Reprendre la session",where:"Terminal",tool:"claude --continue ou --resume",detail:"--continue = dernière session, --resume = picker pour choisir"},
-      {action:"Si contexte perdu",where:"Claude Code",tool:"/context puis relire CLAUDE.md",detail:"Vérifier le % de contexte, relire les fichiers clés si besoin"},
-      {action:"Consulter la mémoire",where:"Claude Code",tool:"Automatique via memory: project",detail:"L'agent relit son MEMORY.md au démarrage — le handoff y est. Scope project = <racine projet>/.claude/agent-memory/<agent>/, à côté du code, pas dans ~/.claude"},
-      {action:"Reprendre le travail",where:"Claude Code",tool:"Prompt direct (ou /next A|B sur un plan multi-phase)",detail:"Continuer là où le handoff s'est arrêté"}],
-    traps:["Ne pas vérifier /context avant de commencer — risque de dumb zone","Relancer une nouvelle session au lieu de --resume (perd le contexte)","Oublier /rename sur les sessions importantes pour les retrouver"]},
-  { id:"hygiene",icon:"♻",title:"Hygiène Dev/",when:"Nettoyage régulier — idéalement 1×/semaine",category:"maintenance",frequency:"Hebdomadaire",
+      {action:"Reprendre la session",action_en:"Resume the session",where:"Terminal",where_en:"Terminal",tool:"claude --continue ou --resume",tool_en:"claude --continue or --resume",detail:"--continue = dernière session, --resume = picker pour choisir",detail_en:"--continue = last session, --resume = a picker to choose one"},
+      {action:"Si contexte perdu",action_en:"If the context is gone",where:"Claude Code",where_en:"Claude Code",tool:"/context puis relire CLAUDE.md",tool_en:"/context then re-read CLAUDE.md",detail:"Vérifier le % de contexte, relire les fichiers clés si besoin",detail_en:"Check the context %, re-read the key files if needed"},
+      {action:"Consulter la mémoire",action_en:"Check the memory",where:"Claude Code",where_en:"Claude Code",tool:"Automatique via memory: project",tool_en:"Automatic via memory: project",detail:"L'agent relit son MEMORY.md au démarrage — le handoff y est. Scope project = <racine projet>/.claude/agent-memory/<agent>/, à côté du code, pas dans ~/.claude",detail_en:"The agent re-reads its MEMORY.md at startup — the handoff is in there. Scope project = <project root>/.claude/agent-memory/<agent>/, next to the code, not in ~/.claude"},
+      {action:"Reprendre le travail",action_en:"Get back to work",where:"Claude Code",where_en:"Claude Code",tool:"Prompt direct (ou /next A|B sur un plan multi-phase)",tool_en:"Direct prompt (or /next A|B on a multi-phase plan)",detail:"Continuer là où le handoff s'est arrêté",detail_en:"Pick up exactly where the handoff stopped"}],
+    traps:["Ne pas vérifier /context avant de commencer — risque de dumb zone","Relancer une nouvelle session au lieu de --resume (perd le contexte)","Oublier /rename sur les sessions importantes pour les retrouver"],
+    traps_en:["Not checking /context before starting — dumb-zone risk","Starting a fresh session instead of --resume (the context is lost)","Forgetting /rename on the sessions that matter, so you cannot find them again"]},
+  { id:"hygiene",icon:"♻",title:"Hygiène Dev/",title_en:"Dev/ hygiene",when:"Nettoyage régulier — idéalement 1×/semaine",when_en:"Regular cleanup — ideally once a week",category:"maintenance",frequency:"Hebdomadaire",frequency_en:"Weekly",
     steps:[
-      {action:"Hygiène disque ~/.claude",where:"Claude Code",tool:"/cleanup disk-only",detail:"Step 0. Le tier AUTO (état éphémère + archivage des plans) s'applique sans demander ; projects/ et les dossiers plugins restent derrière --yes-projects / --yes-plugins"},
-      {action:"Nettoyer les plans orphelins",where:"Claude Code",tool:"/cleanup plans-only",detail:"Sort les plans des repos, met à jour les .gitignore. Les plans vivent dans ~/.claude/plans/, jamais dans un repo"},
-      {action:"Auditer les plugins",where:"Claude Code",tool:"/cleanup plugins-only",detail:"Liste les plugins, détecte les conflits, signale les inutilisés. Les marketplaces orphelines sont signalées, jamais supprimées automatiquement"},
-      {action:"Compacter la mémoire agent",where:"Claude Code",tool:"/cleanup memory-only",detail:"Si MEMORY.md > 200 lignes, split en fichiers thématiques. Les stores sont par racine de projet (~130 fichiers sur 15 repos), pas centralisés dans ~/.claude"},
-      {action:"Mettre à jour Claude Code",where:"Terminal",tool:"claude update",detail:"Lire le changelog pour les nouvelles features"}],
-    traps:["Supprimer un dossier de marketplace sans faire claude plugin marketplace remove d'abord → known_marketplaces.json le re-clone à la session suivante, plugin et daemons compris","Croire que .claude/agent-memory/ est ignoré par défaut : le harness n'ignore d'office que agent-memory-local/. Tout repo avec un store a besoin de .claude/ (ou .claude/agent-memory/) dans son .gitignore","Laisser les plans s'accumuler pendant des semaines → bruit dans les repos","Garder des plugins inutilisés → contexte gaspillé à chaque session","Ne pas lire le changelog → rater des features utiles"]},
-  { id:"portfolio-sync",icon:"⟐",title:"Validation des stories",when:"Après un ajout/edit de story sur le hub, ou en session hygiène",category:"maintenance",frequency:"Ponctuel",
+      {action:"Hygiène disque ~/.claude",action_en:"~/.claude disk hygiene",where:"Claude Code",where_en:"Claude Code",tool:"/cleanup disk-only",tool_en:"/cleanup disk-only",detail:"Step 0. Le tier AUTO (état éphémère + archivage des plans) s'applique sans demander ; projects/ et les dossiers plugins restent derrière --yes-projects / --yes-plugins",detail_en:"Step 0. The AUTO tier (ephemeral state + plan archiving) applies without asking; projects/ and the plugin directories stay behind --yes-projects / --yes-plugins"},
+      {action:"Nettoyer les plans orphelins",action_en:"Clear out the orphan plans",where:"Claude Code",where_en:"Claude Code",tool:"/cleanup plans-only",tool_en:"/cleanup plans-only",detail:"Sort les plans des repos, met à jour les .gitignore. Les plans vivent dans ~/.claude/plans/, jamais dans un repo",detail_en:"Moves plans out of the repos, updates the .gitignore files. Plans live in ~/.claude/plans/, never inside a repo"},
+      {action:"Auditer les plugins",action_en:"Audit the plugins",where:"Claude Code",where_en:"Claude Code",tool:"/cleanup plugins-only",tool_en:"/cleanup plugins-only",detail:"Liste les plugins, détecte les conflits, signale les inutilisés. Les marketplaces orphelines sont signalées, jamais supprimées automatiquement",detail_en:"Lists the plugins, detects conflicts, flags the unused ones. Orphan marketplaces are reported, never removed automatically"},
+      {action:"Compacter la mémoire agent",action_en:"Compact the agent memory",where:"Claude Code",where_en:"Claude Code",tool:"/cleanup memory-only",tool_en:"/cleanup memory-only",detail:"Si MEMORY.md > 200 lignes, split en fichiers thématiques. Les stores sont par racine de projet (~130 fichiers sur 15 repos), pas centralisés dans ~/.claude",detail_en:"If MEMORY.md goes past 200 lines, split it into topic files. The stores are per project root (~130 files across 15 repos), not centralised in ~/.claude"},
+      {action:"Mettre à jour Claude Code",action_en:"Update Claude Code",where:"Terminal",where_en:"Terminal",tool:"claude update",tool_en:"claude update",detail:"Lire le changelog pour les nouvelles features",detail_en:"Read the changelog for the new features"}],
+    traps:["Supprimer un dossier de marketplace sans faire claude plugin marketplace remove d'abord → known_marketplaces.json le re-clone à la session suivante, plugin et daemons compris","Croire que .claude/agent-memory/ est ignoré par défaut : le harness n'ignore d'office que agent-memory-local/. Tout repo avec un store a besoin de .claude/ (ou .claude/agent-memory/) dans son .gitignore","Laisser les plans s'accumuler pendant des semaines → bruit dans les repos","Garder des plugins inutilisés → contexte gaspillé à chaque session","Ne pas lire le changelog → rater des features utiles"],
+    traps_en:["Deleting a marketplace directory without running claude plugin marketplace remove first → known_marketplaces.json re-clones it on the next session, plugin and daemons included","Assuming .claude/agent-memory/ is ignored by default: the harness only default-ignores agent-memory-local/. Every repo with a store needs .claude/ (or .claude/agent-memory/) in its .gitignore","Letting plans pile up for weeks → noise inside the repos","Keeping unused plugins around → context wasted on every session","Not reading the changelog → missing the useful features"]},
+  { id:"portfolio-sync",icon:"⟐",title:"Validation des stories",title_en:"Story validation",when:"Après un ajout/edit de story sur le hub, ou en session hygiène",when_en:"After adding or editing a story on the hub, or during a hygiene session",category:"maintenance",frequency:"Ponctuel",frequency_en:"One-off",
     steps:[
-      {action:"Lancer la validation",where:"Claude Code",tool:"/sync",detail:"Valide le frontmatter de chaque story (modalities, featured_rank, live_url, keywords, seo_description) — read-only, ne fixe rien"},
-      {action:"Corriger les violations signalées",where:"Claude Code (dans le hub)",tool:"Édition manuelle du MDX",detail:"Le contenu des stories est créatif, jamais auto-fixé"},
-      {action:"Vérifier le site portfolio",where:"Navigateur",tool:"{portfolio-site-url}/stories",detail:"Vérifier visuellement après correction"}],
-    traps:["Attendre qu'un manifest .portfolio.yml existe pour ce check — il n'y en a plus depuis la décision M12, /sync ne fait plus que valider les stories","Confondre cette validation avec une mise à jour du hub — build-inventory.mjs (Layer 1) et editorial.ts (Layer 3) sont indépendants de /sync"]},
-  { id:"compliance",icon:"✓",title:"Compliance sweep",when:"Avant un release, une publication LinkedIn, ou 1×/mois",category:"maintenance",frequency:"Mensuel",
+      {action:"Lancer la validation",action_en:"Run the validation",where:"Claude Code",where_en:"Claude Code",tool:"/sync",tool_en:"/sync",detail:"Valide le frontmatter de chaque story (modalities, featured_rank, live_url, keywords, seo_description) — read-only, ne fixe rien",detail_en:"Validates each story's frontmatter (modalities, featured_rank, live_url, keywords, seo_description) — read-only, it fixes nothing"},
+      {action:"Corriger les violations signalées",action_en:"Fix the reported violations",where:"Claude Code (dans le hub)",where_en:"Claude Code (in the hub)",tool:"Édition manuelle du MDX",tool_en:"Manual MDX edit",detail:"Le contenu des stories est créatif, jamais auto-fixé",detail_en:"Story content is creative work, never auto-fixed"},
+      {action:"Vérifier le site portfolio",action_en:"Check the portfolio site",where:"Navigateur",where_en:"Browser",tool:"{portfolio-site-url}/stories",tool_en:"{portfolio-site-url}/stories",detail:"Vérifier visuellement après correction",detail_en:"Eyeball it once the fixes are in"}],
+    traps:["Attendre qu'un manifest .portfolio.yml existe pour ce check — il n'y en a plus depuis la décision M12, /sync ne fait plus que valider les stories","Confondre cette validation avec une mise à jour du hub — build-inventory.mjs (Layer 1) et editorial.ts (Layer 3) sont indépendants de /sync"],
+    traps_en:["Expecting a .portfolio.yml manifest for this check — there is none since decision M12, /sync only validates stories now","Mistaking this validation for a hub update — build-inventory.mjs (Layer 1) and editorial.ts (Layer 3) are independent of /sync"]},
+  { id:"compliance",icon:"✓",title:"Compliance sweep",title_en:"Compliance sweep",when:"Avant un release, une publication LinkedIn, ou 1×/mois",when_en:"Before a release, before a LinkedIn post, or once a month",category:"maintenance",frequency:"Mensuel",frequency_en:"Monthly",
     steps:[
-      {action:"Audit sur une app",where:"Claude Code (dans le projet)",tool:"/audit https://url-de-l-app",detail:"Lance docs-checker + portfolio-audit en parallèle"},
-      {action:"Audit sur plusieurs apps",where:"Claude Code",tool:"/audit répété par projet",detail:"Depuis la décision M12, /sync ne fait plus de fan-out multi-app — chaque app s'audite individuellement"},
-      {action:"Fixer les violations",where:"Claude Code",tool:"Prompt direct ou dispatch implementer",detail:"Footer manquant, console.log, secrets, .gitignore incomplet..."},
-      {action:"Vérifier zero-warning",where:"Claude Code",tool:"npm run build",detail:"Le hook push-build-gate le vérifie auto au push, mais double-check avant publish reste utile"}],
-    traps:["Publier sur LinkedIn une app qui n'a pas le footer signature","Oublier les secrets dans un repo rendu public","Ignorer les warnings 'non critiques' — ils s'accumulent"]},
-  { id:"tech-debt",icon:"⚙",title:"Tech debt (mensuel)",when:"Session technique mensuelle — triage tout, deep review sur ton choix",category:"maintenance",frequency:"Mensuel",
+      {action:"Audit sur une app",action_en:"Audit a single app",where:"Claude Code (dans le projet)",where_en:"Claude Code (in the project)",tool:"/audit https://url-de-l-app",tool_en:"/audit https://the-app-url",detail:"Lance docs-checker + portfolio-audit en parallèle",detail_en:"Runs docs-checker + portfolio-audit in parallel"},
+      {action:"Audit sur plusieurs apps",action_en:"Audit several apps",where:"Claude Code",where_en:"Claude Code",tool:"/audit répété par projet",tool_en:"/audit repeated per project",detail:"Depuis la décision M12, /sync ne fait plus de fan-out multi-app — chaque app s'audite individuellement",detail_en:"Since decision M12, /sync no longer fans out across apps — each app is audited on its own"},
+      {action:"Fixer les violations",action_en:"Fix the violations",where:"Claude Code",where_en:"Claude Code",tool:"Prompt direct ou dispatch implementer",tool_en:"Direct prompt or an implementer dispatch",detail:"Footer manquant, console.log, secrets, .gitignore incomplet...",detail_en:"Missing footer, console.log, secrets, incomplete .gitignore..."},
+      {action:"Vérifier zero-warning",action_en:"Check zero-warning",where:"Claude Code",where_en:"Claude Code",tool:"npm run build",tool_en:"npm run build",detail:"Le hook push-build-gate le vérifie auto au push, mais double-check avant publish reste utile",detail_en:"The push-build-gate hook checks this automatically on push, but a double-check before publishing is still worth it"}],
+    traps:["Publier sur LinkedIn une app qui n'a pas le footer signature","Oublier les secrets dans un repo rendu public","Ignorer les warnings 'non critiques' — ils s'accumulent"],
+    traps_en:["Posting an app on LinkedIn when it has no signature footer","Leaving secrets behind in a repo you just made public","Ignoring the 'non-critical' warnings — they pile up"]},
+  { id:"tech-debt",icon:"⚙",title:"Tech debt (mensuel)",title_en:"Tech debt (monthly)",when:"Session technique mensuelle — triage tout, deep review sur ton choix",when_en:"Monthly technical session — triage everything, deep review on what you pick",category:"maintenance",frequency:"Mensuel",frequency_en:"Monthly",
     steps:[
-      {action:"Triage de tout le portfolio",where:"Claude Code",tool:"/tech-debt",detail:"Scan rapide de toutes les apps : commits récents, prominence portfolio, ancienneté du scan, vulnérabilités"},
-      {action:"Choisir les apps à reviewer",where:"Claude Code",tool:"Réponse à la question",detail:"Claude propose un ordre de priorité — tu choisis 3-4 apps (ou plus, ou moins)"},
-      {action:"Deep review",where:"Claude Code",tool:"Automatique (phase 2)",detail:"Dépendances, sécurité, dead code, performance, versions, dette des sessions précédentes"},
-      {action:"Approuver les auto-fix",where:"Claude Code",tool:"Réponse à la question",detail:"Claude propose de fixer les items safe (patches sécu, console.log, deps inutilisées)"},
-      {action:"Planifier les majors",where:"Claude Code",tool:"Agent troubleshooter si migration framework",detail:"Migrations majeures → session troubleshooter dédiée. Items 2+ mois non résolus → escalade L1→L2→L3"},
-      {action:"Reviewer et pousser",where:"Terminal",tool:"git log + git push par app",detail:"Chaque app a ses commits chore(tech-debt) à reviewer avant push"}],
+      {action:"Triage de tout le portfolio",action_en:"Triage the whole portfolio",where:"Claude Code",where_en:"Claude Code",tool:"/tech-debt",tool_en:"/tech-debt",detail:"Scan rapide de toutes les apps : commits récents, prominence portfolio, ancienneté du scan, vulnérabilités",detail_en:"Fast scan of every app: recent commits, portfolio prominence, age of the last scan, vulnerabilities"},
+      {action:"Choisir les apps à reviewer",action_en:"Pick the apps to review",where:"Claude Code",where_en:"Claude Code",tool:"Réponse à la question",tool_en:"Answer the question",detail:"Claude propose un ordre de priorité — tu choisis 3-4 apps (ou plus, ou moins)",detail_en:"Claude proposes a priority order — you pick 3-4 apps (or more, or fewer)"},
+      {action:"Deep review",action_en:"Deep review",where:"Claude Code",where_en:"Claude Code",tool:"Automatique (phase 2)",tool_en:"Automatic (phase 2)",detail:"Dépendances, sécurité, dead code, performance, versions, dette des sessions précédentes",detail_en:"Dependencies, security, dead code, performance, versions, debt left by earlier sessions"},
+      {action:"Approuver les auto-fix",action_en:"Approve the auto-fixes",where:"Claude Code",where_en:"Claude Code",tool:"Réponse à la question",tool_en:"Answer the question",detail:"Claude propose de fixer les items safe (patches sécu, console.log, deps inutilisées)",detail_en:"Claude offers to fix the safe items (security patches, console.log, unused deps)"},
+      {action:"Planifier les majors",action_en:"Plan the major work",where:"Claude Code",where_en:"Claude Code",tool:"Agent troubleshooter si migration framework",tool_en:"troubleshooter agent for a framework migration",detail:"Migrations majeures → session troubleshooter dédiée. Items 2+ mois non résolus → escalade L1→L2→L3",detail_en:"Major migrations → a dedicated troubleshooter session. Items unresolved for 2+ months → L1→L2→L3 escalation"},
+      {action:"Reviewer et pousser",action_en:"Review and push",where:"Terminal",where_en:"Terminal",tool:"git log + git push par app",tool_en:"git log + git push per app",detail:"Chaque app a ses commits chore(tech-debt) à reviewer avant push",detail_en:"Each app has its own chore(tech-debt) commits to review before pushing"}],
     traps:[
       "Faire npm update --latest aveuglément → breaking changes non testées",
       "Toujours choisir les mêmes apps et ignorer celles en bas de la liste",
       "Ignorer les 'Previously Flagged' mois après mois → dette invisible",
       "Scanner sans fixer → le rapport ne sert à rien si personne n'agit"
+    ],
+    traps_en:[
+      "Running npm update --latest blindly → untested breaking changes",
+      "Always picking the same apps and ignoring the ones at the bottom of the list",
+      "Ignoring the 'Previously Flagged' items month after month → invisible debt",
+      "Scanning without fixing → the report is worthless if nobody acts on it"
     ]},
-  { id:"evaluate",icon:"?",title:"Évaluation d'idée",when:"Tu as une idée d'app et tu veux décider si tu la construis",category:"strategy",frequency:"Ponctuel",
+  { id:"evaluate",icon:"?",title:"Évaluation d'idée",title_en:"Idea evaluation",when:"Tu as une idée d'app et tu veux décider si tu la construis",when_en:"You have an app idea and you want to decide whether to build it",category:"strategy",frequency:"Ponctuel",frequency_en:"One-off",
     steps:[
-      {action:"Pitcher l'idée",where:"Projet Claude (ici)",tool:"Conversation",detail:"Décrire le problème, l'audience, et la forme envisagée"},
-      {action:"Évaluer sur 4 axes",where:"Projet Claude (ici)",tool:"Conversation",detail:"Utilité, faisabilité, cohérence portfolio, potentiel visibilité"},
-      {action:"Décider : go / no-go / later",where:"Projet Claude (ici)",tool:"Conversation",detail:"Si go → passer au scénario 'Nouvelle app'"},
-      {action:"Documenter la décision",where:"Projet Claude (ici)",tool:"Conversation",detail:"Pipeline (si later) ou inventaire (si go)"}],
-    traps:["Commencer à coder avant d'avoir évalué (le syndrome du 'ça prendra 5 min')","Ne pas documenter les idées rejetées → elles reviennent en boucle","Oublier l'axe visibilité — une app utile mais invisible ne sert pas le portfolio"]},
-  { id:"publish",icon:"▲",title:"Publication / visibilité",when:"Rendre une app publique ou la promouvoir",category:"strategy",frequency:"Ponctuel",
+      {action:"Pitcher l'idée",action_en:"Pitch the idea",where:"Projet Claude (ici)",where_en:"Claude project (here)",tool:"Conversation",tool_en:"Conversation",detail:"Décrire le problème, l'audience, et la forme envisagée",detail_en:"Describe the problem, the audience, and the form you have in mind"},
+      {action:"Évaluer sur 4 axes",action_en:"Score it on 4 axes",where:"Projet Claude (ici)",where_en:"Claude project (here)",tool:"Conversation",tool_en:"Conversation",detail:"Utilité, faisabilité, cohérence portfolio, potentiel visibilité",detail_en:"Usefulness, feasibility, portfolio fit, visibility potential"},
+      {action:"Décider : go / no-go / later",action_en:"Decide: go / no-go / later",where:"Projet Claude (ici)",where_en:"Claude project (here)",tool:"Conversation",tool_en:"Conversation",detail:"Si go → passer au scénario 'Nouvelle app'",detail_en:"If go → move on to the 'New app' scenario"},
+      {action:"Documenter la décision",action_en:"Write the decision down",where:"Projet Claude (ici)",where_en:"Claude project (here)",tool:"Conversation",tool_en:"Conversation",detail:"Pipeline (si later) ou inventaire (si go)",detail_en:"Pipeline (if later) or inventory (if go)"}],
+    traps:["Commencer à coder avant d'avoir évalué (le syndrome du 'ça prendra 5 min')","Ne pas documenter les idées rejetées → elles reviennent en boucle","Oublier l'axe visibilité — une app utile mais invisible ne sert pas le portfolio"],
+    traps_en:["Starting to code before evaluating (the 'it'll only take 5 minutes' syndrome)","Not writing the rejected ideas down → they keep coming back around","Forgetting the visibility axis — a useful but invisible app does nothing for the portfolio"]},
+  { id:"publish",icon:"▲",title:"Publication / visibilité",title_en:"Publishing / visibility",when:"Rendre une app publique ou la promouvoir",when_en:"Making an app public, or promoting it",category:"strategy",frequency:"Ponctuel",frequency_en:"One-off",
     steps:[
-      {action:"Compliance check complet",where:"Claude Code",tool:"/audit https://url",detail:"Tout doit être propre : footer, secrets, docs, zero-warning"},
-      {action:"Vérifier le frontmatter README",where:"Claude Code",tool:"Édition manuelle",detail:"name/tagline_fr/tagline_en à jour (et facts_fr/facts_en si l'app est une tile du hub) — Layer 2 du système de manifest"},
-      {action:"Rendre le repo public (si décidé)",where:"Terminal",tool:"gh repo edit {github-username}/app --visibility public",detail:"Vérifier qu'il n'y a AUCUN secret dans l'historique git"},
-      {action:"Donner/ajuster la tile hub",where:"Claude Code",tool:"Édition manuelle de editorial.ts",detail:"Ajouter ou repositionner l'entrée dans ~/Dev/{portfolio-site}/src/data/editorial.ts — l'ordre du tableau reflète la visibilité voulue"},
-      {action:"Rédiger le post LinkedIn",where:"Projet Claude (ici)",tool:"Skill linkedin-adaptation",detail:"Adapter le contenu pour LinkedIn"},
-      {action:"Mettre à jour les liens",where:"LinkedIn + Steady",tool:"Manuel",detail:"Profil LinkedIn, newsletter, tout lien qui référence l'app"},
-      {action:"Mettre à jour docs stratégiques",where:"Projet Claude (ici)",tool:"Conversation",detail:"Inventaire (statut), stratégie de visibilité"}],
-    traps:["Publier un repo avec des secrets dans l'historique git (pas juste le dernier commit !)","Oublier l'entrée editorial.ts → l'app est publique sur GitHub mais invisible sur le hub","Publier sans avoir vérifié le rendu sur mobile"]}
+      {action:"Compliance check complet",action_en:"Full compliance check",where:"Claude Code",where_en:"Claude Code",tool:"/audit https://url",tool_en:"/audit https://url",detail:"Tout doit être propre : footer, secrets, docs, zero-warning",detail_en:"Everything has to be clean: footer, secrets, docs, zero-warning"},
+      {action:"Vérifier le frontmatter README",action_en:"Check the README frontmatter",where:"Claude Code",where_en:"Claude Code",tool:"Édition manuelle",tool_en:"Manual edit",detail:"name/tagline_fr/tagline_en à jour (et facts_fr/facts_en si l'app est une tile du hub) — Layer 2 du système de manifest",detail_en:"name/tagline_fr/tagline_en up to date (and facts_fr/facts_en if the app is a hub tile) — Layer 2 of the manifest system"},
+      {action:"Rendre le repo public (si décidé)",action_en:"Make the repo public (once decided)",where:"Terminal",where_en:"Terminal",tool:"gh repo edit {github-username}/app --visibility public",tool_en:"gh repo edit {github-username}/app --visibility public",detail:"Vérifier qu'il n'y a AUCUN secret dans l'historique git",detail_en:"Check there is NO secret anywhere in the git history"},
+      {action:"Donner/ajuster la tile hub",action_en:"Add or adjust the hub tile",where:"Claude Code",where_en:"Claude Code",tool:"Édition manuelle de editorial.ts",tool_en:"Manual edit of editorial.ts",detail:"Ajouter ou repositionner l'entrée dans ~/Dev/{portfolio-site}/src/data/editorial.ts — l'ordre du tableau reflète la visibilité voulue",detail_en:"Add or move the entry in ~/Dev/{portfolio-site}/src/data/editorial.ts — array order reflects the visibility you want"},
+      {action:"Rédiger le post LinkedIn",action_en:"Write the LinkedIn post",where:"Projet Claude (ici)",where_en:"Claude project (here)",tool:"Skill linkedin-adaptation",tool_en:"linkedin-adaptation skill",detail:"Adapter le contenu pour LinkedIn",detail_en:"Adapt the content for LinkedIn"},
+      {action:"Mettre à jour les liens",action_en:"Update the links",where:"LinkedIn + Steady",where_en:"LinkedIn + Steady",tool:"Manuel",tool_en:"Manual",detail:"Profil LinkedIn, newsletter, tout lien qui référence l'app",detail_en:"LinkedIn profile, newsletter, every link that points at the app"},
+      {action:"Mettre à jour docs stratégiques",action_en:"Update the strategic docs",where:"Projet Claude (ici)",where_en:"Claude project (here)",tool:"Conversation",tool_en:"Conversation",detail:"Inventaire (statut), stratégie de visibilité",detail_en:"Inventory (status), visibility strategy"}],
+    traps:["Publier un repo avec des secrets dans l'historique git (pas juste le dernier commit !)","Oublier l'entrée editorial.ts → l'app est publique sur GitHub mais invisible sur le hub","Publier sans avoir vérifié le rendu sur mobile"],
+    traps_en:["Publishing a repo with secrets in the git history (not just in the last commit!)","Forgetting the editorial.ts entry → the app is public on GitHub but invisible on the hub","Publishing without checking how it renders on mobile"]}
 ];
 
-const CATEGORIES={dev:{label:"Développement",color:"#3B82F6",bg:"#1E3A5F"},maintenance:{label:"Maintenance",color:"#10B981",bg:"#0F3D2E"},strategy:{label:"Stratégie",color:"#F59E0B",bg:"#4A3100"}};
+const CATEGORIES={dev:{label:"Développement",label_en:"Development",color:"#3B82F6",bg:"#1E3A5F"},maintenance:{label:"Maintenance",label_en:"Maintenance",color:"#10B981",bg:"#0F3D2E"},strategy:{label:"Stratégie",label_en:"Strategy",color:"#F59E0B",bg:"#4A3100"}};
+
+// Static UI chrome — everything the renderer writes itself, per language.
+const UI={
+  fr:{title:"Workflow Guide — Claude Code Portfolio",scenarios:"scénarios",commands:"commandes",agents:"agents",skills:"skills",hooks:"hooks",
+    tabScenarios:"Scénarios",tabCommands:"Commandes",tabAgents:"Agents & Skills",tabHooks:"Hooks",
+    agentsLabel:"Agents : ",noneLabel:"aucun",whenLabel:"Quand : ",
+    agentsHeading:"Agents",skillsHeading:"Skills (préchargées dans les agents)",preloadedIn:"Préchargée dans : ",
+    hooksNoteA:"La plupart des hooks sont ",hooksNoteAdvisory:"advisory",hooksNoteB:" (ils affichent des warnings sans bloquer) — ",hooksNoteBlocking:"sauf secret-scan et push-build-gate qui bloquent",hooksNoteC:" (exit 2) si un secret est détecté ou si le build échoue/a des warnings. Chaque hook vit dans son dossier ",hooksNoteCode:"~/.claude/hooks/<nom>/",hooksNoteD:".",
+    filterAll:"Tous",emptyState:"← Sélectionne un scénario",trapsTitle:"⚠ Pièges courants",legendProject:"projet Claude"},
+  en:{title:"Workflow Guide — Claude Code Portfolio",scenarios:"scenarios",commands:"commands",agents:"agents",skills:"skills",hooks:"hooks",
+    tabScenarios:"Scenarios",tabCommands:"Commands",tabAgents:"Agents & Skills",tabHooks:"Hooks",
+    agentsLabel:"Agents: ",noneLabel:"none",whenLabel:"When: ",
+    agentsHeading:"Agents",skillsHeading:"Skills (preloaded into agents)",preloadedIn:"Preloaded into: ",
+    hooksNoteA:"Most hooks are ",hooksNoteAdvisory:"advisory",hooksNoteB:" (they print warnings without blocking) — ",hooksNoteBlocking:"except secret-scan and push-build-gate, which block",hooksNoteC:" (exit 2) when a secret shows up or the build fails / warns. Each hook lives in its own ",hooksNoteCode:"~/.claude/hooks/<name>/",hooksNoteD:" folder.",
+    filterAll:"All",emptyState:"← Pick a scenario",trapsTitle:"⚠ Common traps",legendProject:"Claude project"}
+};
 </script>
 
 <!-- ======= RENDERER — Claude Code: do NOT edit below this line. ======= -->
 <script type="text/babel">
-const{useState}=React;
+const{useState,useEffect}=React;
+const LANGS=["fr","en"];
+const LANG_KEY="workflow-guide-lang";
+function initialLang(){
+  try{const s=localStorage.getItem(LANG_KEY);if(LANGS.indexOf(s)>=0)return s}catch(e){}
+  return((navigator.language||"en").toLowerCase().indexOf("fr")===0)?"fr":"en";
+}
 const TC={"\/sync":"#3B82F6","\/next":"#3B82F6","\/new-app":"#3B82F6","\/audit":"#3B82F6","\/cleanup":"#3B82F6","\/plan":"#3B82F6","\/context":"#3B82F6","\/rename":"#3B82F6","superpowers":"#A855F7","hook":"#F59E0B","conversation":"#64748B","manuel":"#64748B","claude":"#8B5CF6","npm":"#EF4444","git":"#F97316","gh ":"#F97316","skill":"#10B981","rapport":"#10B981","automatique":"#10B981","review":"#A855F7","prompt":"#8B5CF6","\u00e9dition":"#64748B","william":"#64748B"};
 function gtc(t){const l=t.toLowerCase();for(const[k,c]of Object.entries(TC)){if(l.includes(k))return c}return"#94A3B8"}
 const F="'JetBrains Mono','SF Mono','Fira Code','Cascadia Code',monospace";
 const pill=(bg,color,text)=>(<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:bg,color,fontWeight:600}}>{text}</span>);
+// Header counts: drop the plural "s" at 1. Works for both languages here
+// (commands/commandes, scenarios/scénarios, agents, skills, hooks).
+const pl=(n,word)=>`${n} ${n===1&&word.endsWith("s")?word.slice(0,-1):word}`;
 
 function App(){
   const[aid,setAid]=useState(null);const[flt,setFlt]=useState("all");const[tab,setTab]=useState("scenarios");
+  const[lang,setLang]=useState(initialLang);
+  useEffect(()=>{
+    document.documentElement.lang=lang;
+    document.title=UI[lang].title;
+    try{localStorage.setItem(LANG_KEY,lang)}catch(e){}
+  },[lang]);
+  const U=UI[lang];
+  // Resolve a prose field for the active language, falling back to French.
+  const t=(o,k)=>(lang==="en"&&o[k+"_en"]!=null&&o[k+"_en"]!=="")?o[k+"_en"]:o[k];
   const fl=flt==="all"?SCENARIOS:SCENARIOS.filter(s=>s.category===flt);const ac=SCENARIOS.find(s=>s.id===aid);
   return(
     <div style={{fontFamily:F,background:"#0A0E1A",color:"#E2E8F0",minHeight:"100vh",padding:20}}>
     <div style={{maxWidth:980,margin:"0 auto"}}>
-      <div style={{marginBottom:20}}>
-        <h1 style={{fontSize:20,fontWeight:700,color:"#F8FAFC",margin:0}}>Workflow Guide — Claude Code Portfolio</h1>
-        <p style={{fontSize:12,color:"#64748B",margin:"4px 0 0"}}>{SCENARIOS.length} scénarios · {COMMANDS.length} commandes · {AGENTS.length} agents · {SKILLS.length} skills · {HOOKS.length} hooks</p>
+      <div style={{marginBottom:20,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,flexWrap:"wrap"}}>
+        <div>
+          <h1 style={{fontSize:20,fontWeight:700,color:"#F8FAFC",margin:0}}>{U.title}</h1>
+          <p style={{fontSize:12,color:"#64748B",margin:"4px 0 0"}}>{pl(SCENARIOS.length,U.scenarios)} · {pl(COMMANDS.length,U.commands)} · {pl(AGENTS.length,U.agents)} · {pl(SKILLS.length,U.skills)} · {pl(HOOKS.length,U.hooks)}</p>
+        </div>
+        <div style={{display:"flex",borderRadius:6,overflow:"hidden",border:"1px solid #1E293B"}}>
+          {LANGS.map(l=>(
+            <button key={l} onClick={()=>setLang(l)} aria-pressed={lang===l} style={{padding:"6px 12px",fontSize:11,fontWeight:700,fontFamily:F,background:lang===l?"#1E293B":"transparent",color:lang===l?"#F8FAFC":"#64748B",border:"none",transition:"all 0.15s"}}>{l.toUpperCase()}</button>
+          ))}
+        </div>
       </div>
 
       {/* Tabs */}
       <div style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid #1E293B"}}>
-        {[{id:"scenarios",label:"Scénarios"},{id:"commands",label:"Commandes"},{id:"agents",label:"Agents & Skills"},{id:"hooks",label:"Hooks"}].map(t=>(
-          <button key={t.id} onClick={()=>{setTab(t.id);setAid(null);setFlt("all")}} style={{padding:"10px 18px",fontSize:12,fontWeight:600,fontFamily:F,background:tab===t.id?"#1E293B":"transparent",color:tab===t.id?"#F8FAFC":"#64748B",border:"none",borderBottom:tab===t.id?"2px solid #3B82F6":"2px solid transparent",transition:"all 0.15s"}}>{t.label}</button>
+        {[{id:"scenarios",label:U.tabScenarios},{id:"commands",label:U.tabCommands},{id:"agents",label:U.tabAgents},{id:"hooks",label:U.tabHooks}].map(tb=>(
+          <button key={tb.id} onClick={()=>{setTab(tb.id);setAid(null);setFlt("all")}} style={{padding:"10px 18px",fontSize:12,fontWeight:600,fontFamily:F,background:tab===tb.id?"#1E293B":"transparent",color:tab===tb.id?"#F8FAFC":"#64748B",border:"none",borderBottom:tab===tb.id?"2px solid #3B82F6":"2px solid transparent",transition:"all 0.15s"}}>{tb.label}</button>
         ))}
       </div>
 
@@ -178,12 +236,12 @@ function App(){
         {COMMANDS.map((c,i)=>(<div key={i} style={{padding:"16px 20px",borderRadius:10,background:"#0F172A",border:"1px solid #1E293B"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap"}}>
             <code style={{fontSize:16,fontWeight:800,color:"#3B82F6"}}>{c.name}</code>
-            {c.args&&<code style={{fontSize:12,color:"#64748B"}}>{c.args}</code>}
+            {t(c,"args")&&<code style={{fontSize:12,color:"#64748B"}}>{t(c,"args")}</code>}
           </div>
-          <p style={{fontSize:12,color:"#CBD5E1",lineHeight:1.6,marginBottom:10}}>{c.desc}</p>
+          <p style={{fontSize:12,color:"#CBD5E1",lineHeight:1.6,marginBottom:10}}>{t(c,"desc")}</p>
           <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:11}}>
-            <div><span style={{color:"#64748B"}}>Agents : </span>{c.agents.length?c.agents.map((a,j)=><span key={j}>{j>0&&", "}<span style={{color:"#8B5CF6"}}>{a}</span></span>):<span style={{color:"#475569"}}>aucun</span>}</div>
-            <div><span style={{color:"#64748B"}}>Quand : </span><span style={{color:"#94A3B8"}}>{c.when}</span></div>
+            <div><span style={{color:"#64748B"}}>{U.agentsLabel}</span>{t(c,"agents").length?t(c,"agents").map((a,j)=><span key={j}>{j>0&&", "}<span style={{color:"#8B5CF6"}}>{a}</span></span>):<span style={{color:"#475569"}}>{U.noneLabel}</span>}</div>
+            <div><span style={{color:"#64748B"}}>{U.whenLabel}</span><span style={{color:"#94A3B8"}}>{t(c,"when")}</span></div>
           </div>
         </div>))}
       </div>)}
@@ -191,7 +249,7 @@ function App(){
       {/* === AGENTS TAB === */}
       {tab==="agents"&&(<div style={{display:"flex",flexDirection:"column",gap:24}}>
         <div>
-          <h3 style={{fontSize:14,fontWeight:700,color:"#8B5CF6",marginBottom:12}}>Agents</h3>
+          <h3 style={{fontSize:14,fontWeight:700,color:"#8B5CF6",marginBottom:12}}>{U.agentsHeading}</h3>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {AGENTS.map((a,i)=>(<div key={i} style={{padding:"14px 18px",borderRadius:8,background:"#0F172A",border:"1px solid #1E293B"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
@@ -200,20 +258,20 @@ function App(){
                 {a.memory&&pill("#EF444422","#EF4444","memory: project")}
                 {a.skills.map(s=>pill("#10B98122","#10B981","skill: "+s))}
               </div>
-              <p style={{fontSize:11,color:"#94A3B8",lineHeight:1.5}}>{a.desc}</p>
+              <p style={{fontSize:11,color:"#94A3B8",lineHeight:1.5}}>{t(a,"desc")}</p>
             </div>))}
           </div>
         </div>
         <div>
-          <h3 style={{fontSize:14,fontWeight:700,color:"#10B981",marginBottom:12}}>Skills (préchargées dans les agents)</h3>
+          <h3 style={{fontSize:14,fontWeight:700,color:"#10B981",marginBottom:12}}>{U.skillsHeading}</h3>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {SKILLS.map((s,i)=>(<div key={i} style={{padding:"14px 18px",borderRadius:8,background:"#0F172A",border:"1px solid #1E293B"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
                 <code style={{fontSize:14,fontWeight:800,color:"#F8FAFC"}}>{s.name}</code>
                 {pill("#10B98122","#10B981","agent skill")}
               </div>
-              <p style={{fontSize:11,color:"#94A3B8",lineHeight:1.5,marginBottom:4}}>{s.desc}</p>
-              <div style={{fontSize:10,color:"#475569"}}>Préchargée dans : {s.preloaded.map(p=><span key={p} style={{color:"#8B5CF6"}}>{p} </span>)}</div>
+              <p style={{fontSize:11,color:"#94A3B8",lineHeight:1.5,marginBottom:4}}>{t(s,"desc")}</p>
+              <div style={{fontSize:10,color:"#475569"}}>{U.preloadedIn}{s.preloaded.map(p=><span key={p} style={{color:"#8B5CF6"}}>{p} </span>)}</div>
               <div style={{fontSize:10,color:"#475569"}}>{s.file}</div>
             </div>))}
           </div>
@@ -228,17 +286,17 @@ function App(){
             {pill("#F59E0B22","#F59E0B",h.event)}
             {pill("#10B98122","#10B981",h.mode)}
           </div>
-          <p style={{fontSize:11,color:"#94A3B8",lineHeight:1.5}}>{h.desc}</p>
+          <p style={{fontSize:11,color:"#94A3B8",lineHeight:1.5}}>{t(h,"desc")}</p>
         </div>))}
         <div style={{padding:"12px 16px",borderRadius:8,background:"#1E293B",marginTop:8}}>
-          <p style={{fontSize:11,color:"#64748B",lineHeight:1.6}}>La plupart des hooks sont <strong style={{color:"#10B981"}}>advisory</strong> (ils affichent des warnings sans bloquer) — <strong>sauf secret-scan et push-build-gate qui bloquent</strong> (exit 2) si un secret est détecté ou si le build échoue/a des warnings. Chaque hook vit dans son dossier <code>~/.claude/hooks/&lt;nom&gt;/</code>.</p>
+          <p style={{fontSize:11,color:"#64748B",lineHeight:1.6}}>{U.hooksNoteA}<strong style={{color:"#10B981"}}>{U.hooksNoteAdvisory}</strong>{U.hooksNoteB}<strong>{U.hooksNoteBlocking}</strong>{U.hooksNoteC}<code>{U.hooksNoteCode}</code>{U.hooksNoteD}</p>
         </div>
       </div>)}
 
       {/* === SCENARIOS TAB === */}
       {tab==="scenarios"&&(<>
         <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-          {[{id:"all",label:"Tous",color:"#94A3B8"},...Object.entries(CATEGORIES).map(([id,c])=>({id,label:c.label,color:c.color}))].map(f=>(
+          {[{id:"all",label:U.filterAll,color:"#94A3B8"},...Object.entries(CATEGORIES).map(([id,c])=>({id,label:t(c,"label"),color:c.color}))].map(f=>(
             <button key={f.id} onClick={()=>{setFlt(f.id);setAid(null)}} style={{padding:"6px 14px",fontSize:11,fontWeight:600,fontFamily:F,borderRadius:6,background:flt===f.id?f.color+"22":"#1E293B",color:flt===f.id?f.color:"#64748B",border:"1px solid "+(flt===f.id?f.color+"44":"#334155"),transition:"all 0.15s"}}>{f.label}</button>
           ))}
         </div>
@@ -247,19 +305,20 @@ function App(){
             {fl.map(s=>{const ct=CATEGORIES[s.category];const on=aid===s.id;return(
               <button key={s.id} onClick={()=>setAid(on?null:s.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:8,border:"1px solid "+(on?ct.color+"66":"#1E293B"),background:on?ct.bg:"#0F172A",textAlign:"left",fontFamily:F,transition:"all 0.15s"}}>
                 <span style={{fontSize:18,lineHeight:1,opacity:on?1:0.5}}>{s.icon}</span>
-                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:on?"#F8FAFC":"#94A3B8"}}>{s.title}</div><div style={{fontSize:10,color:"#64748B",marginTop:2}}>{s.frequency}</div></div>
-                <span style={{fontSize:9,padding:"2px 6px",borderRadius:3,background:ct.color+"22",color:ct.color,fontWeight:600}}>{ct.label.slice(0,3).toUpperCase()}</span>
+                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:on?"#F8FAFC":"#94A3B8"}}>{t(s,"title")}</div><div style={{fontSize:10,color:"#64748B",marginTop:2}}>{t(s,"frequency")}</div></div>
+                <span style={{fontSize:9,padding:"2px 6px",borderRadius:3,background:ct.color+"22",color:ct.color,fontWeight:600}}>{t(ct,"label").slice(0,3).toUpperCase()}</span>
               </button>)
             })}
           </div>
           <div style={{flex:1,minWidth:0}}>
-            {!ac?(<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:10,border:"1px dashed #1E293B",color:"#334155",fontSize:13}}>← Sélectionne un scénario</div>):(
+            {!ac?(<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:10,border:"1px dashed #1E293B",color:"#334155",fontSize:13}}>{U.emptyState}</div>):(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div style={{padding:"14px 18px",borderRadius:10,background:CATEGORIES[ac.category].bg,border:"1px solid "+CATEGORIES[ac.category].color+"33"}}>
-                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}><span style={{fontSize:22}}>{ac.icon}</span><h2 style={{fontSize:17,fontWeight:700,color:"#F8FAFC",margin:0}}>{ac.title}</h2></div>
-                <p style={{fontSize:12,color:"#94A3B8",margin:0}}>{ac.when}</p>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}><span style={{fontSize:22}}>{ac.icon}</span><h2 style={{fontSize:17,fontWeight:700,color:"#F8FAFC",margin:0}}>{t(ac,"title")}</h2></div>
+                <p style={{fontSize:12,color:"#94A3B8",margin:0}}>{t(ac,"when")}</p>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                {/* Colour is keyed off the canonical (fr) tool label so both languages render identically. */}
                 {ac.steps.map((st,i)=>{const tc=gtc(st.tool);return(
                   <div key={i} style={{display:"grid",gridTemplateColumns:"26px 1fr",gap:10}}>
                     <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
@@ -268,20 +327,20 @@ function App(){
                     </div>
                     <div style={{padding:"8px 12px",marginBottom:3,borderRadius:7,background:"#0F172A",border:"1px solid #1E293B"}}>
                       <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginBottom:3}}>
-                        <span style={{fontSize:12,fontWeight:700,color:"#F8FAFC"}}>{st.action}</span>
-                        <code style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:tc+"18",color:tc,fontWeight:600}}>{st.tool}</code>
+                        <span style={{fontSize:12,fontWeight:700,color:"#F8FAFC"}}>{t(st,"action")}</span>
+                        <code style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:tc+"18",color:tc,fontWeight:600}}>{t(st,"tool")}</code>
                       </div>
-                      <p style={{fontSize:11,color:"#64748B",margin:0,lineHeight:1.4}}>{st.detail}</p>
-                      <div style={{fontSize:10,color:"#475569",marginTop:3}}>{st.where}</div>
+                      <p style={{fontSize:11,color:"#64748B",margin:0,lineHeight:1.4}}>{t(st,"detail")}</p>
+                      <div style={{fontSize:10,color:"#475569",marginTop:3}}>{t(st,"where")}</div>
                     </div>
                   </div>)})}
               </div>
               <div style={{padding:"12px 16px",borderRadius:8,background:"#EF444410",border:"1px solid #EF444433"}}>
-                <div style={{fontSize:11,fontWeight:700,color:"#EF4444",marginBottom:6}}>⚠ Pièges courants</div>
-                {ac.traps.map((t,i)=>(<div key={i} style={{fontSize:11,color:"#FCA5A5",lineHeight:1.5,paddingLeft:12,position:"relative",marginBottom:2}}><span style={{position:"absolute",left:0}}>•</span>{t}</div>))}
+                <div style={{fontSize:11,fontWeight:700,color:"#EF4444",marginBottom:6}}>{U.trapsTitle}</div>
+                {t(ac,"traps").map((tr,i)=>(<div key={i} style={{fontSize:11,color:"#FCA5A5",lineHeight:1.5,paddingLeft:12,position:"relative",marginBottom:2}}><span style={{position:"absolute",left:0}}>•</span>{tr}</div>))}
               </div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:"8px 12px",borderRadius:6,background:"#0F172A",border:"1px solid #1E293B"}}>
-                {[{l:"/command",c:"#3B82F6"},{l:"plugin",c:"#A855F7"},{l:"hook",c:"#F59E0B"},{l:"terminal",c:"#F97316"},{l:"projet Claude",c:"#64748B"},{l:"auto",c:"#10B981"}].map(x=>(
+                {[{l:"/command",c:"#3B82F6"},{l:"plugin",c:"#A855F7"},{l:"hook",c:"#F59E0B"},{l:"terminal",c:"#F97316"},{l:U.legendProject,c:"#64748B"},{l:"auto",c:"#10B981"}].map(x=>(
                   <div key={x.l} style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:7,height:7,borderRadius:"50%",background:x.c}}/><span style={{fontSize:9,color:"#64748B"}}>{x.l}</span></div>
                 ))}
               </div>
