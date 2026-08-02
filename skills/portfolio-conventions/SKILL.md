@@ -18,7 +18,7 @@ These are the active portfolio-wide rules. This skill is preloaded — do not in
 ## Naming
 
 - All repos use kebab-case matching the folder name in ~/Dev.
-- No unintentional naming patterns (the "-or" suffix issue prompted Unbiasor → Untilt).
+- No unintentional naming patterns (an "-or" suffix once read as an agent-noun and forced a rename).
 - New projects that get a hub tile are appended to `editorial.ts` (see below) — there is no numeric sort field to default.
 
 ## Signature
@@ -56,7 +56,7 @@ Plus URL liveness for every `liveUrl` declared in Layer 3. On any network/auth f
 
 ```yaml
 ---
-name: Untilt
+name: My Bias App
 tagline_fr: "Parce que votre cerveau vous ment, et qu'il vaut mieux le savoir."
 tagline_en: "Because your brain lies to you, and it's better to know."
 facts_fr: "51 biais, 510 stratégies de prévention, 131 références vérifiées via Crossref."
