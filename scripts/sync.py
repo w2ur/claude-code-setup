@@ -156,6 +156,12 @@ HOOKS_SETTINGS_DEST = REPO_ROOT / "hooks" / "settings.hooks.json"
 # exemption as HOOKS_SETTINGS_DEST or a real sync would delete it.
 HOOKS_README_DEST = REPO_ROOT / "hooks" / "README.md"
 
+# claude-scripts/README.md is owner-maintained for the same reason: it lives
+# under the claude-scripts/ synced root (file_map's 'scripts/*.sh' target)
+# but isn't itself sourced from a live *.sh file, so it needs the same
+# orphan-pruning exemption.
+CLAUDE_SCRIPTS_README_DEST = REPO_ROOT / "claude-scripts" / "README.md"
+
 
 def generate_hooks_settings(
     source: Path, replacements: list[tuple[str, str]], patterns: dict | None, dry_run: bool
@@ -396,6 +402,7 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
     produced_dests = {dest for _, dest in pairs}
     produced_dests.add(HOOKS_SETTINGS_DEST)
     produced_dests.add(HOOKS_README_DEST)
+    produced_dests.add(CLAUDE_SCRIPTS_README_DEST)
     orphan_count = prune_orphans(produced_dests, file_map, dry_run)
 
     # Audit

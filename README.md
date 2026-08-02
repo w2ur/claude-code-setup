@@ -253,7 +253,7 @@ Browse the files, understand the patterns, and build your own version. The [phil
 
 This repo stays in sync with my actual `~/.claude/` setup via `/sync-setup` — a command that runs a Python sync script to copy, anonymize, and audit for data leaks. After any workflow change (new agent, renamed command, new hook), I run `/sync-setup` and the repo updates itself. See [`scripts/`](scripts/) for details.
 
-Known gap: the global `CLAUDE.md` also references four helper shell scripts under `~/.claude/scripts/` (`dev-scanner.sh`, `disk-hygiene.sh`, `cleanup-cron.sh`, `tech-debt-triage.sh`) that aren't published in this repo yet.
+The global `CLAUDE.md` also references four helper shell scripts under `~/.claude/scripts/` — they're published in [`claude-scripts/`](claude-scripts/), synced and anonymized the same way as everything else.
 
 If something looks outdated, it probably means I changed my setup and haven't synced yet. Open an issue — it's a good nudge.
 
