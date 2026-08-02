@@ -423,7 +423,7 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
         # 0 means the repo is a faithful anonymized image of the live config.
         log.info("  Stale:        %d (would write)", stale)
     if guide_todos:
-        log.info("  Guide TODOs:  %d (new entries need a hand-written desc)", len(guide_todos))
+        log.info("  Guide TODOs:  %d (entries need hand-written prose)", len(guide_todos))
         for t in guide_todos:
             log.info("    - %s", t)
     if not dry_run and audit_patterns:
