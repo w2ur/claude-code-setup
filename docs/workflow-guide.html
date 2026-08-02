@@ -193,6 +193,9 @@ const TC={"\/sync":"#3B82F6","\/next":"#3B82F6","\/new-app":"#3B82F6","\/audit":
 function gtc(t){const l=t.toLowerCase();for(const[k,c]of Object.entries(TC)){if(l.includes(k))return c}return"#94A3B8"}
 const F="'JetBrains Mono','SF Mono','Fira Code','Cascadia Code',monospace";
 const pill=(bg,color,text)=>(<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:bg,color,fontWeight:600}}>{text}</span>);
+// Header counts: drop the plural "s" at 1. Works for both languages here
+// (commands/commandes, scenarios/scénarios, agents, skills, hooks).
+const pl=(n,word)=>`${n} ${n===1&&word.endsWith("s")?word.slice(0,-1):word}`;
 
 function App(){
   const[aid,setAid]=useState(null);const[flt,setFlt]=useState("all");const[tab,setTab]=useState("scenarios");
@@ -212,7 +215,7 @@ function App(){
       <div style={{marginBottom:20,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,flexWrap:"wrap"}}>
         <div>
           <h1 style={{fontSize:20,fontWeight:700,color:"#F8FAFC",margin:0}}>{U.title}</h1>
-          <p style={{fontSize:12,color:"#64748B",margin:"4px 0 0"}}>{SCENARIOS.length} {U.scenarios} · {COMMANDS.length} {U.commands} · {AGENTS.length} {U.agents} · {SKILLS.length} {U.skills} · {HOOKS.length} {U.hooks}</p>
+          <p style={{fontSize:12,color:"#64748B",margin:"4px 0 0"}}>{pl(SCENARIOS.length,U.scenarios)} · {pl(COMMANDS.length,U.commands)} · {pl(AGENTS.length,U.agents)} · {pl(SKILLS.length,U.skills)} · {pl(HOOKS.length,U.hooks)}</p>
         </div>
         <div style={{display:"flex",borderRadius:6,overflow:"hidden",border:"1px solid #1E293B"}}>
           {LANGS.map(l=>(
