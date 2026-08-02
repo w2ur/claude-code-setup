@@ -30,9 +30,9 @@ work gets a script, not an agent.
 
 ## Fixture-tree overrides
 
-- `dev-scanner.sh` scans `$HOME/Dev` by default; pass a directory as a
-  positional argument to point it at a single project (or a scratch fixture
-  tree) instead.
+- `dev-scanner.sh` honours `DEV_DIR` (default `$HOME/Dev`) for the tree it
+  surveys; pass a directory as a positional argument instead to point it at a
+  single project.
 - `disk-hygiene.sh` and `cleanup-cron.sh` honour `CLAUDE_DIR` (default
   `$HOME/.claude`).
 - `tech-debt-triage.sh` honours `DEV_DIR` (default `$HOME/Dev`) and

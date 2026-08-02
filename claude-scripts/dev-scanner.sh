@@ -23,7 +23,9 @@
 #   - Free-text descriptions of orphan directories — explicitly generative.
 set -euo pipefail
 
-DEV_DIR="$HOME/Dev"
+# Overridable so the script can be pointed at a fixture tree, like the three
+# other ~/.claude/scripts/ helpers honour CLAUDE_DIR or DEV_DIR.
+DEV_DIR="${DEV_DIR:-$HOME/Dev}"
 JSON_OUTPUT="false"
 TARGET_PATH=""
 

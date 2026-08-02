@@ -153,14 +153,45 @@ HOOKS_SETTINGS_DEST = REPO_ROOT / "hooks" / "settings.hooks.json"
 # hooks/README.md is owner-maintained (documents registration + verification,
 # like docs/philosophy.md), not sourced from live ~/.claude/hooks/. It still
 # lives under the hooks/ synced root, so it needs the same orphan-pruning
-# exemption as HOOKS_SETTINGS_DEST or a real sync would delete it.
+# exemption as HOOKS_SETTINGS_DEST or a real sync would delete it. Pruning is
+# only half the protection: the config's 'hooks/*.md' mapping also makes it a
+# possible sync DESTINATION, which is why 'hooks/README.md' is in `skip`.
 HOOKS_README_DEST = REPO_ROOT / "hooks" / "README.md"
 
 # claude-scripts/README.md is owner-maintained for the same reason: it lives
 # under the claude-scripts/ synced root (file_map's 'scripts/*.sh' target)
 # but isn't itself sourced from a live *.sh file, so it needs the same
-# orphan-pruning exemption.
+# orphan-pruning exemption. It needs no `skip` counterpart: 'scripts/*.sh' is
+# the only mapping targeting claude-scripts/ and it cannot match a .md file.
 CLAUDE_SCRIPTS_README_DEST = REPO_ROOT / "claude-scripts" / "README.md"
+
+
+def read_hooks_config(source: Path) -> dict | None:
+    """Return the `hooks` mapping of the live settings.json, or None if unusable.
+
+    None means the file is missing, unparseable, or carries no hooks at all.
+    Every caller must then leave its artifact alone: writing `{"hooks": {}}`
+    and rendering a "0 hooks" guide is silent, looks deliberate, and
+    contradicts a README that still claims four. A malformed file is treated
+    as missing rather than raising, so a typo in a private config cannot
+    abort a sync halfway through with 23 files already written.
+    """
+    settings_path = source / "settings.json"
+    if not settings_path.exists():
+        log.warning("Live settings.json not found: %s", settings_path)
+        return None
+
+    try:
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        log.warning("Live settings.json is unreadable (%s) — treating it as missing", exc)
+        return None
+
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    if not hooks:
+        log.warning("Live settings.json registers no hooks — leaving the hooks surface as-is")
+        return None
+    return hooks
 
 
 def generate_hooks_settings(
@@ -175,14 +206,13 @@ def generate_hooks_settings(
     file, and write it out. Returns whether the destination is stale
     (dry-run only).
     """
-    settings_path = source / "settings.json"
     rel = HOOKS_SETTINGS_DEST.relative_to(REPO_ROOT)
-    if not settings_path.exists():
-        log.warning("Live settings.json not found: %s (skipping %s)", settings_path, rel)
+    hooks = read_hooks_config(source)
+    if hooks is None:
+        log.warning("Skipping %s (existing file left untouched)", rel)
         return False
 
-    data = json.loads(settings_path.read_text(encoding="utf-8"))
-    content = json.dumps({"hooks": data.get("hooks", {})}, indent=2) + "\n"
+    content = json.dumps({"hooks": hooks}, indent=2) + "\n"
     anonymized, _count = anonymize(content, replacements, patterns)
 
     is_stale = False
@@ -207,6 +237,33 @@ def generate_hooks_settings(
 
 # ── Audit ───────────────────────────────────────────────────────
 
+# Owner-maintained files whose real name, links and handles are deliberate:
+# they are written by hand, never synced, and are the one place the repo is
+# supposed to say who published it. commands/sync-setup.md Step 5 already
+# carves README.md out in prose; encode it here so the gate can go green.
+# A gate that has never once passed cannot signal anything.
+AUDIT_ALLOWLIST = frozenset({"README.md", "LICENSE"})
+
+
+def git_visible_files() -> set[str] | None:
+    """Repo-relative paths git does NOT ignore (tracked + untracked-not-ignored).
+
+    Returns None when the question can't be answered (not a git repo, no git
+    binary), in which case callers audit everything rather than skip silently.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return {ln for ln in result.stdout.splitlines() if ln.strip()}
+
 
 def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     """Check all synced files for patterns that should not survive anonymization.
@@ -215,15 +272,25 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     """
     warnings: list[str] = []
 
-    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml", "*.sh")
+    # JSON belongs here: hooks/settings.hooks.json is a synced output too, and
+    # scripts/README.md advertises the audit as covering all output files.
+    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml", "*.sh", "*.json")
     all_files: list[Path] = []
     for ext in audit_extensions:
         all_files.extend(target_dir.rglob(ext))
+
+    visible = git_visible_files()
 
     for audit_file in sorted(set(all_files)):
         # Skip files not tracked (e.g., the scripts/ directory)
         rel = audit_file.relative_to(REPO_ROOT)
         if str(rel).startswith("scripts/"):
+            continue
+        if str(rel) in AUDIT_ALLOWLIST:
+            continue
+        # Gitignored files (e.g. .claude/agent-memory/) can never be pushed,
+        # so a match there is not a leak — only noise that reddens the gate.
+        if visible is not None and str(rel) not in visible:
             continue
 
         try:

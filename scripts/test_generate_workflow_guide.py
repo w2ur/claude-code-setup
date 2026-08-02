@@ -64,13 +64,24 @@ def test_field_arr_requires_the_key_to_start_at_a_delimiter():
     assert _field_arr(line, "agents") == '["RIGHT"]'
 
 
-def test_missing_en_sibling_becomes_a_reported_todo():
+def test_missing_en_sibling_falls_back_to_french_and_is_reported():
+    """The guide documents `_en` falling back to French; a non-empty placeholder
+    defeated the renderer's null/empty test and shipped 'TODO: write desc_en'
+    to English readers."""
     todos: list[str] = []
     line = '  { name: "/x", desc: "Prose FR" },'
     assert _preserved(line, "desc", "command /x", todos) == '"Prose FR"'
     assert todos == []
-    assert _preserved(line, "desc_en", "command /x", todos) == '"TODO: write desc_en"'
+    assert _preserved(line, "desc_en", "command /x", todos) == '"Prose FR"'
     assert todos == ["command /x (needs desc_en)"]
+
+
+def test_missing_field_with_no_french_sibling_still_gets_a_placeholder():
+    todos: list[str] = []
+    line = '  { name: "/x", desc: "Prose FR" },'
+    assert _preserved(line, "when_en", "command /x", todos) == '"TODO: write when_en"'
+    assert _preserved(line, "when", "command /x", todos) == '"TODO: write when"'
+    assert todos == ["command /x (needs when_en)", "command /x (needs when)"]
 
 
 def _write_command(tmp_path: Path, stem: str, body: str) -> Path:
@@ -104,4 +115,8 @@ def test_build_commands_flags_a_new_entry_in_both_languages(tmp_path):
 
     assert _field_str(lines[0], "desc") == "TODO: write desc"
     assert _field_str(lines[0], "desc_en") == "TODO: write desc_en"
-    assert todos == ["command /brand-new (new — needs desc/desc_en + when/when_en)"]
+    # args_en is seeded from the French argument-hint, so it needs reporting too.
+    assert _field_str(lines[0], "args_en") == "[x]"
+    assert todos == [
+        "command /brand-new (new — needs desc/desc_en + when/when_en + args_en)"
+    ]
