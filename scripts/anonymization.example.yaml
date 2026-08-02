@@ -16,6 +16,11 @@ replacements:
   # App URLs (anonymize even for public apps — URLs reveal the owner)
   "myapp.dev": "myapp.example.com"
   "budget.yoursite.dev": "budget.example.com"
+  # CAREFUL: for a PRIVATE app's domain, the target must be that app's
+  # placeholder slug, not its real one. Mapping "board-game-thing.dev" to
+  # "board-game-thing.example.com" would launder the domain while leaving
+  # the private name readable — resolve it to the same placeholder used
+  # under "Private app slugs" below instead (e.g. "my-boardgame-app.example.com").
 
   # People
   "Jane Doe": "{author-name}"

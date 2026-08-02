@@ -16,7 +16,7 @@ Monthly technical health review. Two phases: triage everything, then deep-dive o
 
 - If `$0` is empty: run Phase 1 (triage all) → present priority list → ask owner to pick → run Phase 2 (deep review).
 - If `$0` is `--triage-only`: run Phase 1 only, no fixes.
-- If `$0` is app names (e.g., `my-budget-app untilt`): skip Phase 1, run Phase 2 directly on those apps.
+- If `$0` is app names (e.g., `my-budget-app my-bias-app`): skip Phase 1, run Phase 2 directly on those apps.
 
 ---
 
