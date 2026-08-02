@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import glob
+import json
 import logging
 import re
 import subprocess
@@ -143,6 +144,59 @@ def anonymize(content: str, replacements: list[tuple[str, str]], patterns: dict 
                 count += len(matches)
 
     return content, count
+
+
+# ── Hooks registration snippet ──────────────────────────────────
+
+HOOKS_SETTINGS_DEST = REPO_ROOT / "hooks" / "settings.hooks.json"
+
+# hooks/README.md is owner-maintained (documents registration + verification,
+# like docs/philosophy.md), not sourced from live ~/.claude/hooks/. It still
+# lives under the hooks/ synced root, so it needs the same orphan-pruning
+# exemption as HOOKS_SETTINGS_DEST or a real sync would delete it.
+HOOKS_README_DEST = REPO_ROOT / "hooks" / "README.md"
+
+
+def generate_hooks_settings(
+    source: Path, replacements: list[tuple[str, str]], patterns: dict | None, dry_run: bool
+) -> bool:
+    """Derive hooks/settings.hooks.json from live settings.json's `hooks` key.
+
+    settings.json itself is skipped entirely (permissions/plugins/personal
+    config must stay private), but a hand-copied registration snippet would
+    drift the moment a hook is added or removed. Extract only the `hooks`
+    key, run it through the same anonymize() path as every other synced
+    file, and write it out. Returns whether the destination is stale
+    (dry-run only).
+    """
+    settings_path = source / "settings.json"
+    rel = HOOKS_SETTINGS_DEST.relative_to(REPO_ROOT)
+    if not settings_path.exists():
+        log.warning("Live settings.json not found: %s (skipping %s)", settings_path, rel)
+        return False
+
+    data = json.loads(settings_path.read_text(encoding="utf-8"))
+    content = json.dumps({"hooks": data.get("hooks", {})}, indent=2) + "\n"
+    anonymized, _count = anonymize(content, replacements, patterns)
+
+    is_stale = False
+    if dry_run:
+        current = HOOKS_SETTINGS_DEST.read_text(encoding="utf-8") if HOOKS_SETTINGS_DEST.exists() else None
+        if current is None:
+            status = "would create"
+            is_stale = True
+        elif anonymized != current:
+            status = "would update"
+            is_stale = True
+        else:
+            status = "up to date"
+        log.info("  settings.json[hooks] → %s (%s)", rel, status)
+    else:
+        HOOKS_SETTINGS_DEST.parent.mkdir(parents=True, exist_ok=True)
+        HOOKS_SETTINGS_DEST.write_text(anonymized, encoding="utf-8")
+        log.info("  generated %s", rel)
+
+    return is_stale
 
 
 # ── Audit ───────────────────────────────────────────────────────
@@ -330,8 +384,18 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
     if guide_stale:
         stale += 1
 
+    # Derive the hooks registration snippet from live settings.json.
+    hooks_settings_stale = generate_hooks_settings(source, replacements, patterns, dry_run)
+    if hooks_settings_stale:
+        stale += 1
+
     # Prune orphaned repo files under synced roots (renamed/deleted sources).
+    # hooks/settings.hooks.json is generated (not file_map-derived) but lives
+    # under the hooks/ root, so it must be added explicitly or it reads as an
+    # orphan and gets deleted on the very next real run.
     produced_dests = {dest for _, dest in pairs}
+    produced_dests.add(HOOKS_SETTINGS_DEST)
+    produced_dests.add(HOOKS_README_DEST)
     orphan_count = prune_orphans(produced_dests, file_map, dry_run)
 
     # Audit

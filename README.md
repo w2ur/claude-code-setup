@@ -2,8 +2,8 @@
 name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
-facts_fr: "7 commandes, 6 agents, 6 hooks — dont 2 bloquants."
-facts_en: "7 commands, 6 agents, 6 hooks — 2 of them blocking."
+facts_fr: "7 commandes, 6 agents, 4 hooks — dont 2 bloquants."
+facts_en: "7 commands, 6 agents, 4 hooks — 2 of them blocking."
 ---
 
 <div align="center">
@@ -212,6 +212,8 @@ cp -r claude-code-setup/skills/ ~/.claude/skills/
 cp -r claude-code-setup/hooks/ ~/.claude/hooks/
 cp claude-code-setup/CLAUDE.md ~/.claude/CLAUDE.md
 ```
+
+Copying the scripts is not enough — hooks don't run until they're registered in `~/.claude/settings.json`. Merge `hooks/settings.hooks.json` into your own settings file (`jq -s '.[0] * .[1]' ~/.claude/settings.json claude-code-setup/hooks/settings.hooks.json > /tmp/settings.merged.json && mv /tmp/settings.merged.json ~/.claude/settings.json` if you don't already have a `hooks` key — see [`hooks/README.md`](hooks/README.md) for the manual-merge path if you do, plus how to verify a hook actually fired).
 
 Then edit `CLAUDE.md` and the agent files to replace `w2ur`, `{portfolio-site}`, and other placeholders with your own values.
 

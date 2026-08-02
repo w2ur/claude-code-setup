@@ -1,0 +1,47 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/auto-format/hook.sh",
+            "timeout": 15,
+            "statusMessage": "Auto-formatting..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/secret-scan/hook.sh",
+            "timeout": 5,
+            "statusMessage": "Scanning for secrets..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/stale-readme-guard/hook.sh",
+            "timeout": 5,
+            "statusMessage": "Checking README freshness..."
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/push-build-gate/hook.sh",
+            "timeout": 180,
+            "statusMessage": "Verifying zero-warning build before push..."
+          }
+        ]
+      }
+    ]
+  }
+}
