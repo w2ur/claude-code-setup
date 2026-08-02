@@ -18,7 +18,7 @@ These are the active portfolio-wide rules. This skill is preloaded — do not in
 ## Naming
 
 - All repos use kebab-case matching the folder name in ~/Dev.
-- No unintentional naming patterns (the "-or" suffix issue prompted My Bias App → My Bias App).
+- No unintentional naming patterns (an "-or" suffix once read as an agent-noun and forced a rename).
 - New projects that get a hub tile are appended to `editorial.ts` (see below) — there is no numeric sort field to default.
 
 ## Signature
