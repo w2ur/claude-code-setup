@@ -14,10 +14,13 @@ Field policy per array:
       - agents:   model, skills, memory
       - skills:   file path, preloaded (which agents declare the skill)
       - hooks:    event (settings.json), mode (exit 2 => Blocking)
-  * Hand-written French prose that cannot be derived is PRESERVED verbatim
-    from the current guide for entries that already exist (desc, when, args).
-  * A genuinely new entry with no prior hand-written desc gets a
-    "TODO: write desc" placeholder, reported back to the caller.
+  * Hand-written prose that cannot be derived is PRESERVED verbatim from the
+    current guide for entries that already exist. The guide is bilingual, so
+    every prose field has an `_en` sibling (desc/desc_en, when/when_en,
+    args/args_en, agents/agents_en) and both are preserved the same way.
+  * A genuinely new entry with no prior hand-written prose gets a
+    "TODO: write desc" / "TODO: write desc_en" placeholder, reported back to
+    the caller.
 
 The whole rewritten HTML is anonymized with sync.py's anonymize() before it
 lands in the repo, since ~/Dev/workflow-guide.html is the live/private source.
@@ -77,15 +80,20 @@ def js_arr(items: list[str]) -> str:
 # ── Parsing the existing guide arrays ───────────────────────────
 
 
+# A field key must start at a delimiter and end at its colon, so that `desc`
+# never matches `desc_en` (or a hypothetical `en_desc`) and vice versa.
+_KEY_BOUNDARY = r"(?:^|[\s{,])"
+
+
 def _field_str(line: str, key: str) -> str | None:
     """Return the RAW (still-escaped) contents of a `key: "..."` field."""
-    m = re.search(key + r':\s*"((?:[^"\\]|\\.)*)"', line)
+    m = re.search(_KEY_BOUNDARY + re.escape(key) + r':\s*"((?:[^"\\]|\\.)*)"', line)
     return m.group(1) if m else None
 
 
 def _field_arr(line: str, key: str) -> str | None:
     """Return the raw `key: [ ... ]` array text (single-line arrays only)."""
-    m = re.search(key + r":\s*(\[[^\]]*\])", line)
+    m = re.search(_KEY_BOUNDARY + re.escape(key) + r":\s*(\[[^\]]*\])", line)
     return m.group(1) if m else None
 
 
@@ -129,6 +137,34 @@ def _strip_annotation(name: str) -> str:
     return re.sub(r"\s*\(.*\)\s*$", "", name).strip()
 
 
+def _preserved(prev: str | None, key: str, entry: str, todos: list[str]) -> str:
+    """Return the JS literal for a hand-written prose field of an existing entry.
+
+    The raw (still-escaped) value is kept verbatim. When the field is absent —
+    typically an `_en` sibling that has never been written — emit a TODO
+    placeholder and report it to the caller, like the new-entry path does.
+    """
+    raw = _field_str(prev, key) if prev else None
+    if raw is None:
+        todos.append(f"{entry} (needs {key})")
+        return js_str(f"TODO: write {key}")
+    return '"' + raw + '"'
+
+
+def _preserved_arr(prev: str | None, key: str, derived: list[str]) -> str:
+    """Return the JS literal for a derived name array.
+
+    Keep the existing annotated list (e.g. 'troubleshooter (auto-fix)') when its
+    stripped name-set still matches the derived one; otherwise re-derive.
+    """
+    prev_arr = _field_arr(prev, key) if prev else None
+    if prev_arr is not None and {
+        _strip_annotation(e) for e in _arr_elements(prev_arr)
+    } == set(derived):
+        return prev_arr
+    return js_arr(derived)
+
+
 # ── Building each array from live config ────────────────────────
 
 
@@ -150,28 +186,31 @@ def build_commands(source: Path, existing: dict, existing_order: list[str]) -> t
     for name in order:
         info = live[name]
         prev = existing.get(name)
-        # args / desc / when: preserve French prose; derive/placeholder if new.
+        entry = f"command {name}"
+        # args / desc / when (+ _en siblings): preserve prose, or placeholder.
         if prev:
-            args_val = '"' + (_field_str(prev, "args") or "") + '"'
-            desc_val = '"' + (_field_str(prev, "desc") or "") + '"'
-            when_val = '"' + (_field_str(prev, "when") or "") + '"'
+            args_val = _preserved(prev, "args", entry, todos)
+            args_en_val = _preserved(prev, "args_en", entry, todos)
+            desc_val = _preserved(prev, "desc", entry, todos)
+            desc_en_val = _preserved(prev, "desc_en", entry, todos)
+            when_val = _preserved(prev, "when", entry, todos)
+            when_en_val = _preserved(prev, "when_en", entry, todos)
         else:
             args_val = js_str(info["arg_hint"])
+            args_en_val = js_str(info["arg_hint"])
             desc_val = js_str("TODO: write desc")
+            desc_en_val = js_str("TODO: write desc_en")
             when_val = js_str("TODO: write when")
-            todos.append(f"command {name} (new — needs desc + when)")
-        # agents: derive; keep existing annotated list if the name-set matches.
-        derived = info["agents"]
-        prev_arr = _field_arr(prev, "agents") if prev else None
-        if prev_arr is not None and {
-            _strip_annotation(e) for e in _arr_elements(prev_arr)
-        } == set(derived):
-            agents_val = prev_arr
-        else:
-            agents_val = js_arr(derived)
+            when_en_val = js_str("TODO: write when_en")
+            todos.append(f"{entry} (new — needs desc/desc_en + when/when_en)")
+        # agents: derive; keep existing annotated lists if the name-set matches.
+        agents_val = _preserved_arr(prev, "agents", info["agents"])
+        agents_en_val = _preserved_arr(prev, "agents_en", info["agents"])
         line = (
-            f"  {{ name: {js_str(name)}, args: {args_val}, desc: {desc_val}, "
-            f"agents: {agents_val}, when: {when_val} }},"
+            f"  {{ name: {js_str(name)}, args: {args_val}, args_en: {args_en_val}, "
+            f"desc: {desc_val}, desc_en: {desc_en_val}, "
+            f"agents: {agents_val}, agents_en: {agents_en_val}, "
+            f"when: {when_val}, when_en: {when_en_val} }},"
         )
         lines.append(line)
     return lines, todos
@@ -194,6 +233,7 @@ def build_agents(source: Path, existing: dict, existing_order: list[str]) -> tup
     for name in order:
         info = live[name]
         prev = existing.get(name)
+        entry = f"agent {name}"
         # model: keep an existing annotated value when its base matches live.
         if prev:
             prev_model = _field_str(prev, "model") or ""
@@ -201,16 +241,18 @@ def build_agents(source: Path, existing: dict, existing_order: list[str]) -> tup
                 model_val = js_str(prev_model)
             else:
                 model_val = js_str(info["model"])
-            desc_val = '"' + (_field_str(prev, "desc") or "") + '"'
+            desc_val = _preserved(prev, "desc", entry, todos)
+            desc_en_val = _preserved(prev, "desc_en", entry, todos)
         else:
             model_val = js_str(info["model"])
             desc_val = js_str("TODO: write desc")
-            todos.append(f"agent {name} (new — needs desc)")
+            desc_en_val = js_str("TODO: write desc_en")
+            todos.append(f"{entry} (new — needs desc/desc_en)")
         skills_val = js_arr(info["skills"])
         memory_val = "true" if info["memory"] else "false"
         line = (
             f"  {{ name: {js_str(name)}, model: {model_val}, skills: {skills_val}, "
-            f"memory: {memory_val}, desc: {desc_val} }},"
+            f"memory: {memory_val}, desc: {desc_val}, desc_en: {desc_en_val} }},"
         )
         lines.append(line)
     return lines, todos
@@ -248,14 +290,17 @@ def build_skills(source: Path, existing: dict, existing_order: list[str]) -> tup
             preloaded_val = prev_arr
         else:
             preloaded_val = js_arr(info["preloaded"])
+        entry = f"skill {name}"
         if prev:
-            desc_val = '"' + (_field_str(prev, "desc") or "") + '"'
+            desc_val = _preserved(prev, "desc", entry, todos)
+            desc_en_val = _preserved(prev, "desc_en", entry, todos)
         else:
             desc_val = js_str("TODO: write desc")
-            todos.append(f"skill {name} (new — needs desc)")
+            desc_en_val = js_str("TODO: write desc_en")
+            todos.append(f"{entry} (new — needs desc/desc_en)")
         line = (
             f"  {{ name: {js_str(name)}, file: {js_str(info['file'])}, "
-            f"preloaded: {preloaded_val}, desc: {desc_val} }},"
+            f"preloaded: {preloaded_val}, desc: {desc_val}, desc_en: {desc_en_val} }},"
         )
         lines.append(line)
     return lines, todos
@@ -305,14 +350,17 @@ def build_hooks(source: Path, existing: dict, existing_order: list[str]) -> tupl
     for name in order:
         info = live[name]
         prev = existing.get(name)
+        entry = f"hook {name}"
         if prev:
-            desc_val = '"' + (_field_str(prev, "desc") or "") + '"'
+            desc_val = _preserved(prev, "desc", entry, todos)
+            desc_en_val = _preserved(prev, "desc_en", entry, todos)
         else:
             desc_val = js_str("TODO: write desc")
-            todos.append(f"hook {name} (new — needs desc)")
+            desc_en_val = js_str("TODO: write desc_en")
+            todos.append(f"{entry} (new — needs desc/desc_en)")
         line = (
             f"  {{ name: {js_str(name)}, event: {js_str(info['event'])}, "
-            f"desc: {desc_val}, mode: {js_str(info['mode'])} }},"
+            f"desc: {desc_val}, desc_en: {desc_en_val}, mode: {js_str(info['mode'])} }},"
         )
         lines.append(line)
     return lines, todos
@@ -397,7 +445,7 @@ def main() -> None:
     patterns = config.get("patterns")
     todos, _stale = generate_guide(args.source, replacements, patterns, args.dry_run)
     if todos:
-        log.info("New entries needing a hand-written desc:")
+        log.info("Entries needing hand-written prose:")
         for t in todos:
             log.info("  - %s", t)
 
