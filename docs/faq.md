@@ -14,7 +14,7 @@ Environment variables, never in files. Agent files reference placeholders like `
 
 ## What if I use a monorepo?
 
-Adapt `portfolio-sync` to scan workspace packages instead of `~/Dev/*`. The rest of the setup — commands, skills, rules, hooks — is path-agnostic and works unchanged. The sync script accepts a configurable root directory for exactly this reason.
+Adapt `portfolio-sync` to scan workspace packages instead of `~/Dev/*`. The rest of the setup — commands, skills, hooks — is path-agnostic and works unchanged. The sync script accepts a configurable root directory for exactly this reason.
 
 ## How often do you update this?
 
@@ -24,12 +24,12 @@ The sync script is run roughly monthly to pull changes from the live config into
 
 Rough estimates per session:
 
-- Global `CLAUDE.md`: ~2–3K tokens (always loaded)
-- SessionStart hook rules: ~500 tokens per session
-- Each agent/command/skill: loaded on demand, not at startup — cost is per invocation, not per session
+- Global `CLAUDE.md`: ~2–3K tokens (always loaded, every session)
+- Agents, commands, skills: loaded on demand, not at startup — cost is per invocation, not per session
+- No SessionStart hook in this setup, so there's nothing beyond `CLAUDE.md` charged at session start
 
 Total baseline overhead is low. The main variable is how many agents you invoke in a session.
 
-## Why YAML for the manifest and not JSON?
+## Why YAML for `anonymization.yaml`?
 
-Human readability and inline comments. Portfolio manifests like `.portfolio.yml` are hand-edited, not machine-generated, so the ability to document choices directly in the file matters. YAML lets you leave a comment explaining why `visibility: private` or why `sort_order` is set to a specific value. JSON offers no equivalent.
+Human readability and inline comments. It's hand-edited, not machine-generated, so the ability to document choices directly in the file matters — `scripts/anonymization.example.yaml` groups its `replacements` by category (GitHub, portfolio site, app URLs, people, private slugs) with a comment on each. JSON offers no equivalent.

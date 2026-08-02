@@ -35,9 +35,10 @@ python scripts/sync.py --source /path/to/claude-config
 4. Applies regex patterns for catch-all rules (paths, emails)
 5. Regenerates the `docs/workflow-guide.html` DATA arrays (commands, agents,
    skills, hooks) from live config via `generate_workflow_guide.py`, preserving
-   hand-written French descriptions and flagging genuinely new entries
+   the hand-written French and English descriptions and flagging genuinely new
+   entries
 6. Prunes orphaned repo files under synced roots (`commands/`, `agents/`,
-   `skills/`, `hooks/`, `rules/`) whose live source has disappeared
+   `skills/`, `hooks/`, `claude-scripts/`) whose live source has disappeared
 7. Runs an audit: greps all output files (`.md`, `.html`, `.yml`, `.yaml`,
    `.sh`) for patterns that should not survive
 8. Prints a summary and `git diff --stat` — you review and commit manually

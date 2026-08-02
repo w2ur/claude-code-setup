@@ -18,7 +18,7 @@ If `$0` is `--dry-run` or `--audit-only`, stop after this step.
 ## Step 2: Verify stale-file cleanup
 
 `sync.py` now prunes orphans automatically: any file under a synced root
-(`commands/`, `agents/`, `skills/`, `hooks/`, `rules/`) whose live source has
+(`commands/`, `agents/`, `skills/`, `hooks/`) whose live source has
 disappeared is deleted on a real run (reported on `--dry-run`) and listed under
 the `── Orphans ──` section of the output. Common cases: renamed agents (e.g.,
 old `architect.md` after rename to `troubleshooter.md`), deleted commands,
