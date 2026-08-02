@@ -207,6 +207,33 @@ def generate_hooks_settings(
 
 # ── Audit ───────────────────────────────────────────────────────
 
+# Owner-maintained files whose real name, links and handles are deliberate:
+# they are written by hand, never synced, and are the one place the repo is
+# supposed to say who published it. commands/sync-setup.md Step 5 already
+# carves README.md out in prose; encode it here so the gate can go green.
+# A gate that has never once passed cannot signal anything.
+AUDIT_ALLOWLIST = frozenset({"README.md", "LICENSE"})
+
+
+def git_visible_files() -> set[str] | None:
+    """Repo-relative paths git does NOT ignore (tracked + untracked-not-ignored).
+
+    Returns None when the question can't be answered (not a git repo, no git
+    binary), in which case callers audit everything rather than skip silently.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return {ln for ln in result.stdout.splitlines() if ln.strip()}
+
 
 def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     """Check all synced files for patterns that should not survive anonymization.
@@ -215,15 +242,25 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     """
     warnings: list[str] = []
 
-    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml", "*.sh")
+    # JSON belongs here: hooks/settings.hooks.json is a synced output too, and
+    # scripts/README.md advertises the audit as covering all output files.
+    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml", "*.sh", "*.json")
     all_files: list[Path] = []
     for ext in audit_extensions:
         all_files.extend(target_dir.rglob(ext))
+
+    visible = git_visible_files()
 
     for audit_file in sorted(set(all_files)):
         # Skip files not tracked (e.g., the scripts/ directory)
         rel = audit_file.relative_to(REPO_ROOT)
         if str(rel).startswith("scripts/"):
+            continue
+        if str(rel) in AUDIT_ALLOWLIST:
+            continue
+        # Gitignored files (e.g. .claude/agent-memory/) can never be pushed,
+        # so a match there is not a leak — only noise that reddens the gate.
+        if visible is not None and str(rel) not in visible:
             continue
 
         try:
