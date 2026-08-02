@@ -24,10 +24,17 @@ replacements:
   # Private app slugs (use descriptive placeholders)
   "my-secret-project": "my-sample-app"
   "private-tool": "my-tool"
+  "board-game-thing": "my-boardgame-app"
+  # CAREFUL: never put a slug here when a PUBLIC name starts with it.
+  # `replacements` is an exact-substring net, so a "trader" entry would also
+  # rewrite a public "trader-core" package into "my-trading-app-core".
+  # Use a lookahead-guarded rule under `patterns` instead — see below.
 
   # Public app slugs — leave them out! They stay as-is.
   # Listed here for documentation:
   #   my-public-app, another-public-app
+  # Verify each one with `gh repo view <owner>/<name>` before trusting this
+  # list: a repo flipped to private is exactly the leak this file must catch.
 
   # Emails
   "me@mysite.dev": "{email}"
@@ -38,6 +45,9 @@ patterns:
   # Dash-flattened home paths (e.g. project dirs like -Users-<name>-Dev)
   '-Users-[^-/\s]+-': '-Users-{username}-'
   '-home-[^-/\s]+-': '-home-{username}-'
+  # Private slug that prefixes a public one: the lookahead keeps `trader-core`
+  # intact while still anonymizing the bare private `trader`.
+  '\btrader\b(?!-)': 'my-trading-app'
 
 audit_patterns:
   - 'your-gh-user'
@@ -45,8 +55,15 @@ audit_patterns:
   - 'Jane'
   - 'my-secret-project'
   - 'private-tool'
+  - 'board-game-thing'
+  # Mirror the lookahead so the public `trader-core` never trips the audit.
+  - '\btrader\b(?!-)'
 
 skip:
+  # The repo's hooks/README.md is owner-maintained and exempt from orphan
+  # pruning, but the 'hooks/*.md' mapping below would still make it a sync
+  # DESTINATION — a live ~/.claude/hooks/README.md would overwrite it.
+  - 'hooks/README.md'
   - 'agent-memory/**'
   - 'plans/**'
   - 'projects/**'

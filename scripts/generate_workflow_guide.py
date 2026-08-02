@@ -28,7 +28,6 @@ lands in the repo, since ~/Dev/workflow-guide.html is the live/private source.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import sys
@@ -46,6 +45,7 @@ from sync import (  # noqa: E402
     anonymize,
     build_replacements,
     load_config,
+    read_hooks_config,
 )
 
 log = logging.getLogger("sync.workflow")
@@ -141,14 +141,23 @@ def _preserved(prev: str | None, key: str, entry: str, todos: list[str]) -> str:
     """Return the JS literal for a hand-written prose field of an existing entry.
 
     The raw (still-escaped) value is kept verbatim. When the field is absent —
-    typically an `_en` sibling that has never been written — emit a TODO
-    placeholder and report it to the caller, like the new-entry path does.
+    typically an `_en` sibling that has never been written — report a TODO to
+    the caller so the owner knows to write it, and fall back to the French
+    value rather than a placeholder: the guide's renderer already falls back to
+    French for a null/empty `_en`, and writing a non-empty "TODO: write
+    desc_en" defeated that test, showing the literal placeholder to English
+    readers instead of the perfectly good French prose.
     """
     raw = _field_str(prev, key) if prev else None
-    if raw is None:
-        todos.append(f"{entry} (needs {key})")
-        return js_str(f"TODO: write {key}")
-    return '"' + raw + '"'
+    if raw is not None:
+        return '"' + raw + '"'
+
+    todos.append(f"{entry} (needs {key})")
+    if key.endswith("_en"):
+        fallback = _field_str(prev, key[: -len("_en")]) if prev else None
+        if fallback is not None:
+            return '"' + fallback + '"'
+    return js_str(f"TODO: write {key}")
 
 
 def _preserved_arr(prev: str | None, key: str, derived: list[str]) -> str:
@@ -196,13 +205,17 @@ def build_commands(source: Path, existing: dict, existing_order: list[str]) -> t
             when_val = _preserved(prev, "when", entry, todos)
             when_en_val = _preserved(prev, "when_en", entry, todos)
         else:
+            # args_en is seeded with the French `argument-hint` — the only
+            # value available — so it must be reported too, or a new command
+            # ships an untranslated hint to English readers with nothing
+            # flagging it.
             args_val = js_str(info["arg_hint"])
             args_en_val = js_str(info["arg_hint"])
             desc_val = js_str("TODO: write desc")
             desc_en_val = js_str("TODO: write desc_en")
             when_val = js_str("TODO: write when")
             when_en_val = js_str("TODO: write when_en")
-            todos.append(f"{entry} (new — needs desc/desc_en + when/when_en)")
+            todos.append(f"{entry} (new — needs desc/desc_en + when/when_en + args_en)")
         # agents: derive; keep existing annotated lists if the name-set matches.
         agents_val = _preserved_arr(prev, "agents", info["agents"])
         agents_en_val = _preserved_arr(prev, "agents_en", info["agents"])
@@ -307,13 +320,16 @@ def build_skills(source: Path, existing: dict, existing_order: list[str]) -> tup
 
 
 def _hook_event_map(source: Path) -> dict[str, tuple[str, str]]:
-    """Map hook name -> (event_type, matcher) from settings.json."""
-    settings_path = source / "settings.json"
+    """Map hook name -> (event_type, matcher) from settings.json.
+
+    Empty when the live hooks config is unusable; generate_guide() refuses to
+    write in that case, so build_hooks() never publishes a "0 hooks" guide.
+    """
     mapping: dict[str, tuple[str, str]] = {}
-    if not settings_path.exists():
+    hooks = read_hooks_config(source)
+    if hooks is None:
         return mapping
-    data = json.loads(settings_path.read_text(encoding="utf-8"))
-    for event_type, groups in (data.get("hooks") or {}).items():
+    for event_type, groups in hooks.items():
         for group in groups:
             matcher = group.get("matcher", "")
             for hook in group.get("hooks", []):
@@ -392,6 +408,13 @@ def generate_guide(
     """
     if not LIVE_GUIDE.exists():
         log.warning("Workflow guide source not found: %s (skipping)", LIVE_GUIDE)
+        return [], False
+
+    # A guide rebuilt from a missing/empty/malformed settings.json would render
+    # "0 hooks" and drop every HOOKS entry without warning, while README.md
+    # still claims four. Leave the published guide alone instead.
+    if read_hooks_config(source) is None:
+        log.warning("Skipping %s (existing guide left untouched)", DEST_GUIDE.relative_to(REPO_ROOT))
         return [], False
 
     html = LIVE_GUIDE.read_text(encoding="utf-8")

@@ -79,7 +79,7 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 ```
 
 > [!TIP]
-> For a visual, interactive version of this architecture, [open the workflow guide](https://w2ur.github.io/claude-code-setup/workflow-guide.html) — it's bilingual and opens in English (FR/EN toggle in the header).
+> For a visual, interactive version of this architecture, [open the workflow guide](https://w2ur.github.io/claude-code-setup/workflow-guide.html) — it's bilingual and opens in your browser's language, French or English (FR/EN toggle in the header, and it remembers your choice).
 
 [![The workflow guide, showing the bug-fix escalation cascade](docs/images/workflow-guide.png)](https://w2ur.github.io/claude-code-setup/workflow-guide.html)
 
@@ -125,7 +125,7 @@ The model selection matters. I don't pay opus prices for a compliance check that
 
 <br>
 
-- **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, manifest format, quality gates, display order). Loaded into `troubleshooter` and `portfolio-sync`.
+- **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, the three-layer inventory that replaced the per-repo manifest, quality gates, display order). Loaded into `troubleshooter` and `portfolio-sync`.
 
 The other four skills I used to run here are gone — their content was either already inferable by the agents that needed it, or better placed directly in the global CLAUDE.md's quality section, where it can't drift out of sync with a separate file.
 

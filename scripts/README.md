@@ -40,7 +40,10 @@ python scripts/sync.py --source /path/to/claude-config
 6. Prunes orphaned repo files under synced roots (`commands/`, `agents/`,
    `skills/`, `hooks/`, `claude-scripts/`) whose live source has disappeared
 7. Runs an audit: greps all output files (`.md`, `.html`, `.yml`, `.yaml`,
-   `.sh`) for patterns that should not survive
+   `.sh`, `.json`) for patterns that should not survive. Gitignored paths are
+   skipped — they can never be pushed — and so are the owner-maintained
+   `README.md` and `LICENSE`, whose real name and links are deliberate. Without
+   those two exclusions the gate is red on a clean tree, which makes it useless
 8. Prints a summary and `git diff --stat` — you review and commit manually
 
 ## Adapting to your setup
@@ -50,7 +53,7 @@ The `anonymization.yaml` has four sections:
 - **`replacements`**: Exact string replacements. Add your real app names, URLs, domains, and people here. Longer strings are applied first automatically.
 - **`patterns`**: Regex patterns for catch-all rules (e.g., home directory paths).
 - **`audit_patterns`**: Patterns to grep for after sync — anything matching is a potential leak.
-- **`skip`**: Directories/files in `~/.claude/` to ignore entirely.
+- **`skip`**: Directories/files in `~/.claude/` to ignore entirely. Also the place to protect an owner-maintained repo file that happens to sit under a synced root (`hooks/README.md`), since a `file_map` glob would otherwise make it a sync destination and overwrite it.
 - **`file_map`**: What to copy and where to put it.
 
 ### Option B: Public vs Private apps
