@@ -81,6 +81,10 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 > [!TIP]
 > For a visual, interactive version of this architecture, [open the workflow guide](https://w2ur.github.io/claude-code-setup/workflow-guide.html) — it's bilingual and opens in English (FR/EN toggle in the header).
 
+[![The workflow guide, showing the bug-fix escalation cascade](docs/images/workflow-guide.png)](https://w2ur.github.io/claude-code-setup/workflow-guide.html)
+
+<sub>The guide, on the scenario I run most: triage the environment first, then a one-way L1 → L2 → L3 escalation, then a regression test written before the fix.</sub>
+
 <details>
 <summary><strong>Commands (7)</strong> — entry points that orchestrate everything</summary>
 
