@@ -166,6 +166,34 @@ HOOKS_README_DEST = REPO_ROOT / "hooks" / "README.md"
 CLAUDE_SCRIPTS_README_DEST = REPO_ROOT / "claude-scripts" / "README.md"
 
 
+def read_hooks_config(source: Path) -> dict | None:
+    """Return the `hooks` mapping of the live settings.json, or None if unusable.
+
+    None means the file is missing, unparseable, or carries no hooks at all.
+    Every caller must then leave its artifact alone: writing `{"hooks": {}}`
+    and rendering a "0 hooks" guide is silent, looks deliberate, and
+    contradicts a README that still claims four. A malformed file is treated
+    as missing rather than raising, so a typo in a private config cannot
+    abort a sync halfway through with 23 files already written.
+    """
+    settings_path = source / "settings.json"
+    if not settings_path.exists():
+        log.warning("Live settings.json not found: %s", settings_path)
+        return None
+
+    try:
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        log.warning("Live settings.json is unreadable (%s) — treating it as missing", exc)
+        return None
+
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    if not hooks:
+        log.warning("Live settings.json registers no hooks — leaving the hooks surface as-is")
+        return None
+    return hooks
+
+
 def generate_hooks_settings(
     source: Path, replacements: list[tuple[str, str]], patterns: dict | None, dry_run: bool
 ) -> bool:
@@ -178,14 +206,13 @@ def generate_hooks_settings(
     file, and write it out. Returns whether the destination is stale
     (dry-run only).
     """
-    settings_path = source / "settings.json"
     rel = HOOKS_SETTINGS_DEST.relative_to(REPO_ROOT)
-    if not settings_path.exists():
-        log.warning("Live settings.json not found: %s (skipping %s)", settings_path, rel)
+    hooks = read_hooks_config(source)
+    if hooks is None:
+        log.warning("Skipping %s (existing file left untouched)", rel)
         return False
 
-    data = json.loads(settings_path.read_text(encoding="utf-8"))
-    content = json.dumps({"hooks": data.get("hooks", {})}, indent=2) + "\n"
+    content = json.dumps({"hooks": hooks}, indent=2) + "\n"
     anonymized, _count = anonymize(content, replacements, patterns)
 
     is_stale = False
