@@ -18,8 +18,8 @@ If `$0` is `--dry-run` or `--audit-only`, stop after this step.
 ## Step 2: Verify stale-file cleanup
 
 `sync.py` now prunes orphans automatically: any file under a synced root
-(`commands/`, `agents/`, `skills/`, `hooks/`) whose live source has
-disappeared is deleted on a real run (reported on `--dry-run`) and listed under
+(`commands/`, `agents/`, `skills/`, `hooks/`, `claude-scripts/`) whose live
+source has disappeared is deleted on a real run (reported on `--dry-run`) and listed under
 the `── Orphans ──` section of the output. Common cases: renamed agents (e.g.,
 old `architect.md` after rename to `troubleshooter.md`), deleted commands,
 removed skills, retired hooks.
@@ -35,6 +35,11 @@ Read `~/Dev/claude-code-setup/README.md` and verify these match reality:
 2. **Agents count** in `<summary><strong>Agents (N)</strong>` — count files in `~/.claude/agents/*.md`
 3. **Skills count** in `<summary><strong>Skills (N)</strong>` — count directories in `~/.claude/skills/*/`
 4. **Hooks count** in `<summary><strong>Hooks (N)</strong>` — count hook scripts (`~/.claude/hooks/**/*.sh`)
+4b. **README frontmatter** — `facts_fr` / `facts_en` at the top of README.md
+   restate the same four counts in prose ("7 commandes, 6 agents, 4 hooks…").
+   They are not covered by the `<summary>` checks above and have rotted before.
+   Verify them against the same four counts, and against the blocking-hook
+   count (hooks whose script can `exit 2`).
 5. **Commands table** — verify each command in the table exists in `~/.claude/commands/`, and each command file has a row. Add missing rows, remove stale rows.
 6. **Agents table** — same check against `~/.claude/agents/`
 7. **Skills list** — same check against `~/.claude/skills/*/SKILL.md`
@@ -48,14 +53,23 @@ Fix any discrepancies by editing README.md directly. Apply the anonymization rul
 `sync.py` regenerates the `docs/workflow-guide.html` DATA arrays (COMMANDS,
 AGENTS, SKILLS, HOOKS) directly from live config via
 `scripts/generate_workflow_guide.py`. It derives the verifiable fields (agents
-lists, models, skills, memory, hook events/modes, preloaded), preserves the
-hand-written French `desc`/`when`/`args` for existing entries, and flags any
-genuinely new entry with a `TODO: write desc` placeholder (listed under
-`Guide TODOs` in the output).
+lists, models, skills, memory, hook events/modes, preloaded) and preserves the
+hand-written prose for existing entries.
+
+**The guide is bilingual.** Every prose field has an `_en` sibling —
+`desc`/`desc_en`, `when`/`when_en`, `args`/`args_en`, `agents`/`agents_en`.
+French is canonical; a missing `_en` falls back to the French text at render
+time, and the generator writes that fallback for you while still listing the
+entry under `Guide TODOs`. So a TODO is a translation still owed, not a broken
+guide — but do write it.
+
+A genuinely new entry gets `TODO: write desc` / `TODO: write desc_en`
+placeholders in both languages, and its `args_en` is seeded with the French
+`argument-hint`; all of it is listed under `Guide TODOs` in the output.
 
 The renderer and the `SCENARIOS` array are preserved byte-for-byte — they are
-NOT auto-derived. If a new command/agent/skill/hook needs a French description,
-or if SCENARIOS prose references a retired hook, edit
+NOT auto-derived. If a new command/agent/skill/hook needs a description, write
+**both** languages, or if SCENARIOS prose references a retired hook, edit
 `~/Dev/workflow-guide.html` by hand (that live file supplies the preserved
 prose and the renderer), then re-run sync.
 
