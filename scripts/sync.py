@@ -153,13 +153,16 @@ HOOKS_SETTINGS_DEST = REPO_ROOT / "hooks" / "settings.hooks.json"
 # hooks/README.md is owner-maintained (documents registration + verification,
 # like docs/philosophy.md), not sourced from live ~/.claude/hooks/. It still
 # lives under the hooks/ synced root, so it needs the same orphan-pruning
-# exemption as HOOKS_SETTINGS_DEST or a real sync would delete it.
+# exemption as HOOKS_SETTINGS_DEST or a real sync would delete it. Pruning is
+# only half the protection: the config's 'hooks/*.md' mapping also makes it a
+# possible sync DESTINATION, which is why 'hooks/README.md' is in `skip`.
 HOOKS_README_DEST = REPO_ROOT / "hooks" / "README.md"
 
 # claude-scripts/README.md is owner-maintained for the same reason: it lives
 # under the claude-scripts/ synced root (file_map's 'scripts/*.sh' target)
 # but isn't itself sourced from a live *.sh file, so it needs the same
-# orphan-pruning exemption.
+# orphan-pruning exemption. It needs no `skip` counterpart: 'scripts/*.sh' is
+# the only mapping targeting claude-scripts/ and it cannot match a .md file.
 CLAUDE_SCRIPTS_README_DEST = REPO_ROOT / "claude-scripts" / "README.md"
 
 

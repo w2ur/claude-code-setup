@@ -60,6 +60,10 @@ audit_patterns:
   - '\btrader\b(?!-)'
 
 skip:
+  # The repo's hooks/README.md is owner-maintained and exempt from orphan
+  # pruning, but the 'hooks/*.md' mapping below would still make it a sync
+  # DESTINATION — a live ~/.claude/hooks/README.md would overwrite it.
+  - 'hooks/README.md'
   - 'agent-memory/**'
   - 'plans/**'
   - 'projects/**'
