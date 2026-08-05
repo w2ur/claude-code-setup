@@ -74,7 +74,7 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 │  stale-readme-guard  "Docs still current?"     (advisory) │
 │  auto-format ─────── "Format the file"         (advisory) │
 │  secret-scan ─────── "API key in source?"      (blocking) │
-│  push-build-gate ─── "Build clean before push?" (blocking)│
+│  push-build-gate ─── "Build + tests green?"    (blocking) │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -139,7 +139,7 @@ Why skills instead of just writing longer agent prompts? Because skills are reus
 <br>
 
 - **secret-scan** (PreToolUse → Write|Edit): blocks writes containing API key patterns (`sk-`, `AKIA`, `ghp_`, etc.), excludes `.env.example` *(blocking)*
-- **push-build-gate** (PreToolUse → Bash `git push`): runs the build before the push goes out and blocks on failure or compiler warnings *(blocking)*
+- **push-build-gate** (PreToolUse → Bash `git push`): runs the build **and then the test suite** before the push goes out, and blocks on a build failure, a compiler warning, or a red suite. A suite that never finishes is bounded and *non*-blocking — fail closed on the guard's verdict, open on the guard's own malfunction. Skip the test stage with `TEST_GATE_SKIP=1 git push`. Its dispatch logic has its own harness, `hooks/push-build-gate/test_hook.sh` *(blocking)*
 - **auto-format** (PostToolUse → Write|Edit): runs Prettier / Ruff / rustfmt on the edited file if the project has the corresponding config — silent if not *(advisory)*
 - **stale-readme-guard** (PreToolUse → Bash `git push`): checks unpushed commits for deploy/dep changes without a README.md update *(advisory)*
 
