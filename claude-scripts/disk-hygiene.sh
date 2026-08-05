@@ -56,6 +56,10 @@ PLANS_HOLD_PATTERNS=(
   "*fresh-eyes*"
   "*progress-A.md"
   "*progress-B.md"
+  # The single French owner-action document. It is the one file the owner is
+  # meant to work from, and its own deadlines run past the 21-day cutoff --
+  # archiving it would file away the instructions while they are still due.
+  "*actions-william.md"
 )
 
 MODE="plan"
