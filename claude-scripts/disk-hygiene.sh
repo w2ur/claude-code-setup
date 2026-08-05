@@ -443,6 +443,38 @@ do_projects() {
   done < <(find "$dir" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
 }
 
+do_payload_baselines() {
+  category_start "payload-baselines"
+  local dir="$ROOT/payload-baselines"
+  [ -d "$dir" ] || return 0
+
+  # REPORTED, NEVER DELETED -- and deliberately NOT age-based.
+  #
+  # These are the push-build-gate's memory: `last` and `first_seen` byte sizes
+  # per route. Deleting a baseline for a LIVE repo does not free meaningful
+  # space (they are ~300 B) and silently destroys the ratchet -- the next push
+  # re-baselines at whatever the current, possibly already-bloated, size is and
+  # reports nothing. An expiry here would quietly disarm the guard that exists
+  # because two production sites blew their hosting limits.
+  #
+  # So the only thing worth surfacing is an ORPHAN: a baseline whose repo is no
+  # longer on disk. Reported rather than removed, following the same rule as
+  # orphan marketplaces -- the owner decides.
+  local f repo orphans=0
+  while IFS= read -r f; do
+    repo="$(python3 -c "
+import json,sys
+try: print(json.load(open(sys.argv[1])).get('repo',''))
+except Exception: print('')" "$f" 2>/dev/null)"
+    if [ -n "$repo" ] && [ ! -d "$repo" ]; then
+      emit "REPORT" "$f" "baseline for a repo no longer on disk ($repo) -- delete only if that repo is gone for good" "confirm"
+      orphans=$((orphans + 1))
+    fi
+  done < <(find "$dir" -mindepth 1 -maxdepth 1 -name '*.json' -print | sort)
+
+  [ "$orphans" -eq 0 ] && print_comment "payload-baselines: $(find "$dir" -name '*.json' | wc -l | tr -d ' ') baseline(s), no orphans -- nothing to do (never expired by age, see comment in script)"
+}
+
 do_plugins() {
   if [ "$MODE" = "apply" ] && [ "$YES_PLUGINS" != "true" ]; then
     return 0
@@ -513,6 +545,7 @@ main() {
   do_older_than "tasks" "$ROOT/tasks" "$TASKS_DAYS"
   do_changelog
   do_plans_archive
+  do_payload_baselines
   do_projects
   do_plugins
 
