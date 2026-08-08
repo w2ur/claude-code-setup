@@ -56,10 +56,21 @@ PLANS_HOLD_PATTERNS=(
   "*fresh-eyes*"
   "*progress-A.md"
   "*progress-B.md"
-  # The single French owner-action document. It is the one file the owner is
-  # meant to work from, and its own deadlines run past the 21-day cutoff --
-  # archiving it would file away the instructions while they are still due.
+  # Owner-action documents: the files the owner personally works from. Their
+  # deadlines run past the 21-day cutoff, so archiving one would file away
+  # instructions while they are still due.
+  #
+  # This was a single pattern ("*actions-william.md") until two siblings
+  # serving the same role -- owner-actions-guide.md and WILLIAM-TODO.md --
+  # were found unprotected and 21-day-archivable. Deliberately narrow rather
+  # than a blanket "*actions*", which would also hold an unrelated plan such
+  # as "github-actions-migration.md" forever.
+  #
+  # CONVENTION: to be held, an owner-action document must be named to match
+  # one of these. Adding a new such document means adding a pattern here.
   "*actions-william.md"
+  "*owner-actions*"
+  "*WILLIAM-TODO.md"
 )
 
 MODE="plan"
