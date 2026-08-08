@@ -1,7 +1,7 @@
 # claude-scripts
 
-Four deterministic, no-model shell scripts. None of them invokes `claude` or
-any model — they're plain bash, so they're safe to run unattended (cron,
+Eight deterministic, no-model scripts (seven bash, one Python). None of them
+invokes `claude` or any model, so they're safe to run unattended (cron,
 launchd) without a login session. `~/.claude/CLAUDE.md`'s rule: deterministic
 work gets a script, not an agent.
 
@@ -27,6 +27,26 @@ work gets a script, not an agent.
   and sorted into a table. This script is the source of truth for the
   signals and their weights — read the script itself for those. Phase 2
   (deep review) is deliberately not automated.
+- **`sync-repo-about.sh`** — pushes each repo's one-line pitch (from its
+  `README.md` frontmatter) to its GitHub About field. Prefers `about_en` and
+  falls back to `tagline_en` — the two are written for different readers and
+  are not interchangeable; see the script's header. `--dry-run` by default.
+- **`distribution-watch.sh`** — asks whether each committed publish-once
+  distribution channel (package registries, awesome-list PRs) is actually
+  done. It reports state and never proposes content, and it checks for an
+  already-open PR before ever naming "open a PR" as an action. Read-only: it
+  never posts, publishes or opens anything.
+- **`usage-watch.sh`** — weekly served-bytes trend per deployed host. Hosts
+  are discovered from the hosting provider's API rather than hand-listed, so
+  a newly deployed project is monitored without editing anything; the routes
+  file is only an overlay for non-provider hosts, deep routes, and
+  acknowledged catch-alls.
+- **`env-drift-check.py`** — compares the environment variables each repo's
+  code actually *reads* against how they are *documented*. It is the source
+  of truth for the two documentation tiers it distinguishes (an example
+  dotfile vs. README/CLAUDE.md prose); conflating them would report every
+  prose-documented secret as a leak, which is the false alarm it exists to
+  prevent. Exits non-zero only for a variable documented in neither tier.
 
 ## Fixture-tree overrides
 
@@ -37,9 +57,15 @@ work gets a script, not an agent.
   `$HOME/.claude`).
 - `tech-debt-triage.sh` honours `DEV_DIR` (default `$HOME/Dev`) and
   `HUB_REPO` (default `$DEV_DIR/<portfolio-site>`).
+- `sync-repo-about.sh` and `env-drift-check.py` honour `DEV_DIR` (default
+  `$HOME/Dev`).
+- `usage-watch.sh` honours `CLAUDE_DIR` (default `$HOME/.claude`) — its
+  routes file, baselines and log all live there.
 
-Every script can be exercised against a throwaway directory tree this way,
-without touching the real `~/.claude` or `~/Dev`.
+Every script that reads a tree can be exercised against a throwaway directory
+this way, without touching the real `~/.claude` or `~/Dev`. The exception is
+`distribution-watch.sh`, which queries public registries over the network and
+has no local tree to point elsewhere.
 
 ## The macOS cron caveat
 

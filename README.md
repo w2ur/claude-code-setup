@@ -57,7 +57,7 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 │  implementer ───── sonnet                                 │
 │  troubleshooter ── inherit (never weaker than the caller) │
 │  docs-checker ─── sonnet (audits README, CLAUDE.md)       │
-│  portfolio-sync ─ sonnet (cross-repo coherence)           │
+│  portfolio-sync ─ sonnet (hub stories frontmatter)        │
 │  portfolio-audit  haiku (compliance checks)               │
 │  dummy-visitor ── sonnet (bilingual naive-visitor review) │
 │                                                           │
@@ -93,7 +93,7 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 
 | Command | What it does | When to use it |
 |---------|-------------|----------------|
-| `/sync` | Portfolio-wide manifest sync + JSON generation | Weekly maintenance |
+| `/sync` | Validates the stories collection frontmatter across the portfolio hub | Weekly maintenance |
 | `/audit` | Parallel docs-checker + portfolio-audit | Before releases, compliance sweeps |
 | `/new-app` | Full scaffold with portfolio compliance from day one | Starting a new project |
 | `/next` | Executes the next unblocked task from a multi-phase plan track, then stops | One session per phase of a large plan |
@@ -112,7 +112,7 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 |-------|-------|--------|--------------|--------------------|
 | **implementer** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | ✅ | Executes tasks with "done when" criteria | Architecture decisions |
 | **troubleshooter** | `inherit` (session model — never weaker than the caller) | ✅ | Diagnoses structural problems after 2 failed fixes, produces plans | Write production code |
-| **portfolio-sync** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | ✅ | Cross-repo coherence (manifests, JSON, docs) | Creative content |
+| **portfolio-sync** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | ✅ | Validates the hub's stories collection frontmatter | Creative content |
 | **docs-checker** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Audits + fixes README, CLAUDE.md, verifies declared URLs actually resolve | Compliance standards |
 | **portfolio-audit** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Read-only compliance check (signature, secrets, tests) | Fix anything |
 | **dummy-visitor** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Bilingual FR/EN naive visitor — two-phase perception vs. intent review | Compare to competitors |
@@ -150,7 +150,7 @@ Half the hooks are advisory — in a system where I don't review code, I need Cl
 
 ### The Global CLAUDE.md
 
-The `CLAUDE.md` at the root is the backbone — ~80 lines of rules that apply to every project. The most important ones:
+The `CLAUDE.md` at the root is the backbone — ~120 lines of rules that apply to every project. The most important ones:
 
 > [!IMPORTANT]
 > **The 3-level escalation cascade.** Each level forces a different approach. No retrying the same level twice. Every fix attempt requires a stated root cause hypothesis — no "let me try a different approach" without a new theory.
@@ -258,7 +258,7 @@ Browse the files, understand the patterns, and build your own version. The [phil
 
 This repo stays in sync with my actual `~/.claude/` setup via `/sync-setup` — a command that runs a Python sync script to copy, anonymize, and audit for data leaks. After any workflow change (new agent, renamed command, new hook), I run `/sync-setup` and the repo updates itself. See [`scripts/`](scripts/) for details.
 
-The global `CLAUDE.md` also references four helper shell scripts under `~/.claude/scripts/` — they're published in [`claude-scripts/`](claude-scripts/), synced and anonymized the same way as everything else.
+The global `CLAUDE.md` also references eight helper scripts under `~/.claude/scripts/` — they're published in [`claude-scripts/`](claude-scripts/), synced and anonymized the same way as everything else.
 
 If something looks outdated, it probably means I changed my setup and haven't synced yet. Open an issue — it's a good nudge.
 
