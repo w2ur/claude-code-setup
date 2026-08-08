@@ -6,7 +6,7 @@
 # billing data, and billing data requires being billed — a charges query over
 # the whole Hobby period returns `costs_not_found`. A billing-based monitor
 # would go blind on the revert to Hobby, which is the state we are aiming for.
-# christograph blew its limits at ~17 MB PER REQUEST, so the signal that
+# my-encyclopedia-app blew its limits at ~17 MB PER REQUEST, so the signal that
 # matters is unit cost, and an HTTP request measures that on any plan.
 # Layer 2b (billing charges, Step 7 below) is kept as a bonus block that
 # degrades gracefully rather than the primary signal.

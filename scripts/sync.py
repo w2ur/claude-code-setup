@@ -159,10 +159,11 @@ HOOKS_SETTINGS_DEST = REPO_ROOT / "hooks" / "settings.hooks.json"
 HOOKS_README_DEST = REPO_ROOT / "hooks" / "README.md"
 
 # claude-scripts/README.md is owner-maintained for the same reason: it lives
-# under the claude-scripts/ synced root (file_map's 'scripts/*.sh' target)
-# but isn't itself sourced from a live *.sh file, so it needs the same
-# orphan-pruning exemption. It needs no `skip` counterpart: 'scripts/*.sh' is
-# the only mapping targeting claude-scripts/ and it cannot match a .md file.
+# under the claude-scripts/ synced root (file_map's 'scripts/*.sh' and
+# 'scripts/*.py' target) but isn't itself sourced from a live script, so it
+# needs the same orphan-pruning exemption. It needs no `skip` counterpart:
+# those are the only mappings targeting claude-scripts/ and neither can match
+# a .md file.
 CLAUDE_SCRIPTS_README_DEST = REPO_ROOT / "claude-scripts" / "README.md"
 
 
