@@ -2,6 +2,7 @@
 name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
+about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, 2 blocking hooks included."
 facts_fr: "7 commandes, 6 agents, 4 hooks — dont 2 bloquants."
 facts_en: "7 commands, 6 agents, 4 hooks — 2 of them blocking."
 ---
