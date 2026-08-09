@@ -1,6 +1,6 @@
 # claude-scripts
 
-Eight deterministic, no-model scripts (seven bash, one Python). None of them
+Nine deterministic, no-model scripts (eight bash, one Python). None of them
 invokes `claude` or any model, so they're safe to run unattended (cron,
 launchd) without a login session. `~/.claude/CLAUDE.md`'s rule: deterministic
 work gets a script, not an agent.
@@ -41,6 +41,16 @@ work gets a script, not an agent.
   a newly deployed project is monitored without editing anything; the routes
   file is only an overlay for non-provider hosts, deep routes, and
   acknowledged catch-alls.
+- **`model-watch.sh`** — weekly check that the LLM models each repo configures
+  are still listed and still free. Exists because a model fallback chain hides
+  its own degradation, and because a *delisted* model is worse than a degraded
+  one: the provider validates the whole `models` array up front, so a single
+  stale entry fails a request the primary could have served. A chain protects
+  against runtime failures, not against delisting. Exit 1 is the alert; **exit
+  2 means "unknown", never "healthy"** — it refuses to read an empty catalogue
+  as everything having been delisted, and any consumer must preserve that
+  distinction rather than collapsing it into a pass. Reports state only;
+  choosing a replacement is a human decision backed by an eval set.
 - **`env-drift-check.py`** — compares the environment variables each repo's
   code actually *reads* against how they are *documented*. It is the source
   of truth for the two documentation tiers it distinguishes (an example
@@ -61,6 +71,8 @@ work gets a script, not an agent.
   `$HOME/Dev`).
 - `usage-watch.sh` honours `CLAUDE_DIR` (default `$HOME/.claude`) — its
   routes file, baselines and log all live there.
+- `model-watch.sh` honours `DEV_DIR` (default `$HOME/Dev`) for the repos whose
+  model configuration it reads.
 
 Every script that reads a tree can be exercised against a throwaway directory
 this way, without touching the real `~/.claude` or `~/Dev`. The exception is
