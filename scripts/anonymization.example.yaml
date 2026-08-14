@@ -21,6 +21,12 @@ replacements:
   # "board-game-thing.example.com" would launder the domain while leaving
   # the private name readable — resolve it to the same placeholder used
   # under "Private app slugs" below instead (e.g. "my-boardgame-app.example.com").
+  # CAREFUL, second form: a domain also appears REVERSED, in launchd
+  # LaunchAgent labels ("dev.yoursite.my-job.plist"). The rule above cannot
+  # catch it — the components are in the opposite order — so add the reversed
+  # prefix as its own entry. Keep it general rather than per-label so the next
+  # LaunchAgent needs no edit here.
+  "dev.yoursite.": "com.example."
 
   # People
   "Jane Doe": "{author-name}"
