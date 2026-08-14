@@ -34,15 +34,51 @@
 
 set -uo pipefail
 
+# --json exists for vigie, following the precedent model-watch.sh set. The exit
+# contract is IDENTICAL in both modes (0 complete / 1 outstanding / 2 could not
+# run) because vigie reads the code as well as the payload: exit 1 is a finding,
+# exit 2 means the report is untrustworthy.
+JSON_MODE=false
+for arg in "$@"; do
+  case "$arg" in
+    --json) JSON_MODE=true ;;
+    *) echo "FATAL: unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
+# The FATAL guards below stay exactly as they are in JSON mode: they write to
+# stderr and exit 2, which is already the right shape. They must NOT become JSON
+# rows — a row implies the check ran, and exit 2 means nothing here can be
+# trusted.
 command -v curl >/dev/null 2>&1 || { echo "FATAL: curl not on PATH" >&2; exit 2; }
 curl -s -o /dev/null --max-time 15 https://registry.npmjs.org/react \
   || { echo "FATAL: no network, or npm registry unreachable — refusing to report" >&2; exit 2; }
 
 outstanding=0
-say_ok()     { printf '  \033[32mOK\033[0m       %s\n' "$1"; }
-say_action() { printf '  \033[33mACTION\033[0m   %s\n' "$1"; outstanding=$((outstanding + 1)); }
+JSON_ROWS=()
 
-echo "== Package registries =="
+json_escape() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
+emit_json_row() { # kind name state detail
+  JSON_ROWS+=("{\"kind\":$(json_escape "$1"),\"name\":$(json_escape "$2"),\"state\":$(json_escape "$3"),\"detail\":$(json_escape "$4")}")
+}
+
+# say_ok / say_action take (kind, name, message). `outstanding` is incremented in
+# BOTH modes — the exit code is computed from it, so a JSON run that skipped it
+# would exit 0 while reporting outstanding work.
+say_ok() {
+  if $JSON_MODE; then emit_json_row "$1" "$2" "ok" "$3"; return; fi
+  printf '  \033[32mOK\033[0m       %s\n' "$3"
+}
+say_action() {
+  outstanding=$((outstanding + 1))
+  if $JSON_MODE; then emit_json_row "$1" "$2" "action" "$3"; return; fi
+  printf '  \033[33mACTION\033[0m   %s\n' "$3"
+}
+
+# Section headers are prose for a person; in JSON mode they would corrupt stdout.
+section() { $JSON_MODE || echo "$1"; }
+
+section "== Package registries =="
 
 # A public library nobody can install is a library nobody finds. npm and PyPI
 # are search surfaces that need no audience and no posting.
@@ -51,9 +87,9 @@ check_npm() {
   local code
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://registry.npmjs.org/$pkg")
   if [ "$code" = "200" ]; then
-    say_ok "npm: $pkg is published"
+    say_ok npm "$pkg" "npm: $pkg is published"
   else
-    say_action "npm: $pkg is NOT published (HTTP $code). $repo/package.json currently sets \"private\": true — that is a DELIBERATE setting and its CLAUDE.md requires the owner's explicit sign-off to remove. Decide, do not default."
+    say_action npm "$pkg" "npm: $pkg is NOT published (HTTP $code). $repo/package.json currently sets \"private\": true — that is a DELIBERATE setting and its CLAUDE.md requires the owner's explicit sign-off to remove. Decide, do not default."
   fi
 }
 check_npm french-sentences ~/Dev/french-sentences
@@ -61,13 +97,13 @@ check_npm wikimedia-source ~/Dev/wikimedia-source
 
 pypi=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://pypi.org/pypi/midas-core/json)
 if [ "$pypi" = "200" ]; then
-  say_ok "PyPI: midas-core is published (verified author {author-name}, source {github-username}/midas-core)"
+  say_ok pypi midas-core "PyPI: midas-core is published (verified author {author-name}, source {github-username}/midas-core)"
 else
-  say_action "PyPI: midas-core returns HTTP $pypi — the repo README promises 'pip install', so this must resolve"
+  say_action pypi midas-core "PyPI: midas-core returns HTTP $pypi — the repo README promises 'pip install', so this must resolve"
 fi
 
-echo
-echo "== Awesome-list PRs =="
+section ""
+section "== Awesome-list PRs =="
 
 # The two awesome-* forks are kept ONLY to carry these PRs (owner decision,
 # 2026-08-08). If no PR is ever opened they revert to being bookmarks and the
@@ -84,30 +120,35 @@ check_awesome() {
   local body n pr
   body=$(curl -s --max-time 25 "https://raw.githubusercontent.com/$upstream/$branch/README.md")
   if [ -z "$body" ]; then
-    say_action "awesome: could not read $upstream README ($branch) — check the branch name before trusting this"
+    say_action awesome "$upstream" "awesome: could not read $upstream README ($branch) — check the branch name before trusting this"
     return
   fi
   n=$(printf '%s' "$body" | grep -ci -- "$needle" || true)
   if [ "$n" -gt 0 ]; then
-    say_ok "awesome: $needle is merged into $upstream"
+    say_ok awesome "$upstream" "awesome: $needle is merged into $upstream"
     return
   fi
 
   if ! command -v gh >/dev/null 2>&1; then
-    say_action "awesome: $needle absent from $upstream, and gh is unavailable to check for an open PR — verify by hand before acting"
+    say_action awesome "$upstream" "awesome: $needle absent from $upstream, and gh is unavailable to check for an open PR — verify by hand before acting"
     return
   fi
   pr=$(gh api "repos/$upstream/pulls?state=open&per_page=100" \
         --jq '.[] | select(.user.login=="{github-username}") | "#\(.number) opened \(.created_at[0:10])"' 2>/dev/null | head -1)
   if [ -n "$pr" ]; then
-    say_ok "awesome: $upstream — PR $pr is open and waiting. Nothing to do; do NOT open a second one."
+    say_ok awesome "$upstream" "awesome: $upstream — PR $pr is open and waiting. Nothing to do; do NOT open a second one."
   else
-    say_action "awesome: $needle absent from $upstream and no open {github-username} PR — this is the one case where opening a PR is the action"
+    say_action awesome "$upstream" "awesome: $needle absent from $upstream and no open {github-username} PR — this is the one case where opening a PR is the action"
   fi
 }
 check_awesome paperswithbacktest/awesome-systematic-trading main midas-core \
   || check_awesome paperswithbacktest/awesome-systematic-trading master midas-core
 check_awesome wilsonfreitas/awesome-quant master midas-core
+
+if $JSON_MODE; then
+  printf '{"channels":[%s],"outstanding":%d}\n' "$(IFS=,; echo "${JSON_ROWS[*]}")" "$outstanding"
+  [ "$outstanding" -eq 0 ] && exit 0 || exit 1
+fi
 
 echo
 if [ "$outstanding" -eq 0 ]; then
