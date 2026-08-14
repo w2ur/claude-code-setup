@@ -102,8 +102,20 @@ def documented_in_prose(root, names):
     return out
 
 
+# A var name appearing as a bare quoted literal is weak evidence of a READ, but
+# it is strong evidence against "declared and never used" -- which is all the
+# STALE tier claims. It exists because mint-token.mjs parses .env itself via
+# `read('UMAMI_USERNAME')`, a helper no process.env pattern can see, so the two
+# live Umami credentials were reported STALE: "declared in .env.example, never
+# read", sending the owner to delete a secret the tool needs. Used ONLY to
+# suppress STALE, never to create a finding, so a false positive here costs a
+# missed stale var rather than a wrong instruction.
+LITERAL = re.compile(r"['\"]([A-Z][A-Z0-9_]{2,})['\"]")
+
+
 def scan_repo(root):
     reads = collections.defaultdict(set)
+    literals = set()
     for dp, dns, fns in os.walk(root):
         dns[:] = [d for d in dns if d not in SKIP_DIR]
         for fn in fns:
@@ -130,7 +142,8 @@ def scan_repo(root):
                     v = m.group(1)
                     if v not in NOISE and not v.startswith("NEXT_PUBLIC_VERCEL"):
                         reads[v].add(rel)
-    return reads
+            literals.update(m.group(1) for m in LITERAL.finditer(txt))
+    return reads, literals
 
 
 def main():
@@ -143,7 +156,7 @@ def main():
         if r in VENDORED:
             result[r] = {"skipped": "vendored upstream"}
             continue
-        reads = scan_repo(root)
+        reads, literals = scan_repo(root)
         envf = declared_in_env_files(root)
         tier1 = set().union(*envf.values()) if envf else set()
         if not reads and not tier1:
@@ -156,7 +169,9 @@ def main():
             "ok": sorted(set(reads) & tier1),
             "prose_only": {k: prose[k] for k in sorted(prose)},
             "undocumented": {k: sorted(reads[k])[:2] for k in undoc},
-            "stale": sorted(tier1 - set(reads)),
+            # Minus `literals`: see the LITERAL comment above -- a name the
+            # code quotes is not a var nobody uses.
+            "stale": sorted(tier1 - set(reads) - literals),
         }
         if undoc:
             exit_code = 1
