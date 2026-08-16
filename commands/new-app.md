@@ -71,6 +71,25 @@ Use the `implementer` agent to create the minimal project skeleton:
 - Dark/light mode support via `prefers-color-scheme`
 - Basic test setup (empty test file with framework configured)
 
+### CI gate
+```bash
+mkdir -p .github/workflows
+cp ~/Dev/.github/templates/caller.yml .github/workflows/pr-gate.yml
+```
+Six lines calling the shared reusable workflow in `{github-username}/.github`. It takes **no
+parameter describing the stack** — it reads the tree, so a scaffold that later
+gains a `lint` or `typecheck` script is covered without touching this file. Only
+two things ever need editing at the call site: `node-version`, and `extra-env`
+if the build reads the environment.
+
+A new repo starts with zero PRs, so `gate-watch.sh` would not flag it for
+months — scaffolding it in is what makes coverage automatic rather than
+remembered. Leave it in place even for a local-only project; it costs nothing
+until a PR exists, and public repos have unlimited Actions minutes.
+
+Note the gate is **advisory** on a private repo: branch protection needs GitHub
+Pro, so it shows a red X and does not block the merge button.
+
 ### First commit
 ```bash
 git add -A
