@@ -77,12 +77,24 @@ counts=$(gh search prs --owner "$OWNER" --created ">$SINCE" --limit 1000 \
 # keeps its own workflow rather than calling the shared one:
 #   1. a caller file named pr-gate.yml
 #   2. any workflow declaring a top-level `gate:` job
+# 0 = gated, 1 = genuinely no gate, 2 = COULD NOT TELL.
+#
+# The third code matters. This used to `return 1` on any API failure, so a
+# network blip or a rate limit reported a gated repo as MISSING — a fabricated
+# finding that sends you to add a gate that already exists, which is worse than
+# missing a real one. A 404 on the workflows directory is different: it means
+# the directory does not exist, which really is "no gate".
 has_gate() {
-  local repo="$1" files f content
-  files=$(gh api "repos/$OWNER/$repo/contents/.github/workflows" --jq '.[].name' 2>/dev/null) || return 1
+  local repo="$1" files f content err rc
+  err=$(mktemp)
+  if ! files=$(gh api "repos/$OWNER/$repo/contents/.github/workflows" --jq '.[].name' 2>"$err"); then
+    grep -qi 'not found\|404' "$err" && rc=1 || rc=2
+    rm -f "$err"; return $rc
+  fi
+  rm -f "$err"
   printf '%s\n' "$files" | grep -qx 'pr-gate.yml' && return 0
   for f in $files; do
-    content=$(gh api "repos/$OWNER/$repo/contents/.github/workflows/$f" --jq '.content' 2>/dev/null) || continue
+    content=$(gh api "repos/$OWNER/$repo/contents/.github/workflows/$f" --jq '.content' 2>/dev/null) || return 2
     printf '%s' "$content" | base64 -d 2>/dev/null | grep -qE '^[[:space:]]{2}gate:[[:space:]]*$' && return 0
   done
   return 1
@@ -92,13 +104,31 @@ has_gate() {
 # MISSING for work that is done and merely awaiting review — and a watcher that
 # nags about something already in flight is one you learn to skip, which is the
 # failure mode that got the tech-debt rank pulled from Vigie.
+# IT MUST BE A GATE, NOT MERELY A WORKFLOW FILE.
+#
+# This matched any path under .github/workflows/, so an open PR bumping
+# actions/checkout in an unrelated ci.yml flipped a genuinely ungated repo from
+# MISSING to pending. `missing` then dropped, the script exited 0, and the pane
+# read "nothing owed" for a repo with no gate — a false negative dressed as
+# progress, and precisely the state this script exists to surface.
+#
+# So the PR's own files are matched the same two ways has_gate() matches a
+# merged repo: a file named pr-gate.yml, or a workflow declaring a top-level
+# `gate:` job, read at the PR's head so an unmerged addition counts.
 gate_pending() {
-  local repo="$1" nums n
-  nums=$(gh pr list -R "$OWNER/$repo" --state open --limit 20 --json number --jq '.[].number' 2>/dev/null) || return 1
-  for n in $nums; do
-    gh api "repos/$OWNER/$repo/pulls/$n/files" --jq '.[].filename' 2>/dev/null \
-      | grep -qE '^\.github/workflows/' && { echo -n "#$n"; return 0; }
-  done
+  local repo="$1" prs n sha files f content
+  prs=$(gh pr list -R "$OWNER/$repo" --state open --limit 50 \
+          --json number,headRefOid --jq '.[] | "\(.number) \(.headRefOid)"' 2>/dev/null) || return 1
+  while read -r n sha; do
+    [ -n "${n:-}" ] || continue
+    files=$(gh api "repos/$OWNER/$repo/pulls/$n/files" --jq '.[].filename' 2>/dev/null) || continue
+    printf '%s\n' "$files" | grep -qx '\.github/workflows/pr-gate.yml' && { echo -n "#$n"; return 0; }
+    for f in $(printf '%s\n' "$files" | grep -E '^\.github/workflows/'); do
+      content=$(gh api "repos/$OWNER/$repo/contents/$f?ref=$sha" --jq '.content' 2>/dev/null) || continue
+      printf '%s' "$content" | base64 -d 2>/dev/null \
+        | grep -qE '^[[:space:]]{2}gate:[[:space:]]*$' && { echo -n "#$n"; return 0; }
+    done
+  done <<< "$prs"
   return 1
 }
 
@@ -114,6 +144,12 @@ while read -r n repo; do
     findings="${findings}${repo}\t${n}\tbelow\tunder the ${MIN_PRS}-PR threshold\n"
   elif has_gate "$repo"; then
     findings="${findings}${repo}\t${n}\tgated\t-\n"
+  elif [ $? -eq 2 ]; then
+    # COULD NOT TELL is not a finding. It does not set status=1: reporting a
+    # repo as ungated because an API call failed is a fabricated finding, and
+    # this script's whole premise is that "no gate" and "could not look" must
+    # never render the same.
+    findings="${findings}${repo}\t${n}\tunknown\tcould not read .github/workflows — treat as unmeasured, not as ungated\n"
   elif pr=$(gate_pending "$repo"); then
     findings="${findings}${repo}\t${n}\tpending\ta workflow change is open in ${pr}\n"
   else
