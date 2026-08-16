@@ -1,6 +1,6 @@
 # claude-scripts
 
-Nine deterministic, no-model scripts (eight bash, one Python). None of them
+Ten deterministic, no-model scripts (nine bash, one Python). None of them
 invokes `claude` or any model, so they're safe to run unattended (cron,
 launchd) without a login session. `~/.claude/CLAUDE.md`'s rule: deterministic
 work gets a script, not an agent.
@@ -41,6 +41,17 @@ work gets a script, not an agent.
   a newly deployed project is monitored without editing anything; the routes
   file is only an overlay for non-provider hosts, deep routes, and
   acknowledged catch-alls.
+- **`gate-watch.sh`** — monthly check for repos that take enough pull
+  requests to deserve the CI gate but do not carry it. Repos are discovered
+  from a single pull-request search rather than hand-listed: the original
+  rollout was scoped from a hand-picked loop over twelve repos and missed two
+  that had PRs, which is precisely the failure a discovery-based check
+  prevents. It reports state and never edits config or opens a PR, and it
+  distinguishes *pending* — a workflow change already open in a PR — from
+  *missing*, because a watcher that nags about work in flight is one you learn
+  to skip. It checks authentication explicitly rather than inferring health
+  from an empty result set: an unauthenticated search returns zero rows, which
+  is byte-identical to "no repo has any PRs".
 - **`model-watch.sh`** — weekly check that the LLM models each repo configures
   are still listed and still free. Exists because a model fallback chain hides
   its own degradation, and because a *delisted* model is worse than a degraded
