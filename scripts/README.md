@@ -9,6 +9,22 @@ pip install -r scripts/requirements.txt
 cp scripts/anonymization.example.yaml scripts/anonymization.yaml
 ```
 
+**If that `pip install` is refused with `externally-managed-environment`**, your
+Python is PEP 668-managed — Homebrew's is, and so are most distro packages.
+Install into the user site instead, which leaves the managed installation
+untouched:
+
+```bash
+python3 -m pip install --user --break-system-packages -r scripts/requirements.txt
+```
+
+Do not skip the step and hope. `sync.py` imports `yaml` at module scope, so a
+missing PyYAML is an immediate `ModuleNotFoundError` and **the sync does not run
+at all** — which also disables the sync step inside `/cleanup`, where nobody is
+watching the output. A virtualenv works too, but then every documented
+`python3 scripts/sync.py` invocation has to be run from it, including the one
+`/cleanup` makes.
+
 Edit `scripts/anonymization.yaml` with your real data — app names, URLs, domains, people. The file is gitignored and never committed.
 
 ## Usage
