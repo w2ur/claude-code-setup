@@ -123,7 +123,20 @@ while read -r n repo; do
 done <<< "$counts"
 
 if [ -z "$findings" ]; then
-  echo "No repo under $OWNER opened a pull request since $SINCE."
+  # --json MUST emit JSON on EVERY path, including this one.
+  #
+  # This early return sat above the JSON branch, so an account with no pull
+  # requests in the window printed prose while claiming to be in JSON mode. Any
+  # consumer parsing stdout then threw and recorded the source as failed —
+  # rendering an outage for the healthiest state there is, which is exactly the
+  # inversion `distribution-watch.sh --json` was built to avoid. Measured with
+  # GATE_WATCH_DAYS=0 before the fix; exit stays 0 in both modes.
+  if $JSON_OUTPUT; then
+    jq -n -c --arg since "$SINCE" --argjson min "$MIN_PRS" \
+      '{since:$since, threshold:$min, repos:0, missing:0, entries:[]}'
+  else
+    echo "No repo under $OWNER opened a pull request since $SINCE."
+  fi
   exit 0
 fi
 
