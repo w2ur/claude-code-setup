@@ -1,4 +1,17 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["PyYAML>=6.0"]
+# ///
+#
+# Run this as `./scripts/sync.py`, which needs no setup step at all: uv reads
+# the block above and builds the environment on first run.
+#
+# The dependency is stated in TWO places on purpose — here and in
+# scripts/requirements.txt — because this repo is published for people who may
+# not use uv, and requirements.txt is their path (see scripts/README.md). Keep
+# the two in step; there is exactly one dependency, which is what makes the
+# duplication affordable rather than a lockfile problem.
 """Sync script for claude-code-setup.
 
 Copies files from a live ~/.claude/ directory into this repo,

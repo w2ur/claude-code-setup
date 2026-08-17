@@ -160,7 +160,7 @@ fi
 The real question is whether the repo is a faithful *anonymized image* of live. `sync.py --dry-run` answers it directly — it is read-only and writes nothing:
 
 ```bash
-cd ~/Dev/claude-code-setup && python3 scripts/sync.py --dry-run
+cd ~/Dev/claude-code-setup && ./scripts/sync.py --dry-run
 ```
 
 Read two counts from its summary — both are machine-checkable, so this is an assertion, not a judgement:
