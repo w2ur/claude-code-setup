@@ -75,6 +75,11 @@ skip:
   # pruning, but the 'hooks/*.md' mapping below would still make it a sync
   # DESTINATION — a live ~/.claude/hooks/README.md would overwrite it.
   - 'hooks/README.md'
+  # A hook's Python test usually reads fixtures (build output, sample payloads)
+  # that no file_map pattern carries, so publishing the test alone ships a
+  # suite that cannot run — and the fixtures themselves are the most likely
+  # thing in a hook directory to hold private data.
+  - 'hooks/**/test_*.py'
   - 'agent-memory/**'
   - 'plans/**'
   - 'projects/**'
@@ -89,8 +94,13 @@ file_map:
   'skills/**/*.md': 'skills/'
   'skills/**/*.sh': 'skills/'
   'hooks/**/*.sh': 'hooks/'
+  # Hooks and scripts can both ship a .py next to their .sh. Both patterns are
+  # needed: a hook or script written in Python is otherwise skipped silently,
+  # which is how push-build-gate was published without payload_gate.py.
+  'hooks/**/*.py': 'hooks/'
   'hooks/*.md': 'hooks/'
   'scripts/*.sh': 'claude-scripts/'
+  'scripts/*.py': 'claude-scripts/'
 
 # Extra files outside ~/.claude/ that should also be synced + anonymized.
 # NOTE: docs/workflow-guide.html is generated from live config by
