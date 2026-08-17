@@ -5,8 +5,23 @@ Copies your live `~/.claude/` configuration into this repo, applying anonymizati
 ## Setup
 
 ```bash
-pip install -r scripts/requirements.txt
 cp scripts/anonymization.example.yaml scripts/anonymization.yaml
+```
+
+That is the whole setup **if you have [uv](https://docs.astral.sh/uv/)**.
+`sync.py` carries [PEP 723](https://peps.python.org/pep-0723/) inline metadata
+and a `#!/usr/bin/env -S uv run --script` shebang, so running it as
+`./scripts/sync.py` builds its own environment on first run and reuses it
+afterwards. There is no dependency step to forget and nothing installed into a
+system Python.
+
+### Without uv
+
+`scripts/requirements.txt` is still maintained for this case:
+
+```bash
+pip install -r scripts/requirements.txt
+python3 scripts/sync.py --dry-run    # invoke through python3, bypassing the shebang
 ```
 
 **If that `pip install` is refused with `externally-managed-environment`**, your
@@ -21,9 +36,12 @@ python3 -m pip install --user --break-system-packages -r scripts/requirements.tx
 Do not skip the step and hope. `sync.py` imports `yaml` at module scope, so a
 missing PyYAML is an immediate `ModuleNotFoundError` and **the sync does not run
 at all** — which also disables the sync step inside `/cleanup`, where nobody is
-watching the output. A virtualenv works too, but then every documented
-`python3 scripts/sync.py` invocation has to be run from it, including the one
-`/cleanup` makes.
+watching the output. That failure mode is the reason the uv path is preferred:
+it has no step to skip.
+
+The dependency is therefore declared twice — in `requirements.txt` and in
+`sync.py`'s inline block. Keep them in step. There is exactly one, which is what
+makes that affordable.
 
 Edit `scripts/anonymization.yaml` with your real data — app names, URLs, domains, people. The file is gitignored and never committed.
 
@@ -31,17 +49,32 @@ Edit `scripts/anonymization.yaml` with your real data — app names, URLs, domai
 
 ```bash
 # Preview what would happen (no files written)
-python scripts/sync.py --dry-run
+./scripts/sync.py --dry-run
 
 # Run the sync
-python scripts/sync.py
+./scripts/sync.py
 
 # Audit existing repo files for personal data leaks
-python scripts/sync.py --audit-only
+./scripts/sync.py --audit-only
 
 # Use a different source directory
-python scripts/sync.py --source /path/to/claude-config
+./scripts/sync.py --source /path/to/claude-config
 ```
+
+These read `python scripts/sync.py` until 2026-08-17. That form was already
+broken on the machine this repo is synced from — there is no bare `python` on
+it, only `python3` — and it bypasses the shebang, which is now what selects the
+interpreter.
+
+## Tests
+
+```bash
+uv run --with pytest --with PyYAML pytest scripts/ -q
+```
+
+`pytest` is deliberately absent from `requirements.txt`: that file is the
+runtime dependency list for people running the sync, and adding a test-only
+package would make every such person install it.
 
 ## How it works
 

@@ -74,7 +74,42 @@ DEGRADED=0
 warn() { echo "WARN: $*" >&2; DEGRADED=1; }
 
 command -v curl >/dev/null 2>&1 || { echo "FATAL: curl not found" >&2; exit 1; }
-command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 not found" >&2; exit 1; }
+
+# ---------------------------------------------------------------- Python (uv)
+# uv is the sole Python manager on this machine, so the interpreter is resolved
+# explicitly rather than inherited from a bare `python3`. Two reasons a bare
+# `python3` is not trustworthy here:
+#   - It resolves to /opt/homebrew/bin/python3, which exists ONLY because
+#     gcloud-cli, mpv, yt-dlp, vapoursynth and peon-ping depend on python@3.14
+#     (installed_on_request=false). `brew uninstall` any of those and the
+#     interpreter this script runs on changes underneath it, with no signal.
+#   - The thing waiting behind it is Apple's /usr/bin/python3 (3.9.6). It runs
+#     today's stdlib-only snippets fine — measured — so the downgrade would be
+#     INVISIBLE until a snippet uses 3.10+ syntax. A silent interpreter swap is
+#     precisely the class of failure the fatal guards in this script exist for.
+# Order: `uv python find` (the same resolver the repos use, forced to managed),
+# then uv's ~/.local/bin shim. The shim fallback is load-bearing, not
+# decorative, and NOT because of this script's own entry — that one carries
+# /opt/homebrew/bin, where uv lives. It is because the scheduled PATHs are not
+# uniform: the 15th-of-month cleanup entry runs with
+# `~/.local/bin:/usr/bin:/bin`, which has the shims but no uv at all
+# (measured). The same block is used in every script here so that the
+# interpreter does not depend on which entry happens to invoke it.
+resolve_uv_python() {
+  local candidate
+  if command -v uv >/dev/null 2>&1; then
+    candidate="$(UV_PYTHON_PREFERENCE=only-managed uv python find 2>/dev/null || true)"
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  fi
+  # Highest-numbered shim. Sorted on the MINOR field numerically, because a
+  # lexical sort puts python3.9 above python3.12.
+  candidate="$(printf '%s\n' "$HOME"/.local/bin/python3.* 2>/dev/null \
+               | grep -E '/python3\.[0-9]+$' | sort -t. -k2,2n | tail -1)"
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  return 1
+}
+PYTHON="$(resolve_uv_python || true)"
+[ -n "$PYTHON" ] || { echo "FATAL: no uv-managed Python found (uv python find failed and no ~/.local/bin/python3.N shim). Refusing to fall back to a system python." >&2; exit 1; }
 
 [ -r "$ROUTES" ] || { warn "no readable route list at $ROUTES"; exit 2; }
 
@@ -106,7 +141,7 @@ if [ -r "$TOKEN_FILE" ]; then
   if [ -z "$RAW_PROJECTS" ]; then
     echo "INFO: discovery skipped — Vercel API request failed" >&2
   else
-    DISCOVERED_TSV="$(python3 -c "
+    DISCOVERED_TSV="$("$PYTHON" -c "
 import json, sys
 try:
     data = json.loads(sys.argv[1])
@@ -145,7 +180,7 @@ fi
 # never checked here — that is exactly the "cannot be observed" case the
 # overlay exists for.
 if [ -n "$DISCOVERED_TSV" ]; then
-  STALE_SITES="$(python3 -c "
+  STALE_SITES="$("$PYTHON" -c "
 import json, sys
 d = json.load(open(sys.argv[2]))
 disc = {}
@@ -176,7 +211,7 @@ fi
 # each such route the first time it is seen.
 NEW_SITES=""
 if [ -n "$DISCOVERED_TSV" ]; then
-  NEW_SITES="$(python3 -c "
+  NEW_SITES="$("$PYTHON" -c "
 import json, sys
 d = json.load(open(sys.argv[2]))
 for line in sys.argv[1].splitlines():
@@ -235,14 +270,14 @@ while IFS=$'\t' read -r KIND F1 F2 F3 F4; do
   # IS NOT ENOUGH: an SPA that echoes the path into its HTML differs by a few
   # bytes and would sail through. Measured — my-bias-app / vs control: 5142 vs
   # 5153 (0.2%). Use a 10% band.
-  if python3 -c "import sys; r=$BYTES; c=$CTL_BYTES; sys.exit(0 if abs(r-c)/max(r,c,1) < 0.10 else 1)"; then
+  if "$PYTHON" -c "import sys; r=$BYTES; c=$CTL_BYTES; sys.exit(0 if abs(r-c)/max(r,c,1) < 0.10 else 1)"; then
     warn "$site$route: CATCHALL — $BYTES vs control $CTL_BYTES (<10% apart); not recorded"
     continue
   fi
 
   RESULTS="$RESULTS$site$route\t$BYTES\t$REDIRECTS\n"
 done < <(
-  python3 -c "
+  "$PYTHON" -c "
 import json, sys
 d = json.load(open('$ROUTES'))
 new_lines = sys.argv[1].splitlines() if len(sys.argv) > 1 else []
@@ -305,7 +340,7 @@ fi
 # it is read — the fragile pattern this replaces re-tested `$?` a line later,
 # after `set -e` semantics around a piped command make that unreliable.
 RATCHET_RC=0
-printf "$RESULTS" | python3 -c "
+printf "$RESULTS" | "$PYTHON" -c "
 import sys, json, os, datetime
 bl_path = '$BASELINES'
 try:
@@ -372,7 +407,7 @@ fi
 if [ -r "$TOKEN_FILE" ]; then
   TOKEN="$(tr -d '\n' < "$TOKEN_FILE")"
   read -r BILL_FROM BILL_TO <<BILLDATES
-$(python3 -c "
+$("$PYTHON" -c "
 import datetime
 now = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
 frm = now - datetime.timedelta(days=7)
@@ -394,7 +429,7 @@ BILLDATES
   elif [ "$BILL_CODE" = "404" ]; then
     echo "billing: unavailable on this plan" >> "$LOG"
   elif [ "$BILL_CODE" = "200" ]; then
-    python3 -c "
+    "$PYTHON" -c "
 import json, sys, datetime
 by_service, by_project = {}, {}
 with open(sys.argv[1], encoding='utf-8') as fh:

@@ -1,4 +1,21 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# ///
+#
+# The shebang runs this through uv, not through a bare `python3`, because uv is
+# the sole Python manager on this machine. A bare `python3` here resolves to
+# /opt/homebrew/bin/python3, which exists ONLY as a dependency of
+# gcloud-cli/mpv/yt-dlp/vapoursynth/peon-ping, and the fallback behind it is
+# Apple's /usr/bin/python3 (3.9.6). This script is stdlib-only and does run on
+# 3.9 today (measured), which is exactly the problem: the interpreter could be
+# swapped out underneath it with no visible symptom until someone used 3.10+
+# syntax. `requires-python` above makes that a startup error instead.
+#
+# `dependencies = []` is deliberate and load-bearing, not boilerplate: it is
+# what keeps this an offline, no-install run. Adding a dependency here would
+# make a scheduled vigie collector reach the network on a cold cache.
 """Portfolio env-var drift check — no model, deterministic.
 
 Compares the env vars each repo's code actually READS against how they are DOCUMENTED.
@@ -12,7 +29,8 @@ Findings, most to least serious:
   PROSE-ONLY          read, documented in prose only    -> no .env.example to copy from
   STALE               declared in tier 1, never read    -> sends the owner to set a dead var
 
-Usage:  python3 env-drift-check.py [out.json]
+Usage:  ./env-drift-check.py [out.json]      (the shebang selects the interpreter;
+        do NOT invoke it as `python3 env-drift-check.py`, which bypasses that)
 Honours DEV_DIR (default ~/Dev) so it can be run against a fixture tree.
 """
 import os, re, sys, json, collections

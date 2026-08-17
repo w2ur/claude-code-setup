@@ -52,13 +52,42 @@ sanitize() { printf '%s' "${1:-}" | tr -d '\t|' | head -n 1 | tr -d '\n'; }
 
 # A missing npm must be loud, never silent. Under cron's default PATH
 # (/usr/bin:/bin) npm is unresolvable — Homebrew installs it to
-# /opt/homebrew/bin — so the dependency signals would quietly read "?" for
-# every repo, forever. That is the failure mode this warning exists to catch;
-# the crontab entry carries an explicit PATH= for the same reason.
+# fnm's alias dir (~/.local/share/fnm/aliases/default/bin) — so the dependency
+# signals would quietly read "?" for every repo, forever. That is the failure
+# mode this warning exists to catch; the crontab entry carries an explicit
+# PATH= for the same reason. (This comment said /opt/homebrew/bin until
+# 2026-08-17. It was true when written; fnm took node and npm over on
+# 2026-08-15 and both Homebrew binaries ceased to exist — re-verified with
+# `which -a` rather than carried forward.)
 HAVE_NPM=1
 command -v npm >/dev/null 2>&1 || { HAVE_NPM=0; warn "npm not on PATH — vuln/outdated signals unavailable for every repo"; }
 command -v git >/dev/null 2>&1 || { echo "FATAL: git not on PATH" >&2; exit 1; }
-command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 not on PATH" >&2; exit 1; }
+
+# ---------------------------------------------------------------- Python (uv)
+# uv is the sole Python manager on this machine, so the interpreter is resolved
+# explicitly instead of inherited from a bare `python3`, which is not
+# trustworthy here: it resolves to /opt/homebrew/bin/python3, which exists ONLY
+# as a dependency of gcloud-cli/mpv/yt-dlp/vapoursynth/peon-ping, and the thing
+# waiting behind it is Apple's /usr/bin/python3 (3.9.6). 3.9 runs today's
+# stdlib-only snippets fine — measured — so that downgrade would be INVISIBLE
+# until one of them used 3.10+ syntax. Order: `uv python find` (forced to
+# managed-only), then uv's ~/.local/bin shim; the shim fallback matters because
+# the scheduled PATHs are not uniform (the cleanup entry carries no uv).
+# FATAL, never a skip — same rule as npm above.
+resolve_uv_python() {
+  local candidate
+  if command -v uv >/dev/null 2>&1; then
+    candidate="$(UV_PYTHON_PREFERENCE=only-managed uv python find 2>/dev/null || true)"
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  fi
+  # Sorted on the MINOR field numerically: a lexical sort puts 3.9 above 3.12.
+  candidate="$(printf '%s\n' "$HOME"/.local/bin/python3.* 2>/dev/null \
+               | grep -E '/python3\.[0-9]+$' | sort -t. -k2,2n | tail -1)"
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  return 1
+}
+PYTHON="$(resolve_uv_python || true)"
+[ -n "$PYTHON" ] || { echo "FATAL: no uv-managed Python found (uv python find failed and no ~/.local/bin/python3.N shim). Refusing to fall back to a system python." >&2; exit 1; }
 
 # ---------------------------------------------------------------- Signal B map
 # Prominence = position in editorial.ts's array (Layer 3 of the M12 manifest
@@ -95,7 +124,7 @@ fi
 TODAY_EPOCH="$(date +%s)"
 
 days_since_scan() { # -> integer days, or -1 for never
-  python3 -c '
+  "$PYTHON" -c '
 import sys, json, datetime
 data = json.loads(sys.argv[1] or "{}")
 val = data.get(sys.argv[2])
@@ -153,13 +182,13 @@ while IFS=$'\t' read -r name path is_git; do
   vulns="-"; outdated="-"; score_d=0
   if [ "$HAVE_NPM" -eq 1 ] && [ -f "$path/package.json" ]; then
     raw_outdated="$( (cd "$path" && npm outdated --json 2>/dev/null) || true )"
-    outdated="$(printf '%s' "$raw_outdated" | python3 -c '
+    outdated="$(printf '%s' "$raw_outdated" | "$PYTHON" -c '
 import sys, json
 try: print(len(json.load(sys.stdin)))
 except Exception: print("?")
 ' 2>/dev/null || true)"
     raw_audit="$( (cd "$path" && npm audit --json 2>/dev/null) || true )"
-    vulns="$(printf '%s' "$raw_audit" | python3 -c '
+    vulns="$(printf '%s' "$raw_audit" | "$PYTHON" -c '
 import sys, json
 try:
     m = json.load(sys.stdin).get("metadata", {}).get("vulnerabilities", {})
@@ -194,7 +223,7 @@ except Exception: print("?")
     "$(sanitize "$last_scan")" "$(sanitize "$vulns")" "$(sanitize "$outdated")" \
     "$(sanitize "$notes")" >> "$ROWS"
 done < <(
-  "$SCANNER" --json 2>/dev/null | python3 -c '
+  "$SCANNER" --json 2>/dev/null | "$PYTHON" -c '
 import sys, json
 for p in json.load(sys.stdin).get("projects", []):
     print("%s\t%s\t%s" % (p.get("name",""), p.get("path",""), str(p.get("is_git", False)).lower()))
@@ -207,7 +236,7 @@ SORTED="$(sort -t$'\t' -k1,1nr -k2,2 "$ROWS")"
 if [ "$OUTPUT_JSON" -eq 1 ]; then
   # stdout must be JSON and nothing else, so the SUMMARY line goes to stderr
   # here and the same two counters are folded into the object instead.
-  printf '%s\n' "$SORTED" | python3 -c '
+  printf '%s\n' "$SORTED" | "$PYTHON" -c '
 import sys, json, datetime
 rows = []
 for i, line in enumerate(l for l in sys.stdin.read().splitlines() if l.strip()):

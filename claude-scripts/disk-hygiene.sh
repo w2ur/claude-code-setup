@@ -110,6 +110,36 @@ CONFIRM_COUNT=0
 CURRENT_CATEGORY=""
 CATEGORY_HEADER_PRINTED="false"
 
+# ---------------------------------------------------------------- Python (uv)
+# uv is the sole Python manager on this machine, so the interpreter is resolved
+# explicitly instead of inherited from a bare `python3`, which is not
+# trustworthy here: it resolves to /opt/homebrew/bin/python3, which exists ONLY
+# as a dependency of gcloud-cli/mpv/yt-dlp/vapoursynth/peon-ping, and behind it
+# sits Apple's /usr/bin/python3 (3.9.6). Order: `uv python find` (forced to
+# managed-only), then uv's ~/.local/bin shim — the shim is what makes this work
+# under the 15th-of-month cleanup entry, whose PATH (`~/.local/bin:/usr/bin:/bin`)
+# carries the shims but no uv at all.
+#
+# NOT fatal here, deliberately, and this is the one script in the set where that
+# is right: Python is used by exactly one check (payload-baseline orphans) and a
+# fatal exit would abort an entire disk sweep over a sub-check. But it must not
+# degrade SILENTLY either — the old code swallowed a failed interpreter with
+# `2>/dev/null`, which made "no orphans" and "could not look" byte-identical.
+# An empty $PYTHON is therefore reported as an explicit REPORT row instead.
+resolve_uv_python() {
+  local candidate
+  if command -v uv >/dev/null 2>&1; then
+    candidate="$(UV_PYTHON_PREFERENCE=only-managed uv python find 2>/dev/null || true)"
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  fi
+  # Sorted on the MINOR field numerically: a lexical sort puts 3.9 above 3.12.
+  candidate="$(printf '%s\n' "$HOME"/.local/bin/python3.* 2>/dev/null \
+               | grep -E '/python3\.[0-9]+$' | sort -t. -k2,2n | tail -1)"
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  return 1
+}
+PYTHON="$(resolve_uv_python || true)"
+
 assert_under_root() {
   local target="$1"
   case "$target" in
@@ -475,9 +505,17 @@ do_payload_baselines() {
   # So the only thing worth surfacing is an ORPHAN: a baseline whose repo is no
   # longer on disk. Reported rather than removed, following the same rule as
   # orphan marketplaces -- the owner decides.
+  # A check that could not run must never read as a check that passed: without
+  # an interpreter this loop would parse nothing, find no orphans, and print
+  # the reassuring "no orphans" line below. Say so instead and stop.
+  if [ -z "$PYTHON" ]; then
+    emit "REPORT" "$dir" "payload-baseline orphan check SKIPPED -- no uv-managed Python (run \`uv python install 3.12\`); this is not a clean result" "confirm"
+    return 0
+  fi
+
   local f repo orphans=0
   while IFS= read -r f; do
-    repo="$(python3 -c "
+    repo="$("$PYTHON" -c "
 import json,sys
 try: print(json.load(open(sys.argv[1])).get('repo',''))
 except Exception: print('')" "$f" 2>/dev/null)"
