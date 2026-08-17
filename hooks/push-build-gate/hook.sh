@@ -6,20 +6,55 @@
 input=$(cat 2>/dev/null || echo "")
 [ -z "$input" ] && exit 0
 
-# Pure-shell pre-filter: skip the python3 spawn entirely for the common case
-# of a command that doesn't mention git at all.
+# Pure-shell pre-filter: skip the interpreter spawn entirely for the common
+# case of a command that doesn't mention git at all.
 case "$input" in
   *git*) ;;
   *) exit 0 ;;
 esac
 
-cmd=$(echo "$input" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(d.get('tool_input', {}).get('command', ''))
-except Exception:
-    pass" 2>/dev/null)
+# ---------------------------------------------------------------- Python (uv)
+# Resolved ONCE, here, and deliberately *after* the pre-filter above so a
+# command that never mentions git still costs nothing.
+#
+# Why this hook keeps Python at all, when auto-format dropped it for jq:
+# `env_prefix_enabled` below has to split a command on shell separators and
+# test that every word of the final segment is a NAME=VALUE assignment. Its own
+# comment records why line-oriented tools cannot express that rule, and getting
+# it wrong silently converts a blocked push into an accepted one. That needs a
+# real language; a field lookup did not.
+#
+# Why an explicit interpreter path and NOT `uv run --script`: the exit code of
+# whatever launches payload_gate.py is load-bearing. This file already records
+# that CPython's own "can't open file" status is 2 — byte-identical to the
+# gate's block verdict — which is why $GATE is checked with -r up front. A `uv
+# run` launcher puts uv's own failure codes into that same channel, where 2
+# means BLOCK THE PUSH and 3 means warn. An interpreter path cannot do that.
+#
+# Failure here is NON-blocking (exit 1), matching this hook's stated doctrine:
+# fail closed on the guard's verdict, open on the guard's own malfunction. A
+# missing interpreter is the guard malfunctioning, not a bad push. Exit 1 is
+# also the only non-blocking code whose stderr the owner actually sees — see
+# the surfacing note further down — so it degrades loudly rather than silently.
+resolve_uv_python() {
+  local candidate
+  if command -v uv >/dev/null 2>&1; then
+    candidate="$(UV_PYTHON_PREFERENCE=only-managed uv python find 2>/dev/null || true)"
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  fi
+  # Sorted on the MINOR field numerically: a lexical sort puts 3.9 above 3.12.
+  candidate="$(printf '%s\n' "$HOME"/.local/bin/python3.* 2>/dev/null \
+               | grep -E '/python3\.[0-9]+$' | sort -t. -k2,2n | tail -1)"
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  return 1
+}
+PYTHON="$(resolve_uv_python || true)"
+if [ -z "$PYTHON" ]; then
+  echo "push-build-gate: no uv-managed Python found — build/payload gate SKIPPED, this push was NOT checked" >&2
+  exit 1
+fi
+
+cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
 echo "$cmd" | grep -qE "git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+push" || exit 0
 
@@ -33,7 +68,7 @@ if [ -z "$dir" ]; then
 fi
 dir="${dir/#\~/$HOME}"
 if [ -z "$dir" ]; then
-  dir=$(echo "$input" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('cwd', ''))" 2>/dev/null)
+  dir=$(echo "$input" | jq -r '.cwd // empty' 2>/dev/null)
 fi
 [ -z "$dir" ] && dir="$PWD"
 
@@ -58,7 +93,7 @@ fi
 # TEST_GATE_SKIP further down. One implementation means the looser rule can
 # never drift back in through the second caller.
 env_prefix_enabled() {
-  printf '%s' "$cmd" | python3 -c '
+  printf '%s' "$cmd" | "$PYTHON" -c '
 import re, sys
 wanted = sys.argv[1]
 cmd = sys.stdin.read()
@@ -203,7 +238,7 @@ if [ -f "$GATE" ] && [ -r "$GATE" ]; then
   TMP_OUT=$(mktemp)
   TMP_ERR=$(mktemp)
   printf '%s' "$OUTPUT" > "$TMP_OUT"
-  python3 "$GATE" "$dir" "$TMP_OUT" 2>"$TMP_ERR"
+  "$PYTHON" "$GATE" "$dir" "$TMP_OUT" 2>"$TMP_ERR"
   GATE_EXIT=$?
   rm -f "$TMP_OUT"
   if [ $GATE_EXIT -eq 2 ]; then

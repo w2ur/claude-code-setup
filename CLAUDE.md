@@ -120,7 +120,23 @@ Consequences worth knowing before writing anything Python here:
   interpreter above — with Apple's `/usr/bin/python3` (3.9.6) behind it. 3.9
   runs a stdlib-only snippet fine (measured), so an interpreter swap under a
   scheduled job would be **invisible** until something used 3.10+ syntax. This
-  is why no script in `~/.claude/scripts/` calls a bare `python3` any more.
+  is why nothing in `~/.claude/scripts/` **or `~/.claude/hooks/`** calls a bare
+  `python3` any more.
+- **In a hook, the answer is usually `jq`, not uv.** All four hooks were reading
+  JSON fields with `python3`; `secret-scan` alone spawned an interpreter three
+  times per invocation, on every Write and Edit. A field lookup needs no
+  interpreter at all, and `/usr/bin/jq` ships with macOS so it resolves under
+  any PATH a hook can inherit. Routing a per-keystroke hook through `uv run`
+  would have been strictly worse than the problem.
+  Keep Python only where a real language is required — `push-build-gate`'s
+  env-prefix parser and `payload_gate.py` — and there resolve the interpreter
+  **once**, after the hook's cheap pre-filter, with the same resolver the
+  scripts use. Never launch `payload_gate.py` via `uv run`: hook.sh reads exit
+  2 as *block the push* and 3 as *warn*, and a launcher that can emit its own
+  failure codes into that channel can manufacture a verdict.
+- **A hook that cannot resolve its interpreter fails OPEN, loudly** (exit 1,
+  the only non-blocking code whose stderr the owner sees) — fail closed on the
+  guard's verdict, open on the guard's own malfunction.
 - **Per-project: `uv sync`.** It creates `.venv`, installs from `uv.lock` and
   installs the project. Commit the lockfile.
 - **One-off tooling with a requirements file: `uv run --with-requirements`.**
