@@ -1,4 +1,14 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["PyYAML>=6.0"]
+# ///
+#
+# Same block as sync.py, and it has to be here as well rather than inherited:
+# this file has its own `__main__` entry point, so it can be run directly, and
+# a script run by uv gets the environment ITS OWN metadata declares. It also
+# imports `sync`, which is why the dependency set is identical — the two are
+# kept in step by hand. See the note in sync.py about requirements.txt.
 """Generate the DATA arrays of docs/workflow-guide.html from live config.
 
 The workflow guide (~/Dev/workflow-guide.html) hand-maintains four JS array

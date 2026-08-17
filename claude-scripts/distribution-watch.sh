@@ -54,10 +54,37 @@ command -v curl >/dev/null 2>&1 || { echo "FATAL: curl not on PATH" >&2; exit 2;
 curl -s -o /dev/null --max-time 15 https://registry.npmjs.org/react \
   || { echo "FATAL: no network, or npm registry unreachable — refusing to report" >&2; exit 2; }
 
+# ---------------------------------------------------------------- Python (uv)
+# uv is the sole Python manager on this machine, so the interpreter is resolved
+# explicitly instead of inherited from a bare `python3`, which is not
+# trustworthy here: it resolves to /opt/homebrew/bin/python3, which exists ONLY
+# as a dependency of gcloud-cli/mpv/yt-dlp/vapoursynth/peon-ping, and behind it
+# sits Apple's /usr/bin/python3 (3.9.6). Order: `uv python find` (forced to
+# managed-only), then uv's ~/.local/bin shim, since the scheduled PATHs are not
+# uniform about carrying uv.
+#
+# exit 2, matching the curl/network guards above: Python is what escapes every
+# JSON field, so without it this script cannot emit a trustworthy row at all —
+# and a row implies the check ran.
+resolve_uv_python() {
+  local candidate
+  if command -v uv >/dev/null 2>&1; then
+    candidate="$(UV_PYTHON_PREFERENCE=only-managed uv python find 2>/dev/null || true)"
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  fi
+  # Sorted on the MINOR field numerically: a lexical sort puts 3.9 above 3.12.
+  candidate="$(printf '%s\n' "$HOME"/.local/bin/python3.* 2>/dev/null \
+               | grep -E '/python3\.[0-9]+$' | sort -t. -k2,2n | tail -1)"
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf '%s' "$candidate"; return 0; fi
+  return 1
+}
+PYTHON="$(resolve_uv_python || true)"
+[ -n "$PYTHON" ] || { echo "FATAL: no uv-managed Python found (uv python find failed and no ~/.local/bin/python3.N shim) — refusing to report" >&2; exit 2; }
+
 outstanding=0
 JSON_ROWS=()
 
-json_escape() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
+json_escape() { printf '%s' "$1" | "$PYTHON" -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
 emit_json_row() { # kind name state detail
   JSON_ROWS+=("{\"kind\":$(json_escape "$1"),\"name\":$(json_escape "$2"),\"state\":$(json_escape "$3"),\"detail\":$(json_escape "$4")}")
 }

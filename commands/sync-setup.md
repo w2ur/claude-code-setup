@@ -10,7 +10,7 @@ Sync the claude-code-setup repo from the live ~/.claude/ configuration.
 ## Step 1: Run sync.py
 
 ```bash
-cd ~/Dev/claude-code-setup && python3 scripts/sync.py $0
+cd ~/Dev/claude-code-setup && ./scripts/sync.py $0
 ```
 
 If `$0` is `--dry-run` or `--audit-only`, stop after this step.
@@ -76,7 +76,7 @@ prose and the renderer), then re-run sync.
 ## Step 5: Final audit
 
 ```bash
-cd ~/Dev/claude-code-setup && python3 scripts/sync.py --audit-only
+cd ~/Dev/claude-code-setup && ./scripts/sync.py --audit-only
 ```
 
 If any audit warnings appear on synced files (not README.md, which is owner-maintained), fix the anonymization before committing.
