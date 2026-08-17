@@ -6,21 +6,41 @@
 
 INPUT=$(cat)
 
-TOOL_NAME=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_name', ''))" 2>/dev/null)
+# Field extraction goes through `jq`, not `python3`.
+#
+# uv is the sole Python manager on this machine, so a bare `python3` here
+# resolves to a Homebrew interpreter that exists only as a dependency of
+# gcloud-cli/mpv/yt-dlp, with Apple's 3.9.6 behind it — an interpreter this
+# hook never chose. Routing it through uv would be worse rather than better:
+# this is a PreToolUse hook on every Write, Edit and NotebookEdit, so it is one
+# of the hottest paths in the whole setup.
+#
+# It was also spawning an interpreter THREE times per invocation to read three
+# fields out of one document. One `jq` call now reads all three, and `jq` is
+# /usr/bin/jq (Apple ships it), so it resolves under any PATH this hook can
+# inherit and needs no interpreter at all.
+#
+# Tab-separated on one line, with @tsv doing the escaping: a raw multi-line
+# CONTENT would otherwise be indistinguishable from the field separator. The
+# content field is base64'd for exactly that reason — it is arbitrary file text
+# and can contain anything, including tabs and newlines — and decoded below.
+# `// ""` preserves the old `.get(field, '')` semantics, and a parse failure
+# leaves every field empty, which the guards below already treat as "nothing to
+# scan" exactly as `except`-less python3 + `2>/dev/null` did.
+# IFS=$'\t' is load-bearing: the default IFS also splits on spaces, so a path
+# like "Mon Drive/notes.md" would land its tail in the next variable.
+IFS=$'\t' read -r TOOL_NAME FILE_PATH CONTENT_B64 <<<"$(printf '%s' "$INPUT" | jq -r '
+  [ (.tool_name // ""),
+    (.tool_input.file_path // .tool_input.notebook_path // ""),
+    (((.tool_input.content // .tool_input.new_string // .tool_input.new_source // "") | @base64))
+  ] | @tsv' 2>/dev/null)"
 
-# Determine content and file-path fields based on tool
-if [ "$TOOL_NAME" = "Write" ]; then
-  FILE_PATH=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('file_path', ''))" 2>/dev/null)
-  CONTENT=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('content', ''))" 2>/dev/null)
-elif [ "$TOOL_NAME" = "Edit" ]; then
-  FILE_PATH=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('file_path', ''))" 2>/dev/null)
-  CONTENT=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('new_string', ''))" 2>/dev/null)
-elif [ "$TOOL_NAME" = "NotebookEdit" ]; then
-  FILE_PATH=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('notebook_path', ''))" 2>/dev/null)
-  CONTENT=$(echo "$INPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('new_source', ''))" 2>/dev/null)
-else
-  exit 0
-fi
+case "$TOOL_NAME" in
+  Write|Edit|NotebookEdit) ;;
+  *) exit 0 ;;
+esac
+
+CONTENT=$(printf '%s' "$CONTENT_B64" | base64 --decode 2>/dev/null)
 
 # Skip .env.example files — they are placeholders by design
 if [[ "$FILE_PATH" == *".env.example" ]]; then

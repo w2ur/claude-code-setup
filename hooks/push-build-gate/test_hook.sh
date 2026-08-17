@@ -21,13 +21,19 @@ trap 'rm -rf "$ROOT"' EXIT
 PASS=0
 FAIL=0
 
-# Build the PreToolUse payload through json.dumps rather than by hand: several
-# cases carry quotes and `&&` in the command, and a hand-rolled printf would be
-# testing the harness's escaping instead of the hook.
+# Build the PreToolUse payload through a real JSON encoder rather than by hand:
+# several cases carry quotes and `&&` in the command, and a hand-rolled printf
+# would be testing the harness's escaping instead of the hook. `jq -n --arg`
+# encodes each value for us, exactly as json.dumps did before it.
+#
+# jq rather than python3 so the harness needs no interpreter of its own — the
+# hook resolves a uv-managed one internally, and a test rig that quietly
+# depended on a *different* Python than the thing under test would be measuring
+# the wrong machine.
 run_hook() {
   local cwd="$1" cmd="$2"
-  python3 -c 'import json,sys; print(json.dumps({"cwd": sys.argv[1], "tool_input": {"command": sys.argv[2]}}))' \
-    "$cwd" "$cmd" | bash "$HOOK" 2>/dev/null
+  jq -n --arg cwd "$cwd" --arg cmd "$cmd" \
+    '{cwd: $cwd, tool_input: {command: $cmd}}' | bash "$HOOK" 2>/dev/null
 }
 
 expect_exit() {
@@ -47,16 +53,11 @@ expect_exit() {
 fixture() {
   local name="$1" build="$2" test="$3"
   mkdir -p "$ROOT/$name"
-  python3 - "$ROOT/$name/package.json" "$name" "$build" "$test" <<'PY'
-import json, sys
-path, name, build, test = sys.argv[1:5]
-scripts = {}
-if build != "-":
-    scripts["build"] = build
-if test != "-":
-    scripts["test"] = test
-open(path, "w").write(json.dumps({"name": name, "version": "1.0.0", "scripts": scripts}))
-PY
+  jq -n --arg name "$name" --arg build "$build" --arg test "$test" \
+    '{name: $name, version: "1.0.0", scripts:
+        ((if $build != "-" then {build: $build} else {} end)
+       + (if $test  != "-" then {test:  $test}  else {} end))}' \
+    > "$ROOT/$name/package.json"
   echo "$ROOT/$name"
 }
 
