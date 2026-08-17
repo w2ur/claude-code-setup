@@ -6,16 +6,26 @@
 input=$(cat 2>/dev/null || echo "")
 [ -z "$input" ] && exit 0
 
-# Extract file path from tool_input
-file_path=$(echo "$input" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    ti = d.get('tool_input', {})
-    print(ti.get('file_path', ''))
-except Exception:
-    pass
-" 2>/dev/null)
+# Extract file path from tool_input.
+#
+# `jq`, not `python3`, and the reason is not taste. uv is the sole Python
+# manager on this machine, so a bare `python3` here resolves to a Homebrew
+# interpreter that exists only as a dependency of gcloud-cli/mpv/yt-dlp, with
+# Apple's 3.9.6 behind it — an interpreter this hook never chose and cannot see
+# change. Routing it through uv instead would be worse: this hook fires on
+# EVERY Write and Edit, so a uv resolution per keystroke-batch is a cost paid
+# thousands of times for one field lookup.
+#
+# The right answer is to need no interpreter at all. `jq` is /usr/bin/jq (Apple
+# ships it) so it resolves under any PATH this hook can inherit, and it is one
+# process rather than an interpreter start-up.
+#
+# `// empty` preserves the old semantics exactly: a missing or null field, or
+# malformed JSON (jq exits non-zero, prints nothing), all yield the empty
+# string, and the guard below exits 0 silently. That was `except Exception:
+# pass` before — same behaviour, and deliberately so. This hook must never
+# block an edit because it could not read its own input.
+file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 
 [ -z "$file_path" ] && exit 0
 [ ! -f "$file_path" ] && exit 0
