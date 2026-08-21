@@ -1,6 +1,6 @@
 # claude-scripts
 
-Ten deterministic, no-model scripts (nine bash, one Python). None of them
+Fourteen deterministic, no-model scripts (thirteen bash, one Python). None of them
 invokes `claude` or any model, so they're safe to run unattended (cron,
 launchd) without a login session. `~/.claude/CLAUDE.md`'s rule: deterministic
 work gets a script, not an agent.
@@ -69,6 +69,22 @@ work gets a script, not an agent.
   prose-documented secret as a leak, which is the false alarm it exists to
   prevent. Exits non-zero only for a variable documented in neither tier.
 
+- **`diffusion-mirror.sh`** — daily one-way mirror of the content-pipeline
+  folder from Google Drive (authoritative) to iCloud Drive. There is
+  deliberately no return path: the web app reads the Drive API and cannot read
+  iCloud, so a two-way sync would let the backup overwrite the source.
+
+- **`act-local.sh`**, **`gha-bridge.sh`**, **`midas-ohlcv-bridge.sh`** — a
+  **temporary** family, and the dates in their headers are load-bearing. The
+  GitHub Actions included-usage meter was exhausted on 2026-08-18, which blocks
+  every GitHub-hosted run until it resets on 2026-09-17, so these run the same
+  work locally in the interval: the CI gates under `act`, one scheduled
+  workflow from a `.conf` declaration, and the desk-critical market-data fetch
+  respectively. The last one is deliberately NOT folded into the general
+  runner — it is proven and load-bearing, and it migrates only once the general
+  runner has a track record. All three expire with the quota; check the date
+  before treating them as permanent infrastructure.
+
 ## Fixture-tree overrides
 
 - `dev-scanner.sh` honours `DEV_DIR` (default `$HOME/Dev`) for the tree it
@@ -99,6 +115,14 @@ logged in" instead of falling back to anything readable. These scripts exist
 partly so the unattended maintenance work (disk hygiene, tech-debt triage)
 needs no model at all, and therefore no login session, and so can actually
 run from cron.
+
+**On the machine this repo is synced from, that fallback became the rule:** as
+of 2026-08-19 there are no crontab entries left at all — every scheduled job
+runs as a launchd `LaunchAgent`. The trigger generalises beyond `claude`, and it
+is the sentence worth keeping: never schedule anything that reads the login
+keychain from cron. `gh` stores its OAuth token there too, so a cron-run `gh`
+returns `HTTP 401` — and for a watcher whose "no results" and "not
+authenticated" look identical, that failure is invisible.
 
 If a model-invoking step is ever genuinely required unattended, use a
 launchd `LaunchAgent` under `~/Library/LaunchAgents/` instead of cron — it
