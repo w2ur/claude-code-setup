@@ -59,6 +59,16 @@ patterns:
   # Private slug that prefixes a public one: the lookahead keeps `trader-core`
   # intact while still anonymizing the bare private `trader`.
   '\btrader\b(?!-)': 'my-trading-app'
+  # Your bare username in prose, outside any path. The path rules above only
+  # catch it between slashes or dashes, so a sentence like
+  # "no crontab for jane" walks straight through them.
+  '(?<![-/\w])your-username(?![-/\w])': '{username}'
+  # Any email-like string, except one already anonymized to an example.*
+  # domain. Worth having even if you think no address appears in your config:
+  # macOS buries one in every Google Drive path
+  # (~/Library/CloudStorage/GoogleDrive-you@gmail.com/). gitleaks will not
+  # flag it — an address is not a credential.
+  '\b[A-Za-z0-9._%+-]+@(?![A-Za-z0-9.-]*example\.)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b': '{email}'
 
 audit_patterns:
   - 'your-gh-user'
