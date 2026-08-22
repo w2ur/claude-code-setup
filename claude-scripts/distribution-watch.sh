@@ -111,16 +111,28 @@ section "== Package registries =="
 # are search surfaces that need no audience and no posting.
 check_npm() {
   local pkg="$1" repo="$2"
-  local code
+  local code private note
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://registry.npmjs.org/$pkg")
   if [ "$code" = "200" ]; then
     say_ok npm "$pkg" "npm: $pkg is published"
-  else
-    say_action npm "$pkg" "npm: $pkg is NOT published (HTTP $code). $repo/package.json currently sets \"private\": true — that is a DELIBERATE setting and its CLAUDE.md requires the owner's explicit sign-off to remove. Decide, do not default."
+    return
   fi
+
+  # READ the private flag rather than assert it. This message used to state
+  # flatly that the repo sets "private": true and that removing it needs the
+  # owner's sign-off — which stopped being true for free-image-source the day
+  # that sign-off was given, leaving the watcher confidently wrong. A watcher
+  # that narrates unverified state is worse than one that says nothing.
+  private=$(sed -n 's/.*"private"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "$repo/package.json" 2>/dev/null | head -1)
+  case "$private" in
+    true)  note="$repo/package.json still sets \"private\": true — a DELIBERATE setting its CLAUDE.md requires the owner's explicit sign-off to remove. Decide, do not default." ;;
+    "")    note="$repo/package.json sets no \"private\" flag, so nothing blocks a publish but the publish itself." ;;
+    *)     note="$repo/package.json sets \"private\": $private — publishable, and not yet published." ;;
+  esac
+  say_action npm "$pkg" "npm: $pkg is NOT published (HTTP $code). $note"
 }
 check_npm french-sentences ~/Dev/french-sentences
-check_npm wikimedia-source ~/Dev/wikimedia-source
+check_npm free-image-source ~/Dev/free-image-source
 
 pypi=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://pypi.org/pypi/midas-core/json)
 if [ "$pypi" = "200" ]; then
