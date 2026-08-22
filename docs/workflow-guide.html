@@ -44,6 +44,7 @@ const AGENTS = [
 ];
 
 const SKILLS = [
+  { name: "scheduled-jobs", file: "~/.claude/skills/scheduled-jobs/SKILL.md", preloaded: [], desc: "Pourquoi chaque LaunchAgent existe, à l'heure où il est planifié, et quels « correctifs » plausibles sont faux (piège du trousseau hors session GUI, PATH par plist, convention de sortie 0/1/2, FDA sur uv, firstComment de Buffer). L'état courant est dérivé par scripts/jobs-inventory.sh, jamais écrit ici. Lazy-loaded : ne coûte rien tant qu'on ne touche pas à une tâche planifiée.", desc_en: "Why each LaunchAgent exists, scheduled at the hour it is, and which plausible \"fixes\" are wrong (the login-keychain trap outside the GUI session, per-plist PATH, the 0/1/2 exit convention, FDA on uv, Buffer's firstComment). Current state is derived by scripts/jobs-inventory.sh, never written here. Lazy-loaded: costs nothing until you touch a scheduled job." },
   { name: "portfolio-conventions", file: "~/.claude/skills/portfolio-conventions/SKILL.md", preloaded: ["troubleshooter", "portfolio-sync"], desc: "Charte de cohérence condensée : naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, système de manifest à trois couches (inventaire dérivé / pitch en frontmatter README / editorial.ts), quality standards.", desc_en: "The consistency charter, condensed: naming, signature, dark mode, design defaults (no purple bias, palette approval), docs, the three-layer manifest system (derived inventory / pitch in the README frontmatter / editorial.ts), quality standards." },
 ];
 

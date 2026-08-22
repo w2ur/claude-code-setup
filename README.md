@@ -62,9 +62,9 @@ As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/
 │  dummy-visitor ── sonnet (bilingual naive-visitor review) │
 │                                                           │
 │  ┌────────────┐  ┌──────────────────────────────────┐     │
-│  │   Memory   │  │  Skills (preloaded knowledge)    │     │
-│  │ per agent  │  │  • portfolio-conventions         │     │
-│  │ per project│  │                                  │     │
+│  │   Memory   │  │  Skills                          │     │
+│  │ per agent  │  │  • portfolio-conventions (preload)│    │
+│  │ per project│  │  • scheduled-jobs (on demand)    │     │
 │  └────────────┘  └──────────────────────────────────┘     │
 └─────────────────────────────┬─────────────────────────────┘
                               │
@@ -122,11 +122,12 @@ The model selection matters. I don't pay opus prices for a compliance check that
 </details>
 
 <details>
-<summary><strong>Skills (1)</strong> — preloaded knowledge and user-invocable utilities</summary>
+<summary><strong>Skills (2)</strong> — preloaded knowledge and user-invocable utilities</summary>
 
 <br>
 
 - **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, the three-layer inventory that replaced the per-repo manifest, quality gates, display order). Loaded into `troubleshooter` and `portfolio-sync`.
+- **scheduled-jobs**: why each scheduled job exists, at the hour it is scheduled, and which plausible "fixes" are wrong — the login-keychain trap outside a GUI session, per-job PATH, the 0/1/2 exit convention. User-invocable, loaded on demand rather than preloaded: it costs nothing until you touch a scheduled job. Current state is derived by `claude-scripts/jobs-inventory.sh`, never written into the skill — the prose version of that inventory drifted three times before it was replaced by a script.
 
 The other four skills I used to run here are gone — their content was either already inferable by the agents that needed it, or better placed directly in the global CLAUDE.md's quality section, where it can't drift out of sync with a separate file.
 

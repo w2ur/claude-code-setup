@@ -184,6 +184,50 @@ check_awesome paperswithbacktest/awesome-systematic-trading main midas-core \
   || check_awesome paperswithbacktest/awesome-systematic-trading master midas-core
 check_awesome wilsonfreitas/awesome-quant master midas-core
 
+section ""
+section "== Chrome Web Store =="
+
+# A LISTING THAT HAS BEEN TAKEN DOWN LOOKS EXACTLY LIKE A HEALTHY ONE to a
+# status-code check. Measured 2026-08-22: the Store answers HTTP 200 for any
+# 32-character extension ID, including one that has never existed — it simply
+# resolves to .../detail/empty-title/<id>. So `res.ok` is unfalsifiable here,
+# and the assertion has to be on the SLUG in the resolved URL.
+#
+# My Socratic App was rejected twice before it went live (keyword spam in the listing
+# description, case "Yellow Argon"). A later takedown or an accidental
+# unpublish would otherwise be completely silent — the extension keeps working
+# for everyone who already installed it, so nothing breaks visibly.
+#
+# The control is INSIDE the check on purpose. A one-off measurement in a
+# comment rots; re-proving at runtime that a nonexistent listing is
+# distinguishable is what makes today's OK mean something. If the two ever
+# resolve alike, this reports an action rather than a pass — the same shape
+# check_awesome uses when it cannot read a README.
+check_webstore() {
+  local id="$1" slug="$2"
+  local base='https://chromewebstore.google.com/detail'
+  local live control
+
+  live=$(curl -s -o /dev/null -L --max-time 25 -w '%{url_effective}' "$base/$id") || {
+    say_action webstore "$slug" "Chrome Web Store: could not reach the listing for $slug — verify by hand before trusting this"
+    return
+  }
+  control=$(curl -s -o /dev/null -L --max-time 25 -w '%{url_effective}' "$base/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") || control=''
+
+  if [ -z "$control" ] || [ "${control##*/detail/}" = "${live##*/detail/}" ]; then
+    say_action webstore "$slug" "Chrome Web Store: the control did not distinguish a nonexistent listing, so this check proves nothing today — verify $slug by hand"
+    return
+  fi
+
+  case "$live" in
+    */detail/"$slug"/"$id"*)
+      say_ok webstore "$slug" "Chrome Web Store: $slug is published and resolves to its own slug" ;;
+    *)
+      say_action webstore "$slug" "Chrome Web Store: $slug did NOT resolve to its own slug (got $live) — the listing may have been unpublished or taken down" ;;
+  esac
+}
+check_webstore bodfmokjnmkkdobfcnfbplnbplgdbfgl my-socratic-app
+
 if $JSON_MODE; then
   printf '{"channels":[%s],"outstanding":%d}\n' "$(IFS=,; echo "${JSON_ROWS[*]}")" "$outstanding"
   [ "$outstanding" -eq 0 ] && exit 0 || exit 1
