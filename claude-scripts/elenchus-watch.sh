@@ -37,9 +37,9 @@
 # nothing about them.
 set -euo pipefail
 
-STATUS_URL="${ELENCHUS_STATUS_URL:-https://my-socratic-app-proxy.william-445.workers.dev/status}"
-KEYCHAIN_SERVICE="${ELENCHUS_KEYCHAIN_SERVICE:-my-socratic-app-status}"
-HEADROOM_MIN="${ELENCHUS_HEADROOM_MIN:-0.20}"
+STATUS_URL="${MY_SOCRATIC_APP_STATUS_URL:-https://my-socratic-app-proxy.william-445.workers.dev/status}"
+KEYCHAIN_SERVICE="${MY_SOCRATIC_APP_KEYCHAIN_SERVICE:-my-socratic-app-status}"
+HEADROOM_MIN="${MY_SOCRATIC_APP_HEADROOM_MIN:-0.20}"
 NOTIFIER="${NOTIFIER_BIN:-$HOME/.claude/scripts/notifier.sh}"
 
 JSON_OUTPUT=false
@@ -55,12 +55,12 @@ command -v jq   >/dev/null 2>&1 || { warn "jq not found — cannot run."; exit 2
 # entry: outside the GUI session the login keychain is not in the search list,
 # `security` returns empty, and the request would 405 — reported as UNKNOWN,
 # but for a reason that looks nothing like the real one.
-SECRET="${ELENCHUS_STATUS_SECRET:-}"
+SECRET="${MY_SOCRATIC_APP_STATUS_SECRET:-}"
 if [ -z "$SECRET" ]; then
   SECRET=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null || true)
 fi
 if [ -z "$SECRET" ]; then
-  warn "no status secret (keychain service '$KEYCHAIN_SERVICE', or \$ELENCHUS_STATUS_SECRET)."
+  warn "no status secret (keychain service '$KEYCHAIN_SERVICE', or \$MY_SOCRATIC_APP_STATUS_SECRET)."
   warn "set it with: security add-generic-password -s '$KEYCHAIN_SERVICE' -a \"\$USER\" -w"
   exit 2
 fi

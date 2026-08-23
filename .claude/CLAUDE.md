@@ -24,15 +24,14 @@ and a `uv run --script` shebang, so it builds its own environment:
 uv run --with pytest --with PyYAML pytest scripts/ -q   # tests
 ```
 
-Never invoke it as `python3 scripts/sync.py` here — that bypasses the shebang
-and runs it against whatever interpreter is on PATH, which on this machine is a
-Homebrew Python that exists only as another formula's dependency. uv is the sole
-Python manager here. The `pip install -r scripts/requirements.txt` path is kept
-in `scripts/README.md` for people cloning this public repo without uv.
+Never invoke it as `python3 scripts/sync.py` here — see the global CLAUDE.md's
+uv rules for why that bypasses the shebang. The `pip install -r
+scripts/requirements.txt` path stays documented in `scripts/README.md`, for
+people cloning this public repo without uv.
 
 ## Project-Specific Rules
 
 - NEVER commit files containing personal data (real app names, URLs, paths)
-- After any sync, run `python scripts/sync.py --audit-only` before committing
+- After any sync, run `./scripts/sync.py --audit-only` before committing
 - The README.md and docs/philosophy.md are maintained by the owner, not auto-generated
 - This repo does NOT follow the author signature convention (no footer — it's not a web app)

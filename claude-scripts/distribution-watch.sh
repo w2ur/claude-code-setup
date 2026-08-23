@@ -34,9 +34,9 @@
 
 set -uo pipefail
 
-# --json exists for vigie, following the precedent model-watch.sh set. The exit
+# --json exists for my-monitoring-app, following the precedent model-watch.sh set. The exit
 # contract is IDENTICAL in both modes (0 complete / 1 outstanding / 2 could not
-# run) because vigie reads the code as well as the payload: exit 1 is a finding,
+# run) because my-monitoring-app reads the code as well as the payload: exit 1 is a finding,
 # exit 2 means the report is untrustworthy.
 JSON_MODE=false
 for arg in "$@"; do
