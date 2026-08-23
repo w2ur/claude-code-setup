@@ -173,6 +173,8 @@ Both `0`, and an untracked-file check on the repo comes back empty → in sync.
 
 If claude-code-setup is stale, delegate to the `/sync-setup` command rather than duplicating its logic here — it already handles copying, anonymizing, stale-file cleanup, README counts, and the leak audit. Do NOT push — `/sync-setup` commits locally only; the owner pushes manually.
 
+`--dry-run` above is exempt from the hand-edit guard, so this step always reads its counts cleanly. But a hand-edited destination shows up here as `would update`, and the `/sync-setup` you delegate to will then **exit 2 rather than overwrite it**. That is the guard working, not a failure: report the named files and stop. The fix is to move the change into `~/.claude/`, never `--allow-dirty`.
+
 Report any staleness found for workflow guide and strategic docs. Do NOT fix those — just flag them for the owner.
 
 ## Report

@@ -1,6 +1,6 @@
 ---
-description: Sync the claude-code-setup repo from live ~/.claude/ config. Copies + anonymizes files, cleans stale files, updates README counts, updates workflow guide, audits for leaks.
-argument-hint: [--dry-run | --audit-only]
+description: Sync the claude-code-setup repo from live ~/.claude/ config. Copies, anonymizes and redacts private regions, cleans stale files, updates README counts, updates workflow guide, audits for leaks. Refuses to overwrite hand-edited destinations.
+argument-hint: [--dry-run | --audit-only | --allow-dirty]
 model: sonnet
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
