@@ -28,7 +28,12 @@ DEV_DIR="${DEV_DIR:-$HOME/Dev}"
 SNAPSHOT="${VIGIE_SNAPSHOT:-$DEV_DIR/vigie/src/data/snapshot.json}"
 JOBS="${JOBS_INVENTORY:-$CLAUDE_DIR/scripts/jobs-inventory.sh}"
 
-JSON=0; [ "${1:-}" = "--json" ] && JSON=1
+JSON=0; NOTIFY=0
+case "${1:-}" in
+  --json)   JSON=1 ;;
+  --notify) NOTIFY=1 ;;
+esac
+NOTIFIER="${NOTIFIER_BIN:-$CLAUDE_DIR/scripts/notifier.sh}"
 TODAY=$(date -u +%Y-%m-%d)
 
 command -v jq >/dev/null 2>&1 || { echo "FATAL: jq not found — UNKNOWN, not clear" >&2; exit 2; }
@@ -108,6 +113,25 @@ else
   else
     jq -r '.[]|"  [\(.source)] \(.text)"' <<<"$ITEMS"
   fi
+fi
+
+# --notify: push the queue through the single channel. Counts only, which the
+# items already are — notifier.sh's ntfy topic is PUBLIC and redacts secrets,
+# not personal data, so nothing here may carry a name or a status.
+# Silence when there is nothing to say AND every source answered: a daily
+# notification that always fires is one you stop reading. A SIGNAL LOST still
+# notifies, because "the sweep did not run" is exactly what you need told.
+if [ "$NOTIFY" = 1 ] && [ -x "$NOTIFIER" ] && { [ "$NITEM" -gt 0 ] || [ "$DOWN" -gt 0 ]; }; then
+  BODY=$(mktemp); { 
+    jq -r 'to_entries[]|select(.value.ok==false)|"SIGNAL LOST: \(.key)"' <<<"$SRC"
+    jq -r '.[]|"[\(.source)] \(.text)"' <<<"$ITEMS"
+  } > "$BODY"
+  TITLE="Intendant — $NITEM item(s)"
+  [ "$DOWN" -gt 0 ] && TITLE="$TITLE, $DOWN source(s) LOST"
+  PRIO=default; [ "$DOWN" -gt 0 ] && PRIO=high
+  "$NOTIFIER" "$TITLE" "$BODY" --priorite "$PRIO" >/dev/null 2>&1 \
+    || echo "intendant: notification not delivered" >&2
+  rm -f "$BODY"
 fi
 
 [ "$DOWN" -gt 0 ] && exit 2
