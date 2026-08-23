@@ -191,6 +191,7 @@ Zero-cost policy: free tiers only (Netlify, Vercel, Cloudflare, Neon, D1). Autom
 
 Before installing a plugin: evaluate overlap with existing custom agents/commands — custom setup wins on conflict. Audit periodically with `/cleanup plugins-only`. Plugins with SessionStart hooks cost context every session; prefer plugins that lazy-load.
 
+**Ten plugins, audited 2026-08-22** (`ls ~/.claude/plugins/` and `enabledPlugins` in `settings.json` are the roster). Two carry hooks, and both are deliberate:
 
 - **`superpowers` is the standing exception to the lazy-load preference.** Its SessionStart hook injects ~3 KB (the `using-superpowers` skill) into every single session. That cost is **accepted, not overlooked** — owner's call, "an absolute necessity". Do not propose removing it, and do not re-raise the context cost as a finding.
 - **`plan-reviewer` carries a Stop hook** (`check-new-plans.sh`) that flags any file in `~/.claude/plans/` touched in the last 120 minutes with no `-review.md` sibling. Consequence worth knowing: *moving* an old file into `plans/` resets its mtime and trips the hook — restore the real mtime rather than letting it nag.

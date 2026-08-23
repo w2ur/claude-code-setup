@@ -441,7 +441,7 @@ def generate_guide(
         all_todos.extend(todos)
         html = _replace_block(html, arr_name, body_lines)
 
-    anonymized, _count = anonymize(html, replacements, patterns)
+    anonymized, _count = anonymize(html, replacements, patterns, origin=str(LIVE_GUIDE))
 
     rel = DEST_GUIDE.relative_to(REPO_ROOT)
     is_stale = False
