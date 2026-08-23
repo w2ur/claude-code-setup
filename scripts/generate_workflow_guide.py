@@ -187,6 +187,52 @@ def _preserved_arr(prev: str | None, key: str, derived: list[str]) -> str:
 # ── Building each array from live config ────────────────────────
 
 
+def _arg_hint(raw) -> str:
+    """Render an `argument-hint:` frontmatter value back to its written form.
+
+    `argument-hint: [--dry-run | --audit-only]` is a YAML flow SEQUENCE, so
+    safe_load hands back a one-element list and `str()` on it yields the Python
+    repr — brackets, quotes and all — straight into the guide. The pipes are not
+    YAML separators, which is why it is one element rather than three.
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, dict):
+        # `[optional: canonical URL]` is a flow sequence holding a flow MAP,
+        # because the colon makes YAML read `optional: ...` as a key/value.
+        return ", ".join(f"{k}: {v}" for k, v in raw.items())
+    if isinstance(raw, list):
+        return "[" + ", ".join(_arg_hint(x) for x in raw) + "]"
+    return str(raw)
+
+
+def _args_with_drift_check(prev: str, arg_hint: str, entry: str, todos: list[str]) -> tuple[str, str]:
+    """Preserve args/args_en, but report when the live hint has moved past them.
+
+    Deriving these from `argument-hint` was tried and is wrong: the hint is ONE
+    string in whatever language it was written, while the guide carries a French
+    and an English rendering of it. Deriving overwrites whichever of the two was
+    actually translated -- measured on /sync, whose French args is a translation
+    of an English-written hint.
+
+    Preserving alone was the original behaviour and left the other half of the
+    hole: nothing reported that /sync-setup had gained a flag, so the guide
+    advertised the old set for ever. So preserve, and raise a TODO when the live
+    hint matches NEITHER stored value, which is the only cheap signal that a
+    translation is now out of date.
+    """
+    args_val = _preserved(prev, "args", entry, todos)
+    args_en_val = _preserved(prev, "args_en", entry, todos)
+    if arg_hint:
+        # _field_str returns the raw contents WITHOUT the surrounding quotes,
+        # so compare in that shape. Comparing against js_str()'s quoted literal
+        # never matched and flagged every command with an argument-hint.
+        stored = {_field_str(prev, "args"), _field_str(prev, "args_en")}
+        if js_str(arg_hint)[1:-1] not in stored:
+            todos.append(f"{entry} (argument-hint is now {arg_hint!r} — args/args_en still show the old set)")
+    return args_val, args_en_val
+
+
 def build_commands(source: Path, existing: dict, existing_order: list[str]) -> tuple[list[str], list[str]]:
     lines: list[str] = []
     todos: list[str] = []
@@ -197,7 +243,7 @@ def build_commands(source: Path, existing: dict, existing_order: list[str]) -> t
         allowed = str(fm.get("allowed-tools", "") or "")
         agents = re.findall(r"Agent\(([^)]+)\)", allowed)
         live[name] = {
-            "arg_hint": str(fm.get("argument-hint", "") or ""),
+            "arg_hint": _arg_hint(fm.get("argument-hint")),
             "agents": agents,
         }
 
@@ -208,8 +254,11 @@ def build_commands(source: Path, existing: dict, existing_order: list[str]) -> t
         entry = f"command {name}"
         # args / desc / when (+ _en siblings): preserve prose, or placeholder.
         if prev:
-            args_val = _preserved(prev, "args", entry, todos)
-            args_en_val = _preserved(prev, "args_en", entry, todos)
+            # args/args_en stay preserved (they are translations), but the
+            # live hint is compared against them and drift is reported. Found
+            # when --allow-dirty was added to /sync-setup and the guide went on
+            # advertising the old two flags with nothing saying so.
+            args_val, args_en_val = _args_with_drift_check(prev, info["arg_hint"], entry, todos)
             desc_val = _preserved(prev, "desc", entry, todos)
             desc_en_val = _preserved(prev, "desc_en", entry, todos)
             when_val = _preserved(prev, "when", entry, todos)

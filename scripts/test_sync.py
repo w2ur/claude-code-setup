@@ -364,3 +364,56 @@ def test_guard_is_skipped_on_a_dry_run(tmp_path, monkeypatch):
     _commit(repo)
     (repo / "commands" / "a.md").write_text("typed by hand\n", encoding="utf-8")
     _sync(source, repo, dry_run=True)  # a preview writes nothing, so it destroys nothing
+
+
+# ── argument-hint drift ─────────────────────────────────────────
+#
+# args/args_en are translations of one `argument-hint`, so they cannot be
+# derived without overwriting whichever of the two was actually translated.
+# They stay preserved; what was missing is any report that the hint moved.
+
+
+def _entry(args, args_en):
+    return f'  {{ name: "/c", args: "{args}", args_en: "{args_en}", desc: "d", desc_en: "d" }},'
+
+
+def test_arg_hint_drift_is_reported(tmp_path, monkeypatch):
+    source = tmp_path / "live"
+    (source / "commands").mkdir(parents=True)
+    (source / "commands" / "c.md").write_text(
+        "---\nargument-hint: [--a | --b | --c]\n---\nbody\n", encoding="utf-8"
+    )
+    todos: list[str] = []
+    prev = _entry("[--a | --b]", "[--a | --b]")
+    args, args_en = guide._args_with_drift_check(prev, "[--a | --b | --c]", "command /c", todos)
+    # Preserved, not overwritten...
+    assert args == '"[--a | --b]"'
+    assert args_en == '"[--a | --b]"'
+    # ...but the drift is named.
+    assert any("--c" in t for t in todos)
+
+
+def test_no_drift_reported_when_one_side_matches_the_hint():
+    # /sync's real shape: an English-written hint, a translated French args.
+    todos: list[str] = []
+    guide._args_with_drift_check(
+        _entry("(aucun argument)", "(no arguments)"), "(no arguments)", "command /c", todos
+    )
+    assert todos == []
+
+
+def test_arg_hint_renders_a_yaml_flow_sequence_back_to_brackets():
+    # `argument-hint: [--dry-run | --audit-only]` is a flow SEQUENCE — the pipes
+    # are not separators — so safe_load returns a one-element list and str() on
+    # it leaked the Python repr, brackets and quotes included, into the guide.
+    assert guide._arg_hint(["--dry-run | --audit-only"]) == "[--dry-run | --audit-only]"
+
+
+def test_arg_hint_renders_a_flow_map():
+    # `[optional: canonical URL]` — the colon makes YAML read a key/value.
+    assert guide._arg_hint([{"optional": "canonical URL"}]) == "[optional: canonical URL]"
+
+
+def test_arg_hint_of_a_plain_string_is_unchanged():
+    assert guide._arg_hint("A | B | a task id") == "A | B | a task id"
+    assert guide._arg_hint(None) == ""
