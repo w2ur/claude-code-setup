@@ -82,7 +82,7 @@ purpose and confirm the verifier goes red** — a check that now reads a file wi
 matching section can throw, pass vacuously, or match nothing, and only the deliberate
 failure tells you which.
 
-Measured in `my-monitoring-app`: `scripts/verify-strata.mjs` parses a CLAUDE.md section and pins
+Measured in `vigie`: `scripts/verify-strata.mjs` parses a CLAUDE.md section and pins
 its bolded rows against the `@keyframes` in `tokens.css`. Moving the section made
 `npm run verify` throw, while `npm test` and `astro build` both stayed green.
 

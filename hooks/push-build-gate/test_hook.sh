@@ -100,7 +100,7 @@ expect_exit 0 "a repo with no test script is not gated on tests"   "$ROOT/notest
 expect_exit 0 "npm's 'no test specified' placeholder is not a suite" "$ROOT/placeholder" "git push"
 
 # Regression: 2026-08-05 — a missing `build` script exited the whole gate, so a
-# repo with tests and no build (my-socratic-app-proxy's shape) was gated on nothing.
+# repo with tests and no build (elenchus-proxy's shape) was gated on nothing.
 expect_exit 2 "a repo with tests and no build is still gated"     "$ROOT/testonly" "git push"
 
 # --- The escape hatch, and the control that proves it is strict -------------

@@ -26,7 +26,7 @@ leaves it unset in exactly the place a wrong interpreter would be invisible.
 
 uv's default *without* the setting is "prefer managed, but fall back to a system
 Python if no managed one is installed", so the gap is real rather than theoretical.
-`env-drift-check.py`'s `uv run --script` shebang runs under the my-monitoring-app LaunchAgent and
+`env-drift-check.py`'s `uv run --script` shebang runs under the vigie LaunchAgent and
 picks correctly today only because managed 3.11/3.12/3.13 happen to be installed.
 
 **The falsifying control that was actually run.** uv discovers
@@ -92,7 +92,7 @@ verdict; fail open on the guard's own malfunction.
 - **A standalone script: a PEP 723 header and a `#!/usr/bin/env -S uv run --script`
   shebang**, then executed *directly*. Never invoke such a script as
   `python3 script.py` — that bypasses the shebang, which is the single place its
-  interpreter and dependencies are declared. That exact bug was live in my-monitoring-app's
+  interpreter and dependencies are declared. That exact bug was live in vigie's
   env-drift collector until 2026-08-17.
 
 ## The editable-install trap

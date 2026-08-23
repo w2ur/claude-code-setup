@@ -18,7 +18,7 @@
 # same principle as usage-watch.sh discovering hosts from the Vercel API.
 #
 # Reports state; never edits config. Choosing a replacement needs an eval set,
-# which is what my-socratic-app/scripts/bake-off.mjs is for.
+# which is what elenchus/scripts/bake-off.mjs is for.
 #
 # Exit: 0 all configured models present and free; 1 at least one missing or now
 # priced; 2 the check could not run (no jq, no network).
@@ -79,7 +79,7 @@ else
   echo
   if [ "$status" -eq 1 ]; then
     echo "At least one configured model is no longer listed as free."
-    echo "Re-pick with: OPENROUTER_API_KEY=... node ~/Dev/my-socratic-app/scripts/bake-off.mjs --max-tokens=8000"
+    echo "Re-pick with: OPENROUTER_API_KEY=... node ~/Dev/elenchus/scripts/bake-off.mjs --max-tokens=8000"
   else
     echo "All configured models present and free."
   fi

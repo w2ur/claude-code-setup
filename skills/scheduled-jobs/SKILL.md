@@ -21,7 +21,7 @@ an empty catalogue, an unauthenticated API returning zero rows — all are *unkn
 **Never schedule anything that reads the login keychain from crontab.** Four
 instances, each found the hard way: `claude`'s OAuth credentials, `gh`'s OAuth token
 (`~/.config/gh/hosts.yml` carries no `oauth_token:` line), an IMAP password, and the
-My Socratic App status secret. A crontab job runs outside the GUI login
+Elenchus status secret. A crontab job runs outside the GUI login
 session, so `login.keychain-db` is absent from its search list. The failures are
 silent, not loud: `claude` reports `Not logged in`; `gh` returns `HTTP 401`; the
 `security` lookup returns an **empty string with no error**, so the job reports
@@ -46,7 +46,7 @@ an argument to an interpreter bypasses the one place its dependencies are declar
 
 **A binary guard does not cover a project's installed dependencies.** Guards check
 `node`, not `node_modules`. A 2026-08 disk sweep deleted 16 repos' `node_modules`;
-every guarded binary was still present, so `my-monitoring-app-refresh` ran, regenerated
+every guarded binary was still present, so `vigie-refresh` ran, regenerated
 `snapshot.json`, then died in `astro build`. The visible result was the worst shape
 available: **a fresh snapshot behind a frozen `dist/`**, the panel answering with
 numbers that looked current. **Before deleting a dependency directory, list which
@@ -88,7 +88,7 @@ empty catalogue as everything having been delisted.
 **`devlog-collect`** — the plist executes `collect.py` directly so its `uv run
 --script` shebang selects the interpreter. See the FDA note above.
 
-**`my-monitoring-app-refresh`** — the only scheduled job whose script lives in a project repo
+**`vigie-refresh`** — the only scheduled job whose script lives in a project repo
 (it builds that project), so `/sync-setup` does not cover it. Guards on
 **`node`/`npm`/`git` only, fatal exit 2**: without those no snapshot exists at all.
 **`gh` and `uv` are deliberately NOT fatal.** Each feeds exactly one collector, and
@@ -102,7 +102,7 @@ was manufacturing one.** It `cd`s into the repo first, deliberately: Astro resol
 its content-collection base against the cwd of `astro build`, and a scheduled job
 runs with cwd `$HOME`, which would silently collect zero documents rather than fail.
 
-**`my-monitoring-app-serve`** — the only agent with `RunAtLoad` and `KeepAlive` both true. It
+**`vigie-serve`** — the only agent with `RunAtLoad` and `KeepAlive` both true. It
 only serves the static `dist/` the refresh agent built: **the refresh agent owns the
 data and this one only shows it**, because a server that also refreshed would make
 the panel's age depend on when a browser was last opened. Port 7707 is pinned
@@ -117,7 +117,7 @@ PRs", so it would report full coverage forever. It checks `gh auth status` expli
 rather than inferring from an empty result set. Monthly because a dormant repo
 starting to take PRs is a slow signal.
 
-**`my-socratic-app-watch`** — **the hour is the design, not a free slot.** The proxy's
+**`elenchus-watch`** — **the hour is the design, not a free slot.** The proxy's
 counters roll over at **00:00 UTC**, computed inside the Durable Object from its own
 clock. 23:47 Paris is 21:47 UTC — ~91% of the UTC day elapsed in summer. A morning
 run would sample a UTC day a few hours old and read near-zero *every single day*,
@@ -125,7 +125,7 @@ reporting "plenty left" on the very day the service refused everyone at 23:00. *
 not move it to a breakfast slot to sit beside the others.** The route it reads is
 deliberately **invisible rather than closed**: an unauthorized caller gets the same
 `405 Method not allowed` as any other `GET`, byte-identical, because a 404 or 401
-would announce it exists. Its secret is **not** the extension's `X-My Socratic App-Key`,
+would announce it exists. Its secret is **not** the extension's `X-Elenchus-Key`,
 which ships inside the `.crx`. **A 405 is exit 2, not exit 0.** Status reads claim no
 quota — a test pins that six status reads around one analysis move the counter by
 exactly one, so watching the service cannot consume what it watches.
@@ -171,8 +171,8 @@ describe them and must never re-implement or restate them** — restated numbers
 and `my-bias-app`, both of which had PRs.
 
 **Watchers report state; they never edit config, raise a ceiling, or open a PR.**
-Choosing a replacement model needs an eval set (`my-socratic-app/scripts/bake-off.mjs`);
-raising an My Socratic App ceiling needs the provider's published RPD re-derived in the same
+Choosing a replacement model needs an eval set (`elenchus/scripts/bake-off.mjs`);
+raising an Elenchus ceiling needs the provider's published RPD re-derived in the same
 change. `gate-watch.sh` distinguishes `pending` (a fix already open in a PR) from
 `MISSING`, because a watcher that nags about work in flight is one you learn to skip.
 

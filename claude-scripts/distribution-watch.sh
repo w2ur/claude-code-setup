@@ -34,9 +34,9 @@
 
 set -uo pipefail
 
-# --json exists for my-monitoring-app, following the precedent model-watch.sh set. The exit
+# --json exists for vigie, following the precedent model-watch.sh set. The exit
 # contract is IDENTICAL in both modes (0 complete / 1 outstanding / 2 could not
-# run) because my-monitoring-app reads the code as well as the payload: exit 1 is a finding,
+# run) because vigie reads the code as well as the payload: exit 1 is a finding,
 # exit 2 means the report is untrustworthy.
 JSON_MODE=false
 for arg in "$@"; do
@@ -193,7 +193,7 @@ section "== Chrome Web Store =="
 # resolves to .../detail/empty-title/<id>. So `res.ok` is unfalsifiable here,
 # and the assertion has to be on the SLUG in the resolved URL.
 #
-# My Socratic App was rejected twice before it went live (keyword spam in the listing
+# Elenchus was rejected twice before it went live (keyword spam in the listing
 # description, case "Yellow Argon"). A later takedown or an accidental
 # unpublish would otherwise be completely silent — the extension keeps working
 # for everyone who already installed it, so nothing breaks visibly.
@@ -226,7 +226,7 @@ check_webstore() {
       say_action webstore "$slug" "Chrome Web Store: $slug did NOT resolve to its own slug (got $live) — the listing may have been unpublished or taken down" ;;
   esac
 }
-check_webstore bodfmokjnmkkdobfcnfbplnbplgdbfgl my-socratic-app
+check_webstore bodfmokjnmkkdobfcnfbplnbplgdbfgl elenchus
 
 if $JSON_MODE; then
   printf '{"channels":[%s],"outstanding":%d}\n' "$(IFS=,; echo "${JSON_ROWS[*]}")" "$outstanding"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reports how much of the My Socratic App free tier's daily allowance is left, and
+# Reports how much of the Elenchus free tier's daily allowance is left, and
 # which of the two service-wide ceilings is closer to binding.
 #
 # This exists because the free tier's success case and its failure case look
@@ -12,7 +12,7 @@
 # It reads GET /status on the Worker, which calls the rate limiter's peek() —
 # a read that claims no quota. Watching the service therefore never consumes
 # what it is watching, and that invariant is pinned by a test in
-# my-socratic-app-proxy/test/status.test.js rather than trusted.
+# elenchus-proxy/test/status.test.js rather than trusted.
 #
 # TIMING IS PART OF THE DESIGN. The counters roll over at 00:00 UTC, computed
 # inside the Durable Object from its own clock (currentDay() is toISOString()).
@@ -22,13 +22,13 @@
 # The LaunchAgent fires at 23:47 Paris, which is 21:47 UTC: ~91% of the UTC day
 # elapsed in summer, ~95% in winter.
 #
-# The status secret is NOT the extension's X-My Socratic App-Key. That key ships
+# The status secret is NOT the extension's X-Elenchus-Key. That key ships
 # inside the .crx and is not an authentication boundary — anyone who unpacks a
 # published build holds it — so it must never open an operational surface.
 #
 # Reports state; never changes a ceiling. Raising one is a provider decision
 # that needs the published RPD re-derived in the same change, which is what
-# my-socratic-app-proxy/test/token-budget.test.js guards.
+# elenchus-proxy/test/token-budget.test.js guards.
 #
 # Exit: 0 headroom above the threshold; 1 a ceiling has bound today or headroom
 # is below it; 2 the check could not run — which must be read as UNKNOWN, never
@@ -37,9 +37,9 @@
 # nothing about them.
 set -euo pipefail
 
-STATUS_URL="${MY_SOCRATIC_APP_STATUS_URL:-https://my-socratic-app-proxy.william-445.workers.dev/status}"
-KEYCHAIN_SERVICE="${MY_SOCRATIC_APP_KEYCHAIN_SERVICE:-my-socratic-app-status}"
-HEADROOM_MIN="${MY_SOCRATIC_APP_HEADROOM_MIN:-0.20}"
+STATUS_URL="${ELENCHUS_STATUS_URL:-https://elenchus-proxy.william-445.workers.dev/status}"
+KEYCHAIN_SERVICE="${ELENCHUS_KEYCHAIN_SERVICE:-elenchus-status}"
+HEADROOM_MIN="${ELENCHUS_HEADROOM_MIN:-0.20}"
 NOTIFIER="${NOTIFIER_BIN:-$HOME/.claude/scripts/notifier.sh}"
 
 JSON_OUTPUT=false
@@ -55,18 +55,18 @@ command -v jq   >/dev/null 2>&1 || { warn "jq not found — cannot run."; exit 2
 # entry: outside the GUI session the login keychain is not in the search list,
 # `security` returns empty, and the request would 405 — reported as UNKNOWN,
 # but for a reason that looks nothing like the real one.
-SECRET="${MY_SOCRATIC_APP_STATUS_SECRET:-}"
+SECRET="${ELENCHUS_STATUS_SECRET:-}"
 if [ -z "$SECRET" ]; then
   SECRET=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null || true)
 fi
 if [ -z "$SECRET" ]; then
-  warn "no status secret (keychain service '$KEYCHAIN_SERVICE', or \$MY_SOCRATIC_APP_STATUS_SECRET)."
+  warn "no status secret (keychain service '$KEYCHAIN_SERVICE', or \$ELENCHUS_STATUS_SECRET)."
   warn "set it with: security add-generic-password -s '$KEYCHAIN_SERVICE' -a \"\$USER\" -w"
   exit 2
 fi
 
 response=$(curl -sS --max-time 20 -w $'\n%{http_code}' \
-  -H "X-My Socratic App-Status: $SECRET" "$STATUS_URL" 2>/dev/null) \
+  -H "X-Elenchus-Status: $SECRET" "$STATUS_URL" 2>/dev/null) \
   || { warn "could not reach $STATUS_URL"; exit 2; }
 
 http_code="${response##*$'\n'}"
@@ -119,7 +119,7 @@ if $JSON_OUTPUT; then
   printf '%s' "$body" | jq -c --arg verdict "$verdict" --argjson status "$status" \
     '{day, binding, headroom, requests, tokens, verdict: $verdict, status: $status}'
 else
-  echo "My Socratic App free tier — UTC day $day"
+  echo "Elenchus free tier — UTC day $day"
   echo
   printf '  %-10s %12s / %-12s\n' "requests" "$req_used" "$req_ceil"
   printf '  %-10s %12s / %-12s\n' "tokens"   "$tok_used" "$tok_ceil"
@@ -140,7 +140,7 @@ if [ "$status" -ne 0 ] && [ -x "$NOTIFIER" ] && ! $JSON_OUTPUT; then
     echo "tokens:   $tok_used / $tok_ceil"
     echo "headroom: ${headroom_pct}% (binding: $binding)"
   } > "$body_file"
-  "$NOTIFIER" "My Socratic App — free tier ceiling" "$body_file" --priorite 4 >/dev/null 2>&1 || true
+  "$NOTIFIER" "Elenchus — free tier ceiling" "$body_file" --priorite 4 >/dev/null 2>&1 || true
   rm -f "$body_file"
 fi
 
