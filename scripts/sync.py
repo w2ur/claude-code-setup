@@ -126,6 +126,120 @@ def discover_files(source: Path, file_map: dict, skip_patterns: list[str]) -> li
     return pairs
 
 
+# ── Private-region redaction ────────────────────────────────────
+
+# A region between these two markers is DROPPED from the published copy,
+# markers included. It exists because the leak this repo has to prevent is no
+# longer only a name: whole paragraphs of ~/.claude/ describe the owner's
+# writing and job-search pipelines, and those pipelines are out of
+# scope for a repo about writing code. `skip` handles a file that is entirely
+# private; this handles the far commoner case of a file that is mostly public
+# with a private section inside it -- scheduled-jobs/SKILL.md is 60% launchd
+# rules anyone can use and 40% a roster of jobs that are not about code.
+#
+# Why markers in the live source and not a rule list here: a regex list would
+# have to be re-tuned every time the owner rewords a paragraph, and it fails
+# OPEN when it drifts. A marker moves with the text it wraps.
+#
+# The token is deliberately comment-syntax-agnostic -- a line merely has to
+# CONTAIN it -- so the same pair works in Markdown, shell, Python, HTML and
+# inside a JS array literal.
+REDACT_BEGIN = "SYNC-PRIVATE:BEGIN"
+REDACT_END = "SYNC-PRIVATE:END"
+
+# A pair that opens AND closes on one line redacts just that span, leaving the
+# rest of the line intact. Without it the only way to drop a clause from the
+# middle of a paragraph is to reflow the paragraph around it, which makes the
+# live file worse to read every time something is marked -- and a mechanism
+# that degrades the source is one the owner stops using. Non-greedy so two
+# pairs on one line stay two pairs.
+#
+# Each marker may be wrapped in an HTML comment, and the wrapper is consumed
+# with it. Marking a clause inside a Markdown paragraph means writing
+# `<!-- BEGIN -->clause<!-- END -->` — the only form that stays invisible when
+# the live file is read as Markdown — and matching the bare tokens alone would
+# publish the leftover `<!--` and `-->`. That exact residue appeared in
+# CLAUDE.md on the first run of this feature.
+_MARKER = r"(?:<!--\s*)?{}(?:\s*-->)?"
+_INLINE_PAIR = re.compile(
+    _MARKER.format(re.escape(REDACT_BEGIN)) + ".*?" + _MARKER.format(re.escape(REDACT_END))
+)
+
+
+class RedactionError(RuntimeError):
+    """A file's private-region markers are unbalanced.
+
+    Fatal on purpose. An unclosed BEGIN would silently truncate a file to its
+    first private section, and a stray END would publish everything above it:
+    both failure modes are invisible in the output, and one of them leaks. The
+    guard fails CLOSED on its own malfunction -- the sync aborts rather than
+    guessing which reading was intended.
+    """
+
+
+def redact(content: str, origin: str = "<content>") -> tuple[str, int]:
+    """Strip every SYNC-PRIVATE region from content.
+
+    Returns (redacted_content, regions_removed). A file with no markers is
+    returned byte-identical, so this is a no-op for the vast majority of
+    synced files.
+    """
+    if REDACT_BEGIN not in content and REDACT_END not in content:
+        return content, 0
+
+    kept: list[str] = []
+    depth = 0
+    regions = 0
+    open_line = 0
+
+    for lineno, raw_line in enumerate(content.splitlines(keepends=True), 1):
+        # Inline pairs go first, so a line carrying a complete pair never
+        # reaches the block logic below and cannot open a phantom region.
+        line, inline_hits = _INLINE_PAIR.subn("", raw_line)
+        if inline_hits and not depth:
+            regions += inline_hits
+            if not line.strip():
+                # The markers wrapped the entire line: treat it as a one-line
+                # block region rather than leaving a blank behind.
+                continue
+            # A marked clause usually sits mid-sentence, so removing it leaves
+            # a doubled space or a space before punctuation. Tidy only what the
+            # removal itself created.
+            line = re.sub(r"  +", " ", line)
+            line = re.sub(r" +([,.;:)])", r"\1", line)
+            kept.append(line)
+            continue
+
+        if REDACT_BEGIN in line:
+            if depth:
+                raise RedactionError(
+                    f"{origin}:{lineno}: nested {REDACT_BEGIN} "
+                    f"(region opened at line {open_line} is still open)"
+                )
+            depth = 1
+            open_line = lineno
+            # Collapse the blank line that preceded the region: without this a
+            # section removed from the middle of a Markdown file leaves a
+            # double blank behind, and the published file stops being a clean
+            # document with a hole in it.
+            if kept and not kept[-1].strip():
+                kept.pop()
+            continue
+        if REDACT_END in line:
+            if not depth:
+                raise RedactionError(f"{origin}:{lineno}: {REDACT_END} with no matching {REDACT_BEGIN}")
+            depth = 0
+            regions += 1
+            continue
+        if not depth:
+            kept.append(line)
+
+    if depth:
+        raise RedactionError(f"{origin}:{open_line}: {REDACT_BEGIN} with no matching {REDACT_END}")
+
+    return "".join(kept), regions
+
+
 # ── Anonymization ───────────────────────────────────────────────
 
 
@@ -134,11 +248,25 @@ def build_replacements(raw: dict) -> list[tuple[str, str]]:
     return sorted(raw.items(), key=lambda kv: len(kv[0]), reverse=True)
 
 
-def anonymize(content: str, replacements: list[tuple[str, str]], patterns: dict | None) -> tuple[str, int]:
+def anonymize(
+    content: str,
+    replacements: list[tuple[str, str]],
+    patterns: dict | None,
+    origin: str = "<content>",
+) -> tuple[str, int]:
     """Apply all anonymization rules to content.
 
-    Returns (anonymized_content, replacement_count).
+    Redaction runs FIRST, before any replacement or regex: a private region is
+    content that must not exist in the published file at all, so there is no
+    point anonymizing text that is about to be deleted -- and running it first
+    means a private paragraph can never be "saved" by a replacement rule that
+    happens to launder it into something that looks publishable.
+
+    Returns (anonymized_content, replacement_count). Redacted regions are NOT
+    counted as replacements: the two are different operations and the caller
+    reports the replacement count per file.
     """
+    content, _regions = redact(content, origin)
     count = 0
 
     # Exact replacements (longest first)
@@ -227,7 +355,7 @@ def generate_hooks_settings(
         return False
 
     content = json.dumps({"hooks": hooks}, indent=2) + "\n"
-    anonymized, _count = anonymize(content, replacements, patterns)
+    anonymized, _count = anonymize(content, replacements, patterns, origin=str(source / "settings.json"))
 
     is_stale = False
     if dry_run:
@@ -425,6 +553,26 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
         log.warning("No files matched the file_map patterns in %s", source)
         return
 
+    # Preflight: validate every source's private-region markers BEFORE writing
+    # anything. Letting the copy loop raise instead would abort halfway through
+    # — some destinations rewritten, the malformed source either truncated or
+    # published whole — and a half-applied sync is the one outcome worse than
+    # no sync at all. redact() is a cheap no-op on the files with no markers,
+    # which is nearly all of them.
+    for src, _dest in pairs:
+        redact(src.read_text(encoding="utf-8"), origin=str(src))
+
+    # The two derived outputs are not in `pairs` and are written after the copy
+    # loop, so they need the same preflight or they reintroduce the half-sync
+    # this guard exists to prevent. Both are optional inputs — generate_guide()
+    # and generate_hooks_settings() already tolerate a missing source — so a
+    # non-existent file is not an error here either.
+    from generate_workflow_guide import LIVE_GUIDE
+
+    for extra in (LIVE_GUIDE, source / "settings.json"):
+        if extra.exists():
+            redact(extra.read_text(encoding="utf-8"), origin=str(extra))
+
     total_replacements = 0
     copied = 0
     stale = 0
@@ -438,7 +586,7 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
         rel_dest = dest.relative_to(REPO_ROOT)
 
         content = src.read_text(encoding="utf-8")
-        anonymized, count = anonymize(content, replacements, patterns)
+        anonymized, count = anonymize(content, replacements, patterns, origin=str(src))
         total_replacements += count
 
         if dry_run:
@@ -590,7 +738,17 @@ def main() -> None:
     if args.audit_only:
         run_audit_only(config)
     else:
-        run_sync(args.source, config, dry_run=args.dry_run)
+        try:
+            run_sync(args.source, config, dry_run=args.dry_run)
+        except RedactionError as exc:
+            # Exit 2 in the portfolio convention: the sync could NOT run, which
+            # is not the same as "nothing to do". Half a sync is the dangerous
+            # outcome here — some files rewritten, the malformed one either
+            # truncated or published whole — so this aborts rather than
+            # skipping the offending file and carrying on.
+            log.error("Unbalanced private-region markers: %s", exc)
+            log.error("Fix the markers in the live source; nothing was published.")
+            sys.exit(2)
 
 
 if __name__ == "__main__":

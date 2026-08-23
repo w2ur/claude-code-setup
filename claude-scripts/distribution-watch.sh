@@ -6,10 +6,10 @@
 # proposes "what should I post next". That solves a problem the portfolio does
 # not have: on 2026-08-08 the launch journal in
 # {portfolio-site}/strategy/strategie-visibilite.md already held FIVE
-# decided-but-unexecuted launches from a single day in August — two Reddit
-# posts, a LinkedIn post and a newsletter issue, all still "à poster". The
-# owner has since stated plainly that the social channels will never happen.
-# Generating more candidates would only lengthen a list nobody works from.
+# decided-but-unexecuted launches from a single day in August, all still
+# "à poster". The owner has since stated plainly that the social channels will
+# never happen. Generating more candidates would only lengthen a list nobody
+# works from.
 #
 # So this checks STATE, not ideas. Every channel below is one the owner can
 # complete without maintaining a social presence: publish once, indexed

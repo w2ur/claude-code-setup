@@ -79,6 +79,14 @@ audit_patterns:
   - 'board-game-thing'
   # Mirror the lookahead so the public `trader-core` never trips the audit.
   - '\btrader\b(?!-)'
+  # Name every out-of-scope pipeline here too, not just in `skip`. `skip` and
+  # the SYNC-PRIVATE markers stop what you thought of; this catches what you
+  # did not — a new script, a paragraph added above a marker, a plugin name
+  # dropped into a command's prose. Pick terms that are coined or unambiguous:
+  # a common word here keeps the audit permanently red, which trains you to
+  # ignore it.
+  - 'my-writing-pipeline'
+  - 'my-job-search'
 
 skip:
   # The repo's hooks/README.md is owner-maintained and exempt from orphan
@@ -90,6 +98,13 @@ skip:
   # suite that cannot run — and the fixtures themselves are the most likely
   # thing in a hook directory to hold private data.
   - 'hooks/**/test_*.py'
+  # DECIDE WHAT THIS REPO IS ABOUT, then skip everything else. `plugins/**`
+  # below keeps a personal-workflow plugin's skills and commands out — but a
+  # plugin is usually driven by a plain script in ~/.claude/scripts/, and the
+  # 'scripts/*.sh' mapping sweeps that in regardless. List those scripts here
+  # by name. A file that is only PARTLY out of scope belongs in neither list:
+  # wrap the private part in SYNC-PRIVATE markers instead (see sync.py).
+  - 'scripts/personal-pipeline-*.sh'
   - 'agent-memory/**'
   - 'plans/**'
   - 'projects/**'

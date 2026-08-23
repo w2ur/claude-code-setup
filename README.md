@@ -41,6 +41,10 @@ This repo is that system, anonymized and documented. It's opinionated because op
 
 As Boris Cherny, who created Claude Code, [put it](https://x.com/bcherny/status/2021699851499798911): "Every engineer uses their tools differently." This is my way.
 
+### What this repo is *not*
+
+Everything here is about writing code. I run other Claude Code automation that isn't — a writing pipeline and a job search — and none of it is published, deliberately: those plugins, their skills, and the scripts that drive them are excluded at the source, and the sync script refuses to publish a file that carries them. If you spot a reference to something that isn't in this repo, that's why. What you see is the whole of the code-facing half, not a sample of a larger whole.
+
 ## What's Inside
 
 ```
