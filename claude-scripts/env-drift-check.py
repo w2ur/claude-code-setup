@@ -15,7 +15,7 @@
 #
 # `dependencies = []` is deliberate and load-bearing, not boilerplate: it is
 # what keeps this an offline, no-install run. Adding a dependency here would
-# make a scheduled my-monitoring-app collector reach the network on a cold cache.
+# make a scheduled vigie collector reach the network on a cold cache.
 """Portfolio env-var drift check — no model, deterministic.
 
 Compares the env vars each repo's code actually READS against how they are DOCUMENTED.

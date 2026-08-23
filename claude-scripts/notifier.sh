@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # notifier.sh — pousse un message vers le canal de notification de {author-first-name} (ntfy).
 #
-# Générique à dessein : model-watch.sh, gate-watch.sh et my-socratic-app-watch.sh
+# Générique à dessein : model-watch.sh, gate-watch.sh et elenchus-watch.sh
 # sortent 1 sur des trouvailles que personne ne lit autrement. Un seul canal,
 # une seule redaction, un seul endroit où le sujet est écrit.
 #

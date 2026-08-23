@@ -129,7 +129,7 @@ esac
 
 # The build is now conditional rather than mandatory. Until 2026-08-05 a missing
 # `build` script exited the whole gate at this point, so a repo with tests and no
-# build — `my-socratic-app-proxy` is exactly that shape — was never gated on anything.
+# build — `elenchus-proxy` is exactly that shape — was never gated on anything.
 OUTPUT=""
 if [ -n "$BUILD_CMD" ]; then
   OUTPUT=$(cd "$dir" && npm run build --if-present 2>&1)
