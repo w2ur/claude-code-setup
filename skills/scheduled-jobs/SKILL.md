@@ -46,7 +46,7 @@ an argument to an interpreter bypasses the one place its dependencies are declar
 
 **A binary guard does not cover a project's installed dependencies.** Guards check
 `node`, not `node_modules`. A 2026-08 disk sweep deleted 16 repos' `node_modules`;
-every guarded binary was still present, so `vigie-refresh` ran, regenerated
+every guarded binary was still present, so `my-monitoring-app-refresh` ran, regenerated
 `snapshot.json`, then died in `astro build`. The visible result was the worst shape
 available: **a fresh snapshot behind a frozen `dist/`**, the panel answering with
 numbers that looked current. **Before deleting a dependency directory, list which
@@ -88,7 +88,7 @@ empty catalogue as everything having been delisted.
 **`devlog-collect`** — the plist executes `collect.py` directly so its `uv run
 --script` shebang selects the interpreter. See the FDA note above.
 
-**`vigie-refresh`** — the only scheduled job whose script lives in a project repo
+**`my-monitoring-app-refresh`** — the only scheduled job whose script lives in a project repo
 (it builds that project), so `/sync-setup` does not cover it. Guards on
 **`node`/`npm`/`git` only, fatal exit 2**: without those no snapshot exists at all.
 **`gh` and `uv` are deliberately NOT fatal.** Each feeds exactly one collector, and
@@ -102,7 +102,7 @@ was manufacturing one.** It `cd`s into the repo first, deliberately: Astro resol
 its content-collection base against the cwd of `astro build`, and a scheduled job
 runs with cwd `$HOME`, which would silently collect zero documents rather than fail.
 
-**`vigie-serve`** — the only agent with `RunAtLoad` and `KeepAlive` both true. It
+**`my-monitoring-app-serve`** — the only agent with `RunAtLoad` and `KeepAlive` both true. It
 only serves the static `dist/` the refresh agent built: **the refresh agent owns the
 data and this one only shows it**, because a server that also refreshed would make
 the panel's age depend on when a browser was last opened. Port 7707 is pinned

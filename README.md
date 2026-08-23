@@ -67,9 +67,15 @@ Everything here is about writing code. I run other Claude Code automation that i
 │                                                           │
 │  ┌────────────┐  ┌──────────────────────────────────┐     │
 │  │   Memory   │  │  Skills                          │     │
-│  │ per agent  │  │  • portfolio-conventions (preload)│    │
-│  │ per project│  │  • scheduled-jobs (on demand)    │     │
-│  └────────────┘  └──────────────────────────────────┘     │
+│  │ per agent  │  │  portfolio-conventions (preload) │     │
+│  │ per project│  │  ── the rest load on demand ──   │     │
+│  └────────────┘  │  scheduled-jobs                  │     │
+│                  │  claude-md-hygiene               │     │
+│                  │  python-uv                       │     │
+│                  │  ci-and-branch-protection        │     │
+│                  │  testing-conventions             │     │
+│                  │  memory-and-plans                │     │
+│                  └──────────────────────────────────┘     │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
@@ -126,14 +132,21 @@ The model selection matters. I don't pay opus prices for a compliance check that
 </details>
 
 <details>
-<summary><strong>Skills (2)</strong> — preloaded knowledge and user-invocable utilities</summary>
+<summary><strong>Skills (7)</strong> — preloaded knowledge and user-invocable utilities</summary>
 
 <br>
 
 - **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, the three-layer inventory that replaced the per-repo manifest, quality gates, display order). Loaded into `troubleshooter` and `portfolio-sync`.
-- **scheduled-jobs**: why each scheduled job exists, at the hour it is scheduled, and which plausible "fixes" are wrong — the login-keychain trap outside a GUI session, per-job PATH, the 0/1/2 exit convention. User-invocable, loaded on demand rather than preloaded: it costs nothing until you touch a scheduled job. Current state is derived by `claude-scripts/jobs-inventory.sh`, never written into the skill — the prose version of that inventory drifted three times before it was replaced by a script.
+- **scheduled-jobs**: why each scheduled job exists, at the hour it is scheduled, and which plausible "fixes" are wrong — the login-keychain trap outside a GUI session, per-job PATH, the 0/1/2 exit convention. Current state is derived by `claude-scripts/jobs-inventory.sh`, never written into the skill — the prose version of that inventory drifted repeatedly before it was replaced by a script.
+- **claude-md-hygiene**: how to cut a CLAUDE.md without losing a fact — the four-bucket taxonomy (guard / instruction / domain knowledge / archaeology), the trigger-line shape without which an extracted skill never loads, the `.gitignore` prerequisite, and the line-coverage check that must be made to fail once before its silence counts as evidence.
+- **python-uv**: why `uv` is the only Python manager here, where the enforcement actually lives (a config file, emphatically not a shell rc — a scheduled job never sources one), and which plausible "fixes" are wrong.
+- **ci-and-branch-protection**: the zero-coverage hole in an aggregate CI job (`jq 'all(.[]; …)'` over an empty set returns `true`, so the obvious gate reports success on nothing), why branch protection is advisory on a private repo on the free tier, and the three traps that permanently deadlock a solo merge.
+- **testing-conventions**: the regression-test comment format, property-test setup, the financial-math tolerance that was measured too tight at `1e-10`, and the measured blind spots of a green suite.
+- **memory-and-plans**: how the two memory systems resolve on disk, why per-agent stores are project-scoped and must never be consolidated upward or committed.
 
-The other four skills I used to run here are gone — their content was either already inferable by the agents that needed it, or better placed directly in the global CLAUDE.md's quality section, where it can't drift out of sync with a separate file.
+The first two are the survivors of an earlier, larger set; the rest arrived the other way round. Everything after `scheduled-jobs` was **extracted from the global CLAUDE.md**, which is billed into every session under it and had grown past the point where that was worth paying. The rule that decides the split: a **guard** — anything that stops a wrong action, including "this looks like an obvious improvement but was measured to be wrong" — stays in CLAUDE.md; the **measurement behind it**, the falsifying control and the retraction story move into a skill. `claude-scripts/claude-md-weight.sh` measures the result and owns the threshold, so no number here can drift.
+
+Each extracted skill is reached from CLAUDE.md by a line naming the skill *and* the situation that should trigger it. A bare "see the X skill" does not fire — nothing loads it.
 
 Why skills instead of just writing longer agent prompts? Because skills are reusable across agents, versionable independently, and don't bloat agents that don't need them.
 

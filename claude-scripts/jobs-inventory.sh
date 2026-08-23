@@ -10,7 +10,7 @@
 # Same principle as build-inventory.mjs observing the portfolio, gate-watch.sh
 # discovering repos from `gh search prs`, and model-watch.sh discovering models
 # from wrangler.toml: nothing hand-typed, so nothing can go stale. The REASONS
-# each job exists — why 05:57 and not 06:00, why vigie-serve must not refresh,
+# each job exists — why 05:57 and not 06:00, why my-monitoring-app-serve must not refresh,
 # why midas-ohlcv-bridge must never be kickstarted — are judgment and cannot be
 # derived; they live in the `scheduled-jobs` skill, loaded only when relevant.
 #
