@@ -7,6 +7,27 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 
 Sync the claude-code-setup repo from the live ~/.claude/ configuration.
 
+## The rule that governs every step below
+
+**The arrow only points one way: `~/.claude/` → the repo.** Everything under
+`commands/`, `agents/`, `skills/`, `hooks/` and `claude-scripts/` is generated,
+so fixing something by editing the repo's copy accomplishes nothing — the next
+sync reverts it, and until 2026-08-23 it did so silently. `sync.py` now refuses
+(exit 2) when a destination matches neither the incoming content nor HEAD,
+which is what a hand edit looks like; `--allow-dirty` discards them on purpose.
+
+The same applies to the `SYNC-PRIVATE` markers (the `BEGIN` / `END` pair), which
+drop a private section from the published copy: **they belong in the live
+file**, never in the repo. Every run reports how many regions it removed and
+from where — if that count drops unexpectedly, a marker was lost in an edit to
+the live source. Note this file deliberately never spells the pair out
+contiguously: it is a sync SOURCE, so a literal marker here would be read as a
+real one. `scripts/README.md` in the repo is owner-maintained, never synced, and
+carries the full syntax.
+
+Owner-maintained files are the exception and are never synced: `README.md`,
+`docs/`, `hooks/README.md`, `claude-scripts/README.md`, root-level files.
+
 ## Step 1: Run sync.py
 
 ```bash
@@ -14,6 +35,10 @@ cd ~/Dev/claude-code-setup && ./scripts/sync.py $0
 ```
 
 If `$0` is `--dry-run` or `--audit-only`, stop after this step.
+
+If it exits 2 refusing to overwrite hand edits, do not reach for
+`--allow-dirty` first. Read the named files: the change they carry is usually
+one that belongs in `~/.claude/`, and porting it there is the fix.
 
 ## Step 2: Verify stale-file cleanup
 

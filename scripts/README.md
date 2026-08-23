@@ -76,24 +76,84 @@ uv run --with pytest --with PyYAML pytest scripts/ -q
 runtime dependency list for people running the sync, and adding a test-only
 package would make every such person install it.
 
+## The direction of the arrow
+
+**Everything under a synced root is generated.** `commands/`, `agents/`,
+`skills/`, `hooks/` and `claude-scripts/` are an image of `~/.claude/`; the live
+file is the only input. Editing the repo's copy feels like it works — the file
+changes, the tests pass, the diff reads right — and the next sync reverts it,
+because nothing ever read it.
+
+The sync refuses to do that silently. Before writing anything it compares each
+destination against **both** the content it is about to write and the content
+committed at HEAD, and stops with exit 2 if a file matches neither, which is
+what a hand edit looks like. Dirtiness alone is not the signal: a real sync
+leaves every destination dirty until you review and commit, and re-running must
+stay free. `--allow-dirty` overrides it, for the one honest case — deliberately
+throwing those edits away.
+
+So: make the change in `~/.claude/`, then re-run. The owner-maintained files
+(`README.md`, `docs/`, `hooks/README.md`, `claude-scripts/README.md`,
+root-level files) are the exception — they are edited here and never synced.
+
+## Private regions
+
+Some live files are mostly publishable with a section that is not. A region
+between `SYNC-PRIVATE:BEGIN` and `SYNC-PRIVATE:END` is dropped from the
+published copy, markers included:
+
+```markdown
+Public sentence that stays.
+<!-- SYNC-PRIVATE:BEGIN -->
+A paragraph that never reaches the repo.
+<!-- SYNC-PRIVATE:END -->
+```
+
+A pair that opens and closes on one line cuts just that span, so a single
+clause can be removed from the middle of a sentence without reflowing the
+paragraph. The tokens work in any comment syntax — a line only has to contain
+one — and an HTML-comment wrapper is consumed along with the marker.
+
+Two properties worth knowing. **The markers live in the live source**, never in
+the repo, which is the same rule as above: a marker added to the repo's copy
+does nothing at all. And **unbalanced markers are fatal** — an unclosed BEGIN
+would truncate a file invisibly, a stray END would publish everything above it,
+so the sync validates every source up front and aborts before writing anything.
+Every run reports how many regions it removed and from which files, because a
+deletion nobody is told about is indistinguishable from a file that was never
+marked.
+
+Use `skip` instead when the whole file is private; markers are for a private
+section inside a public file.
+
+One consequence: a live file that *documents* this mechanism cannot spell the
+marker pair out contiguously, because the sync would read it as a real marker.
+The failure is loud and safe — an unbalanced pair aborts the run before
+anything is written — but it is why `~/.claude/commands/sync-setup.md` refers to
+them obliquely and this file, which is owner-maintained and never synced, can
+show them in full.
+
 ## How it works
 
 1. Reads `anonymization.yaml` for replacement rules
 2. Copies files from `~/.claude/` matching the `file_map` patterns
-3. Applies exact string replacements (longest first, to avoid partial matches)
-4. Applies regex patterns for catch-all rules (paths, emails)
-5. Regenerates the `docs/workflow-guide.html` DATA arrays (commands, agents,
+3. Strips `SYNC-PRIVATE` regions, before any replacement runs — so a private
+   paragraph cannot be laundered into something publishable by a rule that
+   happens to match it
+4. Applies exact string replacements (longest first, to avoid partial matches)
+5. Applies regex patterns for catch-all rules (paths, emails)
+6. Regenerates the `docs/workflow-guide.html` DATA arrays (commands, agents,
    skills, hooks) from live config via `generate_workflow_guide.py`, preserving
    the hand-written French and English descriptions and flagging genuinely new
    entries
-6. Prunes orphaned repo files under synced roots (`commands/`, `agents/`,
+7. Prunes orphaned repo files under synced roots (`commands/`, `agents/`,
    `skills/`, `hooks/`, `claude-scripts/`) whose live source has disappeared
-7. Runs an audit: greps all output files (`.md`, `.html`, `.yml`, `.yaml`,
+8. Runs an audit: greps all output files (`.md`, `.html`, `.yml`, `.yaml`,
    `.sh`, `.json`) for patterns that should not survive. Gitignored paths are
    skipped — they can never be pushed — and so are the owner-maintained
    `README.md` and `LICENSE`, whose real name and links are deliberate. Without
    those two exclusions the gate is red on a clean tree, which makes it useless
-8. Prints a summary and `git diff --stat` — you review and commit manually
+9. Prints a summary and `git diff --stat` — you review and commit manually
 
 ## Adapting to your setup
 
