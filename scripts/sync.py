@@ -448,6 +448,93 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     return warnings
 
 
+# ── Hand-edit guard ─────────────────────────────────────────────
+
+
+class HandEditError(RuntimeError):
+    """A synced destination carries edits the sync is about to destroy."""
+
+
+def check_no_hand_edits(
+    pairs: list[tuple[Path, Path]],
+    replacements: list[tuple[str, str]],
+    patterns: dict | None,
+) -> None:
+    """Refuse to overwrite a destination that was edited by hand.
+
+    Every file under a synced root is GENERATED. Editing the repo's copy of one
+    feels like it works — the file changes, the tests pass, the diff looks
+    right — and the next sync silently reverts it, because the live file in
+    ~/.claude/ is the only input. Nothing warned; the loss left no trace. This
+    is the single most likely way for a fix to be quietly lost, and it is the
+    same trap for a private-region marker: markers belong in the live source,
+    so adding one to the repo copy accomplishes nothing at all.
+
+    The test has to survive the normal workflow, where a real sync leaves every
+    destination dirty until the owner reviews and commits. So dirtiness alone
+    is not the signal. A destination is flagged only when its content matches
+    NEITHER what this sync would write NOR what is committed at HEAD:
+
+      == incoming        a previous sync produced it. Fine, re-runs are cheap.
+      == HEAD            untouched; the live source moved. Fine, that is a sync.
+      neither            someone typed into it. That is what gets destroyed.
+
+    Raises HandEditError listing every offender. `--allow-dirty` overrides,
+    for the one legitimate case: deliberately discarding such edits.
+    """
+    committed = _head_blobs({dest for _src, dest in pairs})
+    if committed is None:
+        return  # not a git repo, or git unavailable: nothing to compare against
+
+    offenders: list[str] = []
+    for src, dest in pairs:
+        if not dest.exists():
+            continue
+        try:
+            current = dest.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        incoming, _ = anonymize(
+            src.read_text(encoding="utf-8"), replacements, patterns, origin=str(src)
+        )
+        if current == incoming:
+            continue
+        rel = str(dest.relative_to(REPO_ROOT))
+        if committed.get(rel) == current:
+            continue
+        offenders.append(rel)
+
+    if offenders:
+        raise HandEditError(
+            "these destinations differ from both the incoming content and HEAD, "
+            "so they carry hand edits a sync would destroy:\n  "
+            + "\n  ".join(sorted(offenders))
+        )
+
+
+def _head_blobs(dests: set[Path]) -> dict[str, str] | None:
+    """Map repo-relative path -> committed content at HEAD, for `dests`."""
+    out: dict[str, str] = {}
+    for dest in dests:
+        try:
+            rel = str(dest.relative_to(REPO_ROOT))
+        except ValueError:
+            continue
+        try:
+            blob = subprocess.run(
+                ["git", "show", f"HEAD:{rel}"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if blob.returncode == 0:
+            out[rel] = blob.stdout
+    return out
+
+
 # ── Orphan pruning ──────────────────────────────────────────────
 
 
@@ -530,7 +617,7 @@ def prune_orphans(produced_dests: set[Path], file_map: dict, dry_run: bool) -> i
 # ── Main operations ─────────────────────────────────────────────
 
 
-def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
+def run_sync(source: Path, config: dict, dry_run: bool = False, allow_dirty: bool = False) -> None:
     """Copy files from source to repo, applying anonymization."""
     replacements = build_replacements(config["replacements"])
     patterns = config.get("patterns")
@@ -573,7 +660,22 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
         if extra.exists():
             redact(extra.read_text(encoding="utf-8"), origin=str(extra))
 
+    if not dry_run and not allow_dirty:
+        check_no_hand_edits(pairs, replacements, patterns)
+
     total_replacements = 0
+    total_regions = 0
+    redacted_files: dict[str, int] = {}
+
+    # The guide is written by generate_guide(), not by the copy loop, so its
+    # regions have to be counted here or the summary would under-report — and a
+    # redaction summary that silently omits a file is worse than none, since it
+    # reads as "that file has no markers".
+    if LIVE_GUIDE.exists():
+        _, _guide_regions = redact(LIVE_GUIDE.read_text(encoding="utf-8"), origin=str(LIVE_GUIDE))
+        if _guide_regions:
+            redacted_files["docs/workflow-guide.html"] = _guide_regions
+            total_regions += _guide_regions
     copied = 0
     stale = 0
 
@@ -586,6 +688,10 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
         rel_dest = dest.relative_to(REPO_ROOT)
 
         content = src.read_text(encoding="utf-8")
+        _, regions = redact(content, origin=str(src))
+        if regions:
+            redacted_files[str(rel_dest)] = regions
+            total_regions += regions
         anonymized, count = anonymize(content, replacements, patterns, origin=str(src))
         total_replacements += count
 
@@ -653,6 +759,14 @@ def run_sync(source: Path, config: dict, dry_run: bool = False) -> None:
         log.info("  DRY RUN — no files written")
     log.info("  Files:        %d", len(pairs) if dry_run else copied)
     log.info("  Replacements: %d", total_replacements)
+    # Reported unconditionally, including the 0. Redaction deletes content,
+    # and a deletion nobody is told about is indistinguishable from a file
+    # that was never marked -- which is exactly how a marker lost to an edit
+    # in the live source would go unnoticed.
+    log.info("  Redacted:     %d private region(s) in %d file(s)",
+             total_regions, len(redacted_files))
+    for rel, n in sorted(redacted_files.items()):
+        log.info("    - %s (%d)", rel, n)
     log.info("  Orphans:      %d %s", orphan_count, "(would delete)" if dry_run else "(deleted)")
     if dry_run:
         # Single staleness signal, covering mapped files and the generated guide.
@@ -720,6 +834,14 @@ def main() -> None:
         help="Run audit on existing repo files without syncing.",
     )
     parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help=(
+            "Overwrite synced destinations even when they carry hand edits. "
+            "Only for deliberately discarding those edits."
+        ),
+    )
+    parser.add_argument(
         "--source",
         type=Path,
         default=DEFAULT_SOURCE,
@@ -739,7 +861,18 @@ def main() -> None:
         run_audit_only(config)
     else:
         try:
-            run_sync(args.source, config, dry_run=args.dry_run)
+            run_sync(args.source, config, dry_run=args.dry_run, allow_dirty=args.allow_dirty)
+        except HandEditError as exc:
+            # Exit 2: could not run. The edits are still on disk, which is the
+            # whole point — the previous behaviour destroyed them and said
+            # nothing.
+            log.error("Refusing to sync: %s", exc)
+            log.error(
+                "Those files are GENERATED. Make the change in the live "
+                "~/.claude/ source instead, then re-run. To discard them and "
+                "sync anyway: --allow-dirty"
+            )
+            sys.exit(2)
         except RedactionError as exc:
             # Exit 2 in the portfolio convention: the sync could NOT run, which
             # is not the same as "nothing to do". Half a sync is the dangerous

@@ -13,6 +13,7 @@ Run with: pytest scripts/test_sync.py
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -267,3 +268,99 @@ def test_redact_consumes_the_html_comment_wrapper_around_an_inline_pair():
     # `<!--` and `-->` fragments behind in the published CLAUDE.md.
     out, _ = redact("Ten plugins (<!-- SYNC-PRIVATE:BEGIN -->names, <!-- SYNC-PRIVATE:END -->the roster).\n")
     assert out == "Ten plugins (the roster).\n"
+
+
+# ── Hand-edit guard ─────────────────────────────────────────────
+#
+# The trap: every file under a synced root is generated, so editing the repo's
+# copy feels like it works and the next sync silently reverts it. These pin the
+# three-way comparison that catches it without breaking the normal workflow,
+# where a real sync leaves every destination dirty until the owner commits.
+
+
+def _repo(tmp_path, monkeypatch):
+    """A tiny git repo standing in for the real one, plus a live source."""
+    source = tmp_path / "live"
+    (source / "commands").mkdir(parents=True)
+    repo = tmp_path / "repo"
+    (repo / "commands").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=repo, check=True)
+    monkeypatch.setattr(sync, "REPO_ROOT", repo)
+    # These destinations are module-level constants derived from REPO_ROOT at
+    # import time, so moving REPO_ROOT alone leaves them pointing at the real
+    # repo and prune/relative_to blow up on a path outside the fixture tree.
+    monkeypatch.setattr(sync, "HOOKS_SETTINGS_DEST", repo / "hooks" / "settings.hooks.json")
+    monkeypatch.setattr(sync, "HOOKS_README_DEST", repo / "hooks" / "README.md")
+    monkeypatch.setattr(sync, "CLAUDE_SCRIPTS_README_DEST", repo / "claude-scripts" / "README.md")
+    monkeypatch.setattr(guide, "REPO_ROOT", repo)
+    monkeypatch.setattr(guide, "DEST_GUIDE", repo / "docs" / "workflow-guide.html")
+    return source, repo
+
+
+def _commit(repo):
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=repo, check=True)
+
+
+def _sync(source, repo, **kw):
+    sync.run_sync(source, {"replacements": {}, "file_map": {"commands/*.md": "commands/"}}, **kw)
+
+
+def test_sync_blocks_when_a_destination_was_hand_edited(tmp_path, monkeypatch):
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "a.md").write_text("from live\n", encoding="utf-8")
+    _sync(source, repo)
+    _commit(repo)
+
+    (repo / "commands" / "a.md").write_text("typed by hand\n", encoding="utf-8")
+    with pytest.raises(sync.HandEditError, match="commands/a.md"):
+        _sync(source, repo)
+    # The edit survives: destroying it silently is the bug being fixed.
+    assert (repo / "commands" / "a.md").read_text(encoding="utf-8") == "typed by hand\n"
+
+
+def test_allow_dirty_overrides_the_guard(tmp_path, monkeypatch):
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "a.md").write_text("from live\n", encoding="utf-8")
+    _sync(source, repo)
+    _commit(repo)
+
+    (repo / "commands" / "a.md").write_text("typed by hand\n", encoding="utf-8")
+    _sync(source, repo, allow_dirty=True)
+    assert (repo / "commands" / "a.md").read_text(encoding="utf-8") == "from live\n"
+
+
+def test_guard_does_not_fire_on_an_uncommitted_previous_sync(tmp_path, monkeypatch):
+    # The workflow that must keep working: sync, look at the diff, sync again
+    # before committing. Every destination is dirty and none of it is an edit.
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "a.md").write_text("v1\n", encoding="utf-8")
+    _sync(source, repo)
+    _commit(repo)
+
+    (source / "commands" / "a.md").write_text("v2\n", encoding="utf-8")
+    _sync(source, repo)          # destination now dirty, matches incoming
+    _sync(source, repo)          # must not raise
+    assert (repo / "commands" / "a.md").read_text(encoding="utf-8") == "v2\n"
+
+
+def test_guard_does_not_fire_when_only_the_live_source_moved(tmp_path, monkeypatch):
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "a.md").write_text("v1\n", encoding="utf-8")
+    _sync(source, repo)
+    _commit(repo)
+
+    (source / "commands" / "a.md").write_text("v2\n", encoding="utf-8")
+    _sync(source, repo)  # destination == HEAD, incoming differs: an ordinary sync
+    assert (repo / "commands" / "a.md").read_text(encoding="utf-8") == "v2\n"
+
+
+def test_guard_is_skipped_on_a_dry_run(tmp_path, monkeypatch):
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "a.md").write_text("from live\n", encoding="utf-8")
+    _sync(source, repo)
+    _commit(repo)
+    (repo / "commands" / "a.md").write_text("typed by hand\n", encoding="utf-8")
+    _sync(source, repo, dry_run=True)  # a preview writes nothing, so it destroys nothing
