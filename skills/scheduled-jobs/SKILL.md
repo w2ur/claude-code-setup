@@ -60,6 +60,12 @@ that happened.
 
 ## Wrong beliefs a future session will re-derive on its own
 
+**An assumed quota-reset date is not a measured one.** The 2026-08-18 session
+recorded 2026-09-17 as the reset; the real reset was 2026-09-01, found only by
+watching a previously quota-blocked run turn green. Also: a **public** repo is
+off the included-minutes meter entirely, so a repo flipping public silently
+removes it from any burn projection.
+
 **Do not grant Full Disk Access to `uv`.** TCC's `kTCCServiceSystemPolicyAllFiles`
 table contains **no row for `uv` at all** — the grant has never existed — and
 `devlog-collect` runs to exit 0 in ~10 s writing onto the Drive. `rclone`
@@ -84,6 +90,17 @@ rather than a skip**, so a missing interpreter cannot be mistaken for a quiet we
 is worse than a degraded one: OpenRouter validates the whole `models` array up front,
 so one stale entry 400s a request the primary could have served. Refuses to read an
 empty catalogue as everything having been delisted.
+**Two discovery sources, because one missed an outage**: `wrangler.toml` chains, and
+`url:`/`model:` literal pairs in Netlify functions — my-bias-app's Groq model sat in a
+`.ts` constant, was retired on 2026-08-16, and 502'd for two weeks unseen. Groq has
+no public free catalogue, so its ids are checked against the public deprecations
+page, reading **only the first `<code>` of each table row** — the third column is
+the *replacement*, and a whole-page substring grep flagged the replacement as
+retired on its first run. Its falsifying control is that the retired set still
+contains `llama-3.3-70b-versatile`; otherwise exit 2. **Here-strings, not pipes,
+for the membership tests**: under `pipefail`, `grep -q` closing the pipe on its
+first match gives `printf` a SIGPIPE on a large string, and that "failed" pipeline
+reads as *not found* — a false negative, the silent kind.
 
 **`devlog-collect`** — the plist executes `collect.py` directly so its `uv run
 --script` shebang selects the interpreter. See the FDA note above.
@@ -135,13 +152,13 @@ awesome-list PRs, the Chrome Web Store listing. Reports state, never proposes
 content, and checks for an already-open PR before naming "open a PR" as an action.
 The 3rd and 17th rather than the 1st and 15th, which are taken at 08:07.
 
-**`gha-bridge.*` / `act-local` / `midas-ohlcv-bridge`** — the local bridge family
-built while the GitHub Actions included-usage meter is exhausted. **The first two
-expire when the quota resets; check the date before treating them as permanent.**
-`midas-ohlcv-bridge` fetches OHLCV rows, commits and **pushes to `{github-username}/my-trading-app`** — the
-only scheduled job that writes to a remote, so **never `launchctl kickstart` it to
-"test" anything**. It is also the only one invoked through a login shell, which is
-why `~/.profile`'s dead first line prints in its log every run.
+**`midas-ohlcv-bridge`** (retired 2026-09-04) — the last of the quota-outage
+bridges, and the only scheduled job that ever wrote to a remote. It outlived the
+reset on purpose: while my-trading-app main carried a required status check, hosted
+`fetch-ohlcv` could not push and this bridge, under the owner's credentials, was
+the only OHLCV writer. It was retired only after the check was removed and a
+hosted run had pushed once. **Do not rebuild it** — my-trading-app is public and
+unmetered, so a hosted job is strictly better than one that needs this Mac awake.
 
 ## Third-party agents
 
