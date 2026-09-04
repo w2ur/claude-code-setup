@@ -3,8 +3,8 @@ name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
 about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, 2 blocking hooks included."
-facts_fr: "7 commandes, 6 agents, 4 hooks — dont 2 bloquants."
-facts_en: "7 commands, 6 agents, 4 hooks — 2 of them blocking."
+facts_fr: "8 commandes, 6 agents, 4 hooks — dont 2 bloquants."
+facts_en: "8 commands, 6 agents, 4 hooks — 2 of them blocking."
 ---
 
 <div align="center">
@@ -97,13 +97,14 @@ Everything here is about writing code. I run other Claude Code automation that i
 <sub>The guide, on the scenario I run most: triage the environment first, then a one-way L1 → L2 → L3 escalation, then a regression test written before the fix.</sub>
 
 <details>
-<summary><strong>Commands (7)</strong> — entry points that orchestrate everything</summary>
+<summary><strong>Commands (8)</strong> — entry points that orchestrate everything</summary>
 
 <br>
 
 | Command | What it does | When to use it |
 |---------|-------------|----------------|
 | `/sync` | Validates the stories collection frontmatter across the portfolio hub | Weekly maintenance |
+| `/brief` | Aggregates every tracked source into one queue, names the commands that would clear it, runs none of them | Morning check-in |
 | `/audit` | Parallel docs-checker + portfolio-audit | Before releases, compliance sweeps |
 | `/new-app` | Full scaffold with portfolio compliance from day one | Starting a new project |
 | `/next` | Executes the next unblocked task from a multi-phase plan track, then stops | One session per phase of a large plan |

@@ -56,28 +56,39 @@ the zero-cost policy stands.
 repo. Run a **known-unprotected control alongside**, or the empty result tells you
 nothing.
 
-### `my-trading-app` is public and IS protected
+### `my-trading-app` is public — its required check broke the desk
 
-Its exact configuration, so a future session does not "improve" it:
+Measured 2026-09-04: `my-trading-app` main carries **classic** branch protection (not a
+ruleset) requiring the `gate` check, bound to app_id 15368, `strict: false`,
+`enforce_admins: false`, no required reviews, force-push and deletion off.
+`enforce_admins: false` lets the **owner's** pushes through
+("Bypassed rule violations") — but `github-actions[bot]` is an Integration, not
+an admin, and every scheduled writer that pushes to main was rejected at the
+push step with `GH006: Protected branch update failed ... Required status
+check "gate" is expected`, its commit lost with the runner. The 2026-08-21 note
+predicted exactly this for rulesets and left it untested; classic protection
+behaves the same.
 
-- required check: **`gate` alone**, bound to **app_id 15368** so another app's
-  same-named status cannot satisfy it
-- `strict: false`
-- `enforce_admins: false`
-- no required reviews
-- force-push and deletion off
+**The required check was removed on 2026-09-04** (force-push and deletion
+protection stay) and the next hosted `fetch-ohlcv` run pushed on its first
+attempt. Gate stays advisory, as the 08-21 note concluded. The removal went
+through the repo-settings API, which **the owner runs by hand**
+(`gh api -X DELETE repos/{github-username}/my-trading-app/branches/main/protection/required_status_checks`)
+— **do not attempt it.** my-trading-app now keeps only force-push/deletion protection,
+no required check at all; a required check on main means every bot-pushed
+writer is broken.
 
 ### Three traps on a solo account
 
 1. **Never require PR reviews.** The author cannot approve their own PR, and the
    merge deadlocks **permanently**.
-2. **Keep `enforce_admins` false.** Otherwise required checks also block the direct
-   pushes to `main` this repo deliberately makes.
+2. **A required check blocks the bot, not the owner.** `enforce_admins: false`
+   only exempts the owner's own pushes; `github-actions[bot]` is an Integration
+   and gets no such exemption on classic protection, and the 08-21 measurement
+   found the same is true of ruleset bypass actors. A required check and a
+   scheduled bot writer on the same branch do not coexist.
 3. **Require only the aggregate `gate` job**, never the individual jobs. (See the
    zero-coverage hole above.)
-
-Setting protection goes through the repo-settings API, which auto mode's classifier
-refuses. **The owner runs the `gh api -X PUT`** — do not attempt it.
 
 ## Actions billing shapes what can be scheduled
 
