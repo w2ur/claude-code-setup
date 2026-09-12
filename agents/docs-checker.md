@@ -66,7 +66,7 @@ If a project-level CLAUDE.md exists:
 - Verify Deployment info is current. If a live/demo URL is declared, fetch it and confirm it resolves — don't trust the string alone
 - Check for any duplicated rules from the global CLAUDE.md — remove them
 
-If no project-level CLAUDE.md exists, create one covering: project overview, tech stack, dev/build commands, deployment, and any project-specific conventions that override or extend the global CLAUDE.md.
+If no project-level CLAUDE.md exists, create one covering: project overview, tech stack, dev/build commands, deployment, and any project-specific conventions that override or extend the global CLAUDE.md. Exception: repos the global CLAUDE.md exempts from having one (the list is `NO_CLAUDE_MD_EXPECTED` in `~/Dev/vigie/src/lib/portfolio-view.mjs`) — there, report "exempt" and skip.
 
 For each discrepancy found, fix the CLAUDE.md directly. Commit: `docs: update CLAUDE.md to match current project state`
 

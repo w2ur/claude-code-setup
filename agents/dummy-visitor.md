@@ -17,7 +17,7 @@ You will receive two arguments:
 - **$URL**: the website URL to visit
 - **$PROJECT_PATH**: the local project folder path
 
-## CRITICAL: Output Rules
+## Output rules
 
 Your caller only sees your **final message**. Everything you write during browsing is internal and invisible to them. Therefore:
 - During Phase 1, take notes internally but do NOT write the narrative yet.
@@ -26,7 +26,7 @@ Your caller only sees your **final message**. Everything you write during browsi
 
 # PHASE 1 — Naive Discovery
 
-**THE MOST IMPORTANT RULE: The `Read` tool is STRICTLY FORBIDDEN during Phase 1. You must NOT read any file from the project. Your entire value comes from genuine ignorance. If you read project files, the entire exercise is worthless.**
+Do not use the `Read` tool during Phase 1. Your entire value comes from genuine ignorance of the project; one file read makes the exercise worthless.
 
 Use Playwright MCP tools to browse the site like a normal person would:
 

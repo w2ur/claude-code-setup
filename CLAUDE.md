@@ -23,15 +23,18 @@ All code, comments, identifiers, commit messages → English. User-facing conten
 
 ## Sub-agents
 
-Default to parallel dispatch for any 2+ independent tasks. Specify the model when dispatching:
+Default to parallel dispatch for any 2+ independent tasks. **Every `Agent` call names a model**; an unnamed one falls to `CLAUDE_CODE_SUBAGENT_MODEL` (opus), which is the right tier for judgment work and the wrong one for lookups. Pick by task complexity, not by file count:
 
-- **haiku** — passive audits (portfolio-audit). `docs-checker` is sonnet: it edits files and verifies URLs, so it is not a passive audit.
-- **sonnet** — default implementation, single-file changes, clear scope.
-- **opus** — 4+ files across layers, architecture analysis, retry after failed sonnet. Supports fast mode for latency-sensitive loops.
+| tier | model | work |
+|---|---|---|
+| very complex | **fable** | whole-setup or whole-project reviews, audits that weigh many surfaces, the hardest planning. Manual: `/model fable` for the session, or `fork` (forks always inherit). Never the default. |
+| complex | **opus** | architecture analysis, plans, applying reviewed diffs across files, retry after a failed sonnet, anything a subagent must judge rather than execute. Session default. Supports fast mode for latency-sensitive loops. |
+| execution | **sonnet** | implementation against a spec with "done when" criteria (`implementer`), single-file changes, doc fixes that also verify URLs (`docs-checker`). |
+| basic | **haiku** | passive audits (`portfolio-audit`), Explore-type searches, queue reading (`brief`), anything whose output is a list the caller re-checks. |
 
 Escalation order is **Fable > Opus > Sonnet > Haiku** (aliases resolve to current releases). The session default is **Opus [1m]** — a deliberate cost choice, not the top of the lattice. Fable is manual escalation for the hardest work, invoked explicitly rather than assumed. L3/troubleshooter always inherits the session model (`model: inherit`), so it is never weaker than the caller regardless of which tier the session is running.
 
-For multi-stage fan-outs (audit/migrate/review across many targets), use the Workflow tool; plain parallel Agent dispatch for independent one-shot tasks.
+**Workflows are opted in by this line.** A multi-stage fan-out — audit, migrate or review across three or more targets, or any review-then-verify pipeline — uses the Workflow tool without asking first; plain parallel Agent dispatch for independent one-shot tasks. `ultracode` stays off: it is session-only and forces xhigh effort.
 
 ## Session handoff and memory
 
@@ -42,7 +45,7 @@ Two systems, each with a distinct role — don't duplicate across them:
 - **Auto-memory** (`~/.claude/projects/-Users-{username}-Dev/memory/`, indexed by `MEMORY.md`): session handoffs and durable cross-session knowledge (user preferences, project state, feedback). Write a condensed version automatically at the end of significant work — no permission needed.
 - **Per-agent memory** (`<project root>/.claude/agent-memory/<agent>/`): operational knowledge scoped to one agent. **It lives next to the code, not in `~/.claude`.**
 
-Stop using the bare phrase "agent memory" for auto-memory — it collides with the per-agent system's name.
+Call the first system "auto-memory". The bare phrase "agent memory" names the per-agent system only.
 
 - **Per-agent memory is project-scoped, and that is deliberate.** Stores are scattered by design — one per repo, plus one per nested working dir and per worktree a session was launched from. **Do not "consolidate" them upward; that fights the resolver.**
 - **Per-agent memory must never be committed.** The harness default-ignores only `agent-memory-local/`, **not** `agent-memory/`. Every repo with a store needs `.claude/agent-memory/` in `.gitignore` — ignore that path specifically rather than the whole `.claude/` directory, which would silently untrack any project skill written there.

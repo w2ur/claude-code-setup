@@ -20,15 +20,29 @@ It is deterministic and no-model; you are only reading and routing its output.
 | exit | meaning | what to say |
 |---|---|---|
 | 0 | nothing needs the owner | "Nothing needs you." Stop there. |
-| 1 | the queue is non-empty, every source answered | present the queue |
-| 2 | **at least one source could not be read** | present the queue **and lead with what is unknown** |
+| 1 | the queue is non-empty, every source answered in full | present the queue |
+| 2 | **a source could not be read, or answered with a caveat** | present the queue **and lead with what is unknown** |
 
-**Exit 2 is the one that matters.** It means part of the sweep did not run, so the
-queue is incomplete by an unknown amount. Any `SIGNAL LOST:` line must be repeated at
-the top of your reply, in the owner's language, and the queue below it explicitly
-described as partial. **Never summarise an exit-2 run as "not much to do today"** —
-a short queue and a dead input look identical, which is the exact failure this script
-exists to prevent.
+**Exit 2 is the one that matters.** It means part of the sweep did not run, or cannot
+be vouched for, so the queue is incomplete or mis-sorted by an unknown amount. It
+comes in two shapes, and both must be repeated at the top of your reply, in the
+owner's language, with the queue below explicitly described as partial:
+
+- `SIGNAL LOST: <source>` — that source produced nothing this run can vouch for:
+  it could not be read, or it answered with something frozen (a vigie snapshot whose
+  `generated_at` is older than a day — nothing wrote it, so its counts are withheld
+  rather than printed stale, because a dead collector otherwise reads as an empty band).
+- `DEGRADED: <source>` — it produced items, but something about them is unknown: a
+  fetch hit its ceiling (whatever is past it is absent from the queue), a classifier
+  ran against a stale input, in which case an automated failure issue may be sitting
+  unmarked in the low-priority tier reading like a stranger's feature request, or the
+  source it derives from is itself partial (vigie with a dead collector: that band's
+  counts come back as zeros, so its items are missing from the queue rather than
+  absent from the world). The line names the remedy; pass it on rather than
+  paraphrasing it.
+
+**Never summarise an exit-2 run as "not much to do today"** — a short queue and a
+dead input look identical, which is the exact failure this script exists to prevent.
 
 ## Step 3 — offer the one or two commands that clear the top items
 
@@ -39,6 +53,7 @@ Map, name at most two, and let the owner choose:
 | `vigie` — CI gate missing, env drift | `/tech-debt` |
 | `vigie` — plans past the archive cutoff | `/cleanup` |
 | `jobs` — an agent exited 2 | read its log; the path is in `jobs-inventory.sh --json` |
+| `midas-issues` — an automated writer's failure issue | `gh issue view <n> -R {github-username}/my-trading-app` |
 
 ## Rules
 

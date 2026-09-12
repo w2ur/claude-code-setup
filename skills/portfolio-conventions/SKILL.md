@@ -35,7 +35,7 @@ These are the active portfolio-wide rules. This skill is preloaded — do not in
 
 - README: description, stack, local dev, deployment, plus the Layer 2 frontmatter block (below). Created at project init, never boilerplate.
 - CLAUDE.md: project-specific only, never duplicates global rules. Written in English.
-- No per-repo manifest file. Decision M12 (2026-07) retired `.portfolio.yml` — 26 files × ~18 fields that nothing but the tooling policing them ever read. Three layers replace it.
+- No per-repo manifest file. Project metadata lives in the three layers below (decision M12).
 
 ## Portfolio Manifest System (three layers, decision M12)
 
