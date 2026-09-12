@@ -33,5 +33,5 @@ people cloning this public repo without uv.
 
 - NEVER commit files containing personal data (real app names, URLs, paths)
 - After any sync, run `./scripts/sync.py --audit-only` before committing
-- The README.md and docs/philosophy.md are maintained by the owner, not auto-generated
+- Everything under `commands/`, `agents/`, `skills/`, `hooks/`, `claude-scripts/` **and the root `CLAUDE.md`** is generated from `~/.claude/` by `scripts/sync.py`: make the change in the live file and re-run the sync, never in the copy here (the sync exits 2 when a destination matches neither HEAD nor the content it is about to write — that is what a hand edit looks like). `README.md`, `docs/`, `hooks/README.md`, `claude-scripts/README.md` and this file are the owner-maintained exceptions.
 - This repo does NOT follow the author signature convention (no footer — it's not a web app)
