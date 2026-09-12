@@ -28,9 +28,11 @@ Default to parallel dispatch for any 2+ independent tasks. **Every `Agent` call 
 | tier | model | work |
 |---|---|---|
 | very complex | **fable** | whole-setup or whole-project reviews, audits that weigh many surfaces, the hardest planning. Manual: `/model fable` for the session, or `fork` (forks always inherit). Never the default. |
-| complex | **opus** | architecture analysis, plans, applying reviewed diffs across files, retry after a failed sonnet, anything a subagent must judge rather than execute. Session default. Supports fast mode for latency-sensitive loops. |
-| execution | **sonnet** | implementation against a spec with "done when" criteria (`implementer`), single-file changes, doc fixes that also verify URLs (`docs-checker`). |
+| complex | **opus** | architecture analysis, plans, retry after a failed sonnet, anything a subagent must judge rather than execute. Session default. Supports fast mode for latency-sensitive loops. |
+| execution | **sonnet** | implementation against a spec with "done when" criteria (`implementer`), applying a reviewed diff whose replacement text is already written, verifying against a written checklist, single-file changes, doc fixes that also verify URLs (`docs-checker`). |
 | basic | **haiku** | passive audits (`portfolio-audit`), Explore-type searches, queue reading (`brief`), anything whose output is a list the caller re-checks. |
+
+The test between complex and execution: if the agent receives the replacement text or the checklist, it is execution; if it must decide what the replacement or the checklist is, it is judgment.
 
 Escalation order is **Fable > Opus > Sonnet > Haiku** (aliases resolve to current releases). The session default is **Opus [1m]** — a deliberate cost choice, not the top of the lattice. Fable is manual escalation for the hardest work, invoked explicitly rather than assumed. L3/troubleshooter always inherits the session model (`model: inherit`), so it is never weaker than the caller regardless of which tier the session is running.
 
