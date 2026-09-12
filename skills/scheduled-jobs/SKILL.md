@@ -58,6 +58,11 @@ scheduled while nothing triggered them, `distribution-watch` among them. A scrip
 has never run leaves nothing behind to notice, and a status file records only runs
 that happened.
 
+**When you move a scheduled job, the trigger is the deliverable, not the prompt.** A
+`status.json` records runs that happened, never runs that were never triggered — so a
+missing trigger is indistinguishable from a quiet week. After any move, fire the job
+once and read its log before calling the migration done.
+
 ## Wrong beliefs a future session will re-derive on its own
 
 **An assumed quota-reset date is not a measured one.** The 2026-08-18 session
