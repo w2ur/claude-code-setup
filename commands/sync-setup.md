@@ -12,7 +12,7 @@ Sync the claude-code-setup repo from the live ~/.claude/ configuration.
 **The arrow only points one way: `~/.claude/` → the repo.** Everything under
 `commands/`, `agents/`, `skills/`, `hooks/` and `claude-scripts/` is generated,
 so fixing something by editing the repo's copy accomplishes nothing — the next
-sync reverts it, and until 2026-08-23 it did so silently. `sync.py` now refuses
+sync reverts it. `sync.py` refuses
 (exit 2) when a destination matches neither the incoming content nor HEAD,
 which is what a hand edit looks like; `--allow-dirty` discards them on purpose.
 
@@ -42,7 +42,7 @@ one that belongs in `~/.claude/`, and porting it there is the fix.
 
 ## Step 2: Verify stale-file cleanup
 
-`sync.py` now prunes orphans automatically: any file under a synced root
+`sync.py` prunes orphans: any file under a synced root
 (`commands/`, `agents/`, `skills/`, `hooks/`, `claude-scripts/`) whose live
 source has disappeared is deleted on a real run (reported on `--dry-run`) and listed under
 the `── Orphans ──` section of the output. Common cases: renamed agents (e.g.,

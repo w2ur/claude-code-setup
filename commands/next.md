@@ -41,7 +41,7 @@ The plan is far larger than one context window. Treat context as the scarce reso
 
 ## Model tiers — locked, do not re-litigate
 
-Plan with **Opus**. Implement with **Sonnet** — that is the default and it is sufficient for most code. Opus for implementation only when a task genuinely spans 4+ files across layers, or on retry after Sonnet failed. Haiku for basic mechanical passes. **If work is fully deterministic, write a script — no model.** Fable is manual escalation for the hardest planning only, never assumed.
+The tier table is in the global CLAUDE.md (Sub-agents) and is not re-litigated here. **If work is fully deterministic, write a script — no model.**
 
 ## Owner-only — prepare, never attempt
 
@@ -60,8 +60,6 @@ DNS changes, hosting teardown (Cloudflare / Netlify / Vercel), `gh repo archive`
 2. Report to the owner: what shipped, what was verified and how, what is blocked and on whom.
 3. Do **not** roll into the next phase. Each phase gets a fresh context.
 
-## Background
+## The tiebreak
 
-A 21-agent review of all 27 repos in `~/Dev`, merged with an existing hub remediation plan and a `~/.claude` audit. The headline finding, which orders the whole plan: **the bottleneck is distribution, not marketing copy** — 27 projects, 4 public repos, 2 GitHub stars, 0 community posts. Building has repeatedly won the tiebreak over shipping. When a task could be read as either "polish something" or "publish something already finished", it means publish.
-
-If you need to defend a finding rather than act on it, the full review is at `https://claude.ai/code/artifact/0ea3ac19-6bf4-44ff-b8e3-0aa1cfd94144` and per-agent returns are in `~/.claude/projects/-Users-{username}-Dev/f332727f-0926-47d8-97f7-58b4aa735a1e/subagents/workflows/wf_53d6b100-783/journal.jsonl`. Do not read these to start work — only to settle a dispute.
+**The bottleneck is distribution, not marketing copy.** When a task could be read as either "polish something" or "publish something already finished", it means publish. The review behind this is linked from the master plan; read it only to settle a dispute, never to start work.

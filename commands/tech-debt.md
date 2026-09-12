@@ -28,16 +28,9 @@ Monthly technical health review. Two phases: triage everything, then deep-dive o
 bash ~/.claude/scripts/tech-debt-triage.sh
 ```
 
-It scans every git repo in `~/Dev` (via `dev-scanner.sh --json`), scores each on the four signals below, and prints a ranked markdown table ready to show the owner. `--json` gives the same data machine-readable. It is **read-only** — it never writes the rotation tracker, because "last scan" means last *deep review*, not last triage.
+It scans every git repo in `~/Dev` (via `dev-scanner.sh --json`), scores each on four signals — commit activity, portfolio prominence (position in `editorial.ts`), time since last deep review (`~/Dev/.tech-debt-rotation.json`), and quick issues (`npm outdated`, `npm audit`, `console.log` count, `.nvmrc`) — and prints a ranked markdown table ready to show the owner. `--json` gives the same data machine-readable. It is **read-only** — it never writes the rotation tracker, because "last scan" means last *deep review*, not last triage.
 
-| Signal | Source | Weight |
-|---|---|---|
-| A — commit activity | `git log --since="30 days ago"` | 2 if >10, 1 if 1–10, 0 if none |
-| B — portfolio prominence | position of `repo: '<name>'` in `editorial.ts` (Layer 3, M12) | 2 if in the first 6, 1 if present later, 0 if absent |
-| C — time since last deep review | `~/Dev/.tech-debt-rotation.json` | 3 never, 2 if >60d, 1 if 30–60d, 0 if <30d |
-| D — quick issues | `npm outdated`, `npm audit`, `console.log` count, `.nvmrc` | +1 per high/critical vuln, +1 if >5 outdated, +1 if >3 `console.log` |
-
-**Do not re-implement these signals inline.** The script is the single source of truth for the scoring; restating the weights here in runnable form is exactly how the two drift apart.
+**The script owns the weights.** Read them in `tech-debt-triage.sh`; never restate or re-implement them here — that is how the two drift apart.
 
 Exit codes: `0` clean · `2` ran but **degraded** (a required tool was missing, so the numbers are incomplete — say so before presenting them) · `1` hard error.
 
