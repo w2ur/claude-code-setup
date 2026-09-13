@@ -88,6 +88,34 @@ this directory is out of scope, not missing.
   runner has a track record. All three expire with the quota; check the date
   before treating them as permanent infrastructure.
 
+## The exit convention
+
+Every script here answers in three states, and the third is the one that gets
+dropped:
+
+| code | meaning |
+|---|---|
+| `0` | healthy — the check ran and found nothing |
+| `1` | a finding — the check ran and found something |
+| `2` | **could not run** — the outcome is *unknown* |
+
+**`2` is never "healthy" and never "nothing to do".** An empty catalogue, a
+mounted-but-empty volume and an unauthenticated API returning zero rows are all
+`2`. Collapsing them into `0` is the failure these scripts exist to prevent:
+a green result asserted from a measurement nobody took.
+
+**`1` is a finding, not a failure, and the caller has to say so.** A caller
+running under `set -euo pipefail` will treat `1` as a crash and stop — which
+means the scheduled job reports failure in exactly the runs where the check
+worked and had something to report. Read three states explicitly:
+
+    rc=0
+    some-check.sh || rc=$?
+    case "$rc" in
+      0|1) ;;
+      *)   echo "WARN  could not run (exit $rc)" >&2; exit "$rc" ;;
+    esac
+
 ## Fixture-tree overrides
 
 - `dev-scanner.sh` honours `DEV_DIR` (default `$HOME/Dev`) for the tree it
