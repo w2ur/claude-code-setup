@@ -20,7 +20,7 @@ import pytest
 
 import generate_workflow_guide as guide
 import sync
-from sync import anonymize, audit_files, generate_hooks_settings, read_hooks_config, redact
+from sync import anonymize, audit_files, discover_files, generate_hooks_settings, read_hooks_config, redact
 
 VALID_HOOKS = {
     "PreToolUse": [
@@ -35,6 +35,27 @@ VALID_HOOKS = {
 def _write_settings(tmp_path: Path, body: str) -> Path:
     (tmp_path / "settings.json").write_text(body, encoding="utf-8")
     return tmp_path
+
+
+# ── File discovery ──────────────────────────────────────────────
+
+
+def test_discover_files_skips_account_synced_skills(tmp_path):
+    # skills/synced/ holds account-synced third-party skills (never ours to
+    # publish); a real one nests deeper, e.g. skills/synced/some-vendor/skill/SKILL.md.
+    # Uses the shipped example config's own `skip` list, not a hand-written
+    # one here, so this test fails until anonymization.example.yaml actually
+    # excludes the directory.
+    config = sync.load_config(Path(__file__).resolve().parent / "anonymization.example.yaml")
+
+    source = tmp_path / "live"
+    synced = source / "skills" / "synced" / "x" / "y"
+    synced.mkdir(parents=True)
+    (synced / "SKILL.md").write_text("# vendor skill\n", encoding="utf-8")
+
+    pairs = discover_files(source, config["file_map"], config["skip"])
+
+    assert pairs == []
 
 
 # ── read_hooks_config ───────────────────────────────────────────
