@@ -61,6 +61,22 @@ Edit `scripts/anonymization.yaml` with your real data — app names, URLs, domai
 ./scripts/sync.py --source /path/to/claude-config
 ```
 
+The workflow guide's four reference arrays (COMMANDS, AGENTS, SKILLS, HOOKS)
+are generated in the live guide as well, un-anonymized, by the same script the
+sync uses for the published copy:
+
+```bash
+# Rewrite the arrays of ~/Dev/workflow-guide.html in place from live config
+./scripts/generate_workflow_guide.py --live
+
+# Read-only: 0 = arrays current, 1 = drift or owed prose, 2 = could not run
+./scripts/generate_workflow_guide.py --check
+```
+
+Hand-written prose (`desc`, `when`, `args` and their `_en` siblings) is kept
+verbatim; `--check` keeps listing an entry whose prose is still a placeholder.
+SCENARIOS and the renderer are never generated.
+
 These read `python scripts/sync.py` until 2026-08-17. That form was already
 broken on the machine this repo is synced from — there is no bare `python` on
 it, only `python3` — and it bypasses the shebang, which is now what selects the
