@@ -11,6 +11,7 @@ Run with: pytest scripts/test_generate_workflow_guide.py
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from generate_workflow_guide import (
     _field_str,
     _preserved,
     build_commands,
+    build_hooks,
     parse_existing,
 )
 
@@ -120,3 +122,21 @@ def test_build_commands_flags_a_new_entry_in_both_languages(tmp_path):
     assert todos == [
         "command /brand-new (new — needs desc/desc_en + when/when_en + args_en)"
     ]
+
+
+def test_a_hook_registered_under_two_matchers_shows_both(tmp_path):
+    """Regression: secret-scan is registered on Write|Edit|NotebookEdit and on
+    Bash; the event map kept one pair per hook, so the guide showed only
+    whichever registration settings.json listed last ("PreToolUse → Bash")."""
+    (tmp_path / "hooks" / "secret-scan").mkdir(parents=True)
+    (tmp_path / "hooks" / "secret-scan" / "hook.sh").write_text("exit 2\n", encoding="utf-8")
+    cmd = "bash ~/.claude/hooks/secret-scan/hook.sh"
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [
+            {"matcher": "Write|Edit|NotebookEdit", "hooks": [{"command": cmd}]},
+            {"matcher": "Bash", "hooks": [{"command": cmd}]},
+        ]}}),
+        encoding="utf-8",
+    )
+    lines, _todos = build_hooks(tmp_path, {}, [])
+    assert _field_str(lines[0], "event") == "PreToolUse → Write|Edit|NotebookEdit · PreToolUse → Bash"
