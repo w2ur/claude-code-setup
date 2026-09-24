@@ -9,31 +9,42 @@
 # a script run by uv gets the environment ITS OWN metadata declares. It also
 # imports `sync`, which is why the dependency set is identical — the two are
 # kept in step by hand. See the note in sync.py about requirements.txt.
-"""Generate the DATA arrays of docs/workflow-guide.html from live config.
+"""Generate the DATA arrays of the workflow guide from live config.
 
-The workflow guide (~/Dev/workflow-guide.html) hand-maintains four JS array
-literals — COMMANDS, AGENTS, SKILLS, HOOKS — that drift out of sync with the
-real ~/.claude/ configuration. This module rebuilds those four arrays from the
-live frontmatter / settings.json and rewrites ONLY those arrays inside
-docs/workflow-guide.html, leaving the renderer, the SCENARIOS array and
-everything else byte-for-byte untouched.
+The workflow guide carries four JS array literals — COMMANDS, AGENTS, SKILLS,
+HOOKS — that used to be hand-maintained and drifted from the real ~/.claude/
+configuration. This module rebuilds those four arrays from the live
+frontmatter / settings.json and rewrites ONLY those arrays, leaving the
+renderer, the SCENARIOS array and everything else byte-for-byte untouched.
+
+Three modes:
+  --live   rewrite the arrays of the live guide (~/Dev/workflow-guide.html)
+           in place, un-anonymized. This is how the live guide is maintained.
+  --check  compare the live guide's arrays with what live config renders.
+           Exit 0 = current, 1 = drift or owed prose, 2 = could not run.
+           Writes nothing; /cleanup calls it.
+  (none)   the public path, called by sync.py: render from the live guide,
+           anonymize with sync.py's anonymize(), write docs/workflow-guide.html.
 
 Field policy per array:
   * Verifiable, drift-prone fields are DERIVED from live config:
-      - commands: agents list (from allowed-tools Agent(...))
-      - agents:   model, skills, memory
+      - commands: model and effort pins (an unpinned command shows
+                  "session"), agents list (from allowed-tools Agent(...))
+      - agents:   model, effort, skills, memory
       - skills:   file path, preloaded (which agents declare the skill)
-      - hooks:    event (settings.json), mode (exit 2 => Blocking)
+      - hooks:    event — every matcher it is registered under
+                  (settings.json), mode (exit 2 => Blocking)
   * Hand-written prose that cannot be derived is PRESERVED verbatim from the
     current guide for entries that already exist. The guide is bilingual, so
     every prose field has an `_en` sibling (desc/desc_en, when/when_en,
     args/args_en, agents/agents_en) and both are preserved the same way.
   * A genuinely new entry with no prior hand-written prose gets a
     "TODO: write desc" / "TODO: write desc_en" placeholder, reported back to
-    the caller.
+    the caller — and reported again by every later run while it is still
+    there.
 
-The whole rewritten HTML is anonymized with sync.py's anonymize() before it
-lands in the repo, since ~/Dev/workflow-guide.html is the live/private source.
+Private names are never written into this file: they reach the published
+guide only through the live guide's prose, and are anonymized on the way.
 """
 
 from __future__ import annotations
@@ -64,6 +75,9 @@ LIVE_GUIDE = Path.home() / "Dev" / "workflow-guide.html"
 DEST_GUIDE = REPO_ROOT / "docs" / "workflow-guide.html"
 
 ARROW = "→"  # → used in hook event labels
+
+# The model field of a command with no `model:` pin in its frontmatter.
+SESSION_MODEL = "session"
 
 
 # ── Frontmatter / JS helpers ────────────────────────────────────
@@ -245,6 +259,10 @@ def build_commands(source: Path, existing: dict, existing_order: list[str]) -> t
         live[name] = {
             "arg_hint": _arg_hint(fm.get("argument-hint")),
             "agents": agents,
+            # An unpinned command runs on whatever the session runs, so say so
+            # rather than leave the field blank — blank reads as "unknown".
+            "model": str(fm.get("model") or SESSION_MODEL),
+            "effort": str(fm.get("effort") or ""),
         }
 
     order = order_entries(existing_order, list(live.keys()))
@@ -279,7 +297,8 @@ def build_commands(source: Path, existing: dict, existing_order: list[str]) -> t
         agents_val = _preserved_arr(prev, "agents", info["agents"])
         agents_en_val = _preserved_arr(prev, "agents_en", info["agents"])
         line = (
-            f"  {{ name: {js_str(name)}, args: {args_val}, args_en: {args_en_val}, "
+            f"  {{ name: {js_str(name)}, model: {js_str(info['model'])}, effort: {js_str(info['effort'])}, "
+            f"args: {args_val}, args_en: {args_en_val}, "
             f"desc: {desc_val}, desc_en: {desc_en_val}, "
             f"agents: {agents_val}, agents_en: {agents_en_val}, "
             f"when: {when_val}, when_en: {when_en_val} }},"
@@ -297,6 +316,7 @@ def build_agents(source: Path, existing: dict, existing_order: list[str]) -> tup
         name = str(fm.get("name") or f.stem)
         live[name] = {
             "model": str(fm.get("model", "") or ""),
+            "effort": str(fm.get("effort") or ""),
             "skills": list(fm.get("skills") or []),
             "memory": bool(fm.get("memory")),
         }
@@ -323,7 +343,7 @@ def build_agents(source: Path, existing: dict, existing_order: list[str]) -> tup
         skills_val = js_arr(info["skills"])
         memory_val = "true" if info["memory"] else "false"
         line = (
-            f"  {{ name: {js_str(name)}, model: {model_val}, skills: {skills_val}, "
+            f"  {{ name: {js_str(name)}, model: {model_val}, effort: {js_str(info['effort'])}, skills: {skills_val}, "
             f"memory: {memory_val}, desc: {desc_val}, desc_en: {desc_en_val} }},"
         )
         lines.append(line)
@@ -450,6 +470,23 @@ def build_hooks(source: Path, existing: dict, existing_order: list[str]) -> tupl
 # ── Top-level generation ────────────────────────────────────────
 
 
+class GuideError(Exception):
+    """The arrays cannot be rendered — an unknown, never a clean result."""
+
+
+ARRAYS = (
+    ("COMMANDS", build_commands),
+    ("AGENTS", build_agents),
+    ("SKILLS", build_skills),
+    ("HOOKS", build_hooks),
+)
+
+# A literal left behind by a previous write. _preserved() keeps an existing
+# value verbatim, so after one write a "TODO: write desc" placeholder reads as
+# prose and is never reported again — unless something looks for it.
+PLACEHOLDER = "TODO: write "
+
+
 def _replace_block(html: str, name: str, body_lines: list[str]) -> str:
     body = "\n".join(body_lines)
     replacement = f"const {name} = [\n{body}\n];"
@@ -460,6 +497,39 @@ def _replace_block(html: str, name: str, body_lines: list[str]) -> str:
         count=1,
         flags=re.DOTALL,
     )
+
+
+def render_arrays(source: Path, html: str) -> tuple[str, list[str]]:
+    """Return `html` with the four DATA arrays rebuilt from live config.
+
+    Raises GuideError when the result would be vacuous: a guide missing one of
+    the four `const NAME = [` blocks (the substitution would silently match
+    nothing), an unusable settings.json, or a live directory yielding no
+    entries at all. Each of those renders a guide that looks generated and
+    documents nothing.
+    """
+    if read_hooks_config(source) is None:
+        raise GuideError(f"no usable hooks config in {source / 'settings.json'}")
+
+    todos: list[str] = []
+    for arr_name, builder in ARRAYS:
+        if not extract_block(html, arr_name):
+            raise GuideError(f"the guide has no `const {arr_name} = [` block")
+        by_name, order = parse_existing(html, arr_name, "name")
+        body_lines, arr_todos = builder(source, by_name, order)
+        if not body_lines:
+            raise GuideError(f"live config under {source} yields no {arr_name} entries")
+        todos.extend(arr_todos)
+        html = _replace_block(html, arr_name, body_lines)
+
+    for arr_name, _builder in ARRAYS:
+        block = extract_block(html, arr_name)
+        for line in block.group(1).splitlines():
+            if PLACEHOLDER in line:
+                entry = f"{arr_name.lower()[:-1]} {_field_str(line, 'name') or '?'}"
+                if not any(t.startswith(entry + " ") for t in todos):
+                    todos.append(f"{entry} (placeholder prose still in the guide)")
+    return html, todos
 
 
 def generate_guide(
@@ -478,23 +548,11 @@ def generate_guide(
     # A guide rebuilt from a missing/empty/malformed settings.json would render
     # "0 hooks" and drop every HOOKS entry without warning, while README.md
     # still claims four. Leave the published guide alone instead.
-    if read_hooks_config(source) is None:
-        log.warning("Skipping %s (existing guide left untouched)", DEST_GUIDE.relative_to(REPO_ROOT))
+    try:
+        html, all_todos = render_arrays(source, LIVE_GUIDE.read_text(encoding="utf-8"))
+    except GuideError as exc:
+        log.warning("Skipping %s (%s; existing guide left untouched)", DEST_GUIDE.relative_to(REPO_ROOT), exc)
         return [], False
-
-    html = LIVE_GUIDE.read_text(encoding="utf-8")
-
-    all_todos: list[str] = []
-    for arr_name, key_field, builder in (
-        ("COMMANDS", "name", build_commands),
-        ("AGENTS", "name", build_agents),
-        ("SKILLS", "name", build_skills),
-        ("HOOKS", "name", build_hooks),
-    ):
-        by_name, order = parse_existing(html, arr_name, key_field)
-        body_lines, todos = builder(source, by_name, order)
-        all_todos.extend(todos)
-        html = _replace_block(html, arr_name, body_lines)
 
     anonymized, _count = anonymize(html, replacements, patterns, origin=str(LIVE_GUIDE))
 
@@ -519,24 +577,100 @@ def generate_guide(
     return all_todos, is_stale
 
 
-def main() -> None:
+# ── The live guide: written in place, un-anonymized ─────────────
+
+
+def write_live(source: Path, guide: Path) -> list[str]:
+    """Rewrite the four arrays of the live guide in place. Returns the TODOs.
+
+    No anonymization: this is the owner's own file, and the published copy is
+    anonymized later by generate_guide(). Everything outside the four arrays —
+    the prose header, SCENARIOS, the renderer — is left byte-for-byte.
+    """
+    if not guide.exists():
+        raise GuideError(f"live guide not found: {guide}")
+    html, todos = render_arrays(source, guide.read_text(encoding="utf-8"))
+    guide.write_text(html, encoding="utf-8")
+    return todos
+
+
+def check_live(source: Path, guide: Path) -> tuple[int, list[str]]:
+    """Compare the live guide's arrays with what live config renders.
+
+    Returns (exit code, report lines). 0 = the arrays are current and carry no
+    owed prose; 1 = drift or owed prose (a finding); 2 = could not run. Never
+    writes. A malformed guide or config is 2, never 0: a check that cannot
+    render has not seen a clean guide.
+    """
+    try:
+        if not guide.exists():
+            raise GuideError(f"live guide not found: {guide}")
+        current = guide.read_text(encoding="utf-8")
+        rendered, todos = render_arrays(source, current)
+    except (GuideError, OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        return 2, [f"could not run: {exc}"]
+
+    report: list[str] = []
+    for arr_name, _builder in ARRAYS:
+        now = extract_block(current, arr_name).group(1).splitlines()
+        want = extract_block(rendered, arr_name).group(1).splitlines()
+        if now == want:
+            continue
+        now_by = {_field_str(line, "name"): line for line in now}
+        want_by = {_field_str(line, "name"): line for line in want}
+        changed = sorted(
+            (str(n) for n in now_by.keys() | want_by.keys() if now_by.get(n) != want_by.get(n)),
+        )
+        report.append(f"drift in {arr_name}: {', '.join(changed) or 'entry order'}")
+    report.extend(f"owed prose: {t}" for t in todos)
+    return (1 if report else 0), report
+
+
+def main() -> int:
     import argparse
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--live", action="store_true",
+        help=f"rewrite the arrays of {LIVE_GUIDE} in place, un-anonymized",
+    )
+    mode.add_argument(
+        "--check", action="store_true",
+        help="exit 0 if the live guide's arrays are current, 1 on drift or owed prose, 2 if it could not run",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="public mode only: report, write nothing")
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
+    parser.add_argument("--guide", type=Path, default=LIVE_GUIDE, help="the live guide (--live / --check)")
     args = parser.parse_args()
 
-    config = load_config(Path(__file__).resolve().parent / "anonymization.yaml")
-    replacements = build_replacements(config["replacements"])
-    patterns = config.get("patterns")
-    todos, _stale = generate_guide(args.source, replacements, patterns, args.dry_run)
+    if args.check:
+        code, report = check_live(args.source, args.guide)
+        for line in report:
+            print(line, file=sys.stderr if code == 2 else sys.stdout)
+        if code == 0:
+            print(f"no drift: {args.guide}")
+        return code
+
+    if args.live:
+        try:
+            todos = write_live(args.source, args.guide)
+        except (GuideError, OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            log.error("could not run: %s", exc)
+            return 2
+        log.info("rewrote the DATA arrays of %s", args.guide)
+    else:
+        config = load_config(Path(__file__).resolve().parent / "anonymization.yaml")
+        replacements = build_replacements(config["replacements"])
+        patterns = config.get("patterns")
+        todos, _stale = generate_guide(args.source, replacements, patterns, args.dry_run)
     if todos:
         log.info("Entries needing hand-written prose:")
         for t in todos:
             log.info("  - %s", t)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
