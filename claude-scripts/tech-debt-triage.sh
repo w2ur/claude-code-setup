@@ -16,7 +16,11 @@
 # *deep review* (Phase 2), not last triage, so a triage run must not reset it.
 #
 # Usage: tech-debt-triage.sh [--json] [--help]
-# Exit:  0 ok · 2 ran but degraded (a required tool was missing) · 1 hard error
+# Exit:  0 ok · 1 finding · 2 could not run
+#        1 = a required tool was missing but the run continued degraded
+#            (e.g. npm absent, editorial.ts or the rotation tracker unreadable)
+#        2 = git, the dev scanner, or a uv-managed Python unavailable; bad
+#            arguments
 #
 # Env overrides (for testing against a fixture tree):
 #   DEV_DIR   default $HOME/Dev
@@ -34,9 +38,9 @@ SCANNER="$SCRIPT_DIR/dev-scanner.sh"
 OUTPUT_JSON=0
 case "${1:-}" in
   --json) OUTPUT_JSON=1 ;;
-  --help|-h) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  --help|-h) sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
   "") ;;
-  *) echo "unknown argument: $1" >&2; exit 1 ;;
+  *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
 DEGRADED=0
@@ -48,7 +52,7 @@ warn() { echo "WARN: $*" >&2; DEGRADED=1; }
 # first line and strip tabs and pipes (pipes would break the markdown table).
 sanitize() { printf '%s' "${1:-}" | tr -d '\t|' | head -n 1 | tr -d '\n'; }
 
-[ -x "$SCANNER" ] || { echo "FATAL: $SCANNER not found or not executable" >&2; exit 1; }
+[ -x "$SCANNER" ] || { echo "FATAL: $SCANNER not found or not executable" >&2; exit 2; }
 
 # A missing npm must be loud, never silent. Under cron's default PATH
 # (/usr/bin:/bin) npm is unresolvable — Homebrew installs it to
@@ -61,7 +65,7 @@ sanitize() { printf '%s' "${1:-}" | tr -d '\t|' | head -n 1 | tr -d '\n'; }
 # `which -a` rather than carried forward.)
 HAVE_NPM=1
 command -v npm >/dev/null 2>&1 || { HAVE_NPM=0; warn "npm not on PATH — vuln/outdated signals unavailable for every repo"; }
-command -v git >/dev/null 2>&1 || { echo "FATAL: git not on PATH" >&2; exit 1; }
+command -v git >/dev/null 2>&1 || { echo "FATAL: git not on PATH" >&2; exit 2; }
 
 # ---------------------------------------------------------------- Python (uv)
 # uv is the sole Python manager on this machine, so the interpreter is resolved
@@ -87,7 +91,7 @@ resolve_uv_python() {
   return 1
 }
 PYTHON="$(resolve_uv_python || true)"
-[ -n "$PYTHON" ] || { echo "FATAL: no uv-managed Python found (uv python find failed and no ~/.local/bin/python3.N shim). Refusing to fall back to a system python." >&2; exit 1; }
+[ -n "$PYTHON" ] || { echo "FATAL: no uv-managed Python found (uv python find failed and no ~/.local/bin/python3.N shim). Refusing to fall back to a system python." >&2; exit 2; }
 
 # ---------------------------------------------------------------- Signal B map
 # Prominence = position in editorial.ts's array (Layer 3 of the M12 manifest
@@ -249,7 +253,7 @@ print(json.dumps({"generated_at": datetime.datetime.now().astimezone().isoformat
                   "app_count": len(rows), "apps": rows}, indent=2))
 ' "$REPO_COUNT" "$DEGRADED"
   echo "SUMMARY repos=${REPO_COUNT} degraded=${DEGRADED}" >&2
-  [ "$DEGRADED" -eq 1 ] && exit 2
+  [ "$DEGRADED" -eq 1 ] && exit 1
   exit 0
 else
   echo "## Tech Debt Triage — $(date '+%Y-%m-%d %H:%M')"
@@ -272,5 +276,5 @@ else
 fi
 
 echo "SUMMARY repos=${REPO_COUNT} degraded=${DEGRADED}"
-[ "$DEGRADED" -eq 1 ] && exit 2
+[ "$DEGRADED" -eq 1 ] && exit 1
 exit 0

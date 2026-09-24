@@ -40,15 +40,28 @@
 # way to silence a host without recording why.
 #
 # Usage: usage-watch.sh [--help]
-# Exit:  0 ok · 2 ran but degraded (missing route list, curl failure,
-#             non-2xx, catch-all, empty route list, stale overlay entry) ·
-#        1 hard error (missing dependency, bad arguments)
+# Exit:  0 ok · 1 finding · 2 could not run
+#        1 = payload growth or collapse (the ratchet's warnings), curl
+#            failure, non-2xx, catch-all, stale overlay entry, bad ignore
+#            flag, billing endpoint trouble
+#        2 = missing dependency (curl, uv-managed Python), bad arguments,
+#            no readable route list, zero routes resolved, the ratchet's
+#            Python crashing — nothing was measured, which is UNKNOWN,
+#            never a finding and never "healthy"
+#
+# Notification: a run with findings pushes ONE message through notifier.sh
+# (counts only — the ntfy topic is PUBLIC, so no host and no route). It has
+# to: intendant.sh and vigie drop exit 1 on the assumption that the job
+# already reported its finding, so without this push a tripled payload would
+# land only in a log nobody opens. Exit 2 needs no push of its own — both
+# consumers surface it. NOTIFIER_BIN overrides the notifier (tests).
 #
 # Env overrides (for testing against a fixture tree — production runs use
 # every default):
 #   CLAUDE_DIR        default $HOME/.claude   (routes/baselines/log live here)
 #   VERCEL_TOKEN_FILE default $HOME/.config/vercel-usage/token
 #   VERCEL_TEAM_ID    default team_UQ5YF1tQxCCq3SObgTXoHcE0
+#   NOTIFIER_BIN      default $HOME/.claude/scripts/notifier.sh
 
 set -euo pipefail
 
@@ -65,15 +78,28 @@ TEAM_ID="${VERCEL_TEAM_ID:-team_UQ5YF1tQxCCq3SObgTXoHcE0}"
 DISCOVERY_CONTROL="/nope-xyz-control"
 
 case "${1:-}" in
-  --help|-h) sed -n '2,51p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  --help|-h) sed -n '2,64p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
   "") ;;
-  *) echo "unknown argument: $1" >&2; exit 1 ;;
+  *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
 DEGRADED=0
-warn() { echo "WARN: $*" >&2; DEGRADED=1; }
+FINDINGS=0
+warn() { echo "WARN: $*" >&2; DEGRADED=1; FINDINGS=$((FINDINGS + 1)); }
+NOTIFIER="${NOTIFIER_BIN:-$HOME/.claude/scripts/notifier.sh}"
 
-command -v curl >/dev/null 2>&1 || { echo "FATAL: curl not found" >&2; exit 1; }
+# $1 = number of ratchet warnings (payload growth/collapse) among FINDINGS.
+notify_findings() {
+  local body
+  [ -x "$NOTIFIER" ] || return 0
+  body="$(mktemp)" || return 0
+  printf 'usage-watch: %s finding(s), %s of them payload growth or collapse.\nSee the job log.\n' \
+    "$FINDINGS" "$1" > "$body"
+  "$NOTIFIER" "usage-watch — $FINDINGS finding(s)" "$body" --priorite high >/dev/null 2>&1 || true
+  rm -f "$body"
+}
+
+command -v curl >/dev/null 2>&1 || { echo "FATAL: curl not found" >&2; exit 2; }
 
 # ---------------------------------------------------------------- Python (uv)
 # uv is the sole Python manager on this machine, so the interpreter is resolved
@@ -109,9 +135,9 @@ resolve_uv_python() {
   return 1
 }
 PYTHON="$(resolve_uv_python || true)"
-[ -n "$PYTHON" ] || { echo "FATAL: no uv-managed Python found (uv python find failed and no ~/.local/bin/python3.N shim). Refusing to fall back to a system python." >&2; exit 1; }
+[ -n "$PYTHON" ] || { echo "FATAL: no uv-managed Python found (uv python find failed and no ~/.local/bin/python3.N shim). Refusing to fall back to a system python." >&2; exit 2; }
 
-[ -r "$ROUTES" ] || { warn "no readable route list at $ROUTES"; exit 2; }
+[ -r "$ROUTES" ] || { echo "FATAL: no readable route list at $ROUTES — nothing measured, UNKNOWN" >&2; exit 2; }
 
 probe() {  # $1 = url -> "<http_code> <wire_bytes> <redirects>" or "" plus a non-zero return
   # -L is load-bearing: a wire-bytes probe that stops at the first hop measures
@@ -313,8 +339,12 @@ for line in new_lines:
 # An overlay that resolved to zero PROBED routes is only a problem if
 # nothing was legitimately ignored either — an overlay made entirely of
 # acknowledged catch-alls is a deliberate, valid state, not an empty config.
+# Nothing measured is UNKNOWN (exit 2), not a finding — and it stops HERE,
+# before the ratchet, which would otherwise rewrite the baselines file from an
+# empty measurement and throw away every route's first_seen.
 if [ "$ROUTE_COUNT" -eq 0 ] && [ "$IGNORED_COUNT" -eq 0 ]; then
-  warn "no routes to check — overlay is empty and discovery yielded nothing"
+  echo "FATAL: no routes to check — overlay is empty and discovery yielded nothing; UNKNOWN" >&2
+  exit 2
 fi
 
 # --------------------------------------------------- ratchet + log write
@@ -391,14 +421,23 @@ for w in warnings:
 sys.exit(3 if warnings else 0)
 " || RATCHET_RC=$?
 
+# Exit 3 carries the growth/collapse warnings — the finding this job exists
+# for. Any other non-zero is the ratchet crashing: nothing was recorded, so
+# the run is UNKNOWN (exit 2 at the end), not a finding.
+UNKNOWN=0
+RATCHET_WARNINGS=0
 if [ "$RATCHET_RC" -eq 3 ]; then
   DEGRADED=1
+  RATCHET_WARNINGS="$(tail -1 "$LOG" 2>/dev/null | tr '\t' '\n' | sed -n 's/^warnings=//p')"
+  RATCHET_WARNINGS="${RATCHET_WARNINGS:-1}"
+  FINDINGS=$((FINDINGS + RATCHET_WARNINGS))
 elif [ "$RATCHET_RC" -ne 0 ]; then
-  warn "ratchet step failed (python exit $RATCHET_RC)"
+  echo "FATAL: ratchet step failed (python exit $RATCHET_RC) — nothing recorded, UNKNOWN" >&2
+  UNKNOWN=1
 fi
 
 # --------------------------------------- Layer 2b — billing (optional extra)
-# DELIBERATE EXCEPTION to the exit-2-on-degradation rule: a 404
+# DELIBERATE EXCEPTION to the warn-on-degradation rule: a 404
 # `costs_not_found` from /v1/billing/charges means Vercel has no billing data
 # to return, which on the Hobby plan is the expected and CORRECT state, not a
 # degraded run. Do not "fix" this into a warning — it would fire every week
@@ -461,5 +500,7 @@ else
   echo "billing: skipped — token unreadable at $TOKEN_FILE" >> "$LOG"
 fi
 
-[ "$DEGRADED" -eq 1 ] && exit 2
+[ "$DEGRADED" -eq 1 ] && notify_findings "$RATCHET_WARNINGS"
+[ "$UNKNOWN" -eq 1 ] && exit 2
+[ "$DEGRADED" -eq 1 ] && exit 1
 exit 0

@@ -58,8 +58,8 @@ Read `~/Dev/claude-code-setup/README.md` and verify these match reality:
 
 1. **Commands count** in `<summary><strong>Commands (N)</strong>` — count files in `~/.claude/commands/*.md`
 2. **Agents count** in `<summary><strong>Agents (N)</strong>` — count files in `~/.claude/agents/*.md`
-3. **Skills count** in `<summary><strong>Skills (N)</strong>` — count directories in `~/.claude/skills/*/`
-4. **Hooks count** in `<summary><strong>Hooks (N)</strong>` — count hook scripts (`~/.claude/hooks/**/*.sh`)
+3. **Skills count** in `<summary><strong>Skills (N)</strong>` — count files matching `~/.claude/skills/*/SKILL.md` (excludes `skills/synced/`, which nests deeper and is never published)
+4. **Hooks count** in `<summary><strong>Hooks (N)</strong>` — count `~/.claude/hooks/*/hook.sh`, one per hook, the same glob `generate_workflow_guide.py` uses. Not `hooks/**/*.sh`: that also counts `hooks/lib/`, which holds shared helpers, not hooks
 4b. **README frontmatter** — `facts_fr` / `facts_en` at the top of README.md
    restate the same four counts in prose ("7 commandes, 6 agents, 4 hooks…").
    They are not covered by the `<summary>` checks above and have rotted before.
@@ -68,7 +68,7 @@ Read `~/Dev/claude-code-setup/README.md` and verify these match reality:
 5. **Commands table** — verify each command in the table exists in `~/.claude/commands/`, and each command file has a row. Add missing rows, remove stale rows.
 6. **Agents table** — same check against `~/.claude/agents/`
 7. **Skills list** — same check against `~/.claude/skills/*/SKILL.md`
-8. **Hooks list** — same check against `~/.claude/hooks/**/*.sh` (exclude hooks/scripts/ legacy directory if it exists only in the repo)
+8. **Hooks list** — same check against `~/.claude/hooks/*/hook.sh` (never `hooks/lib/`; exclude hooks/scripts/ legacy directory if it exists only in the repo)
 9. **Architecture diagram** — verify command names, agent names, skill names, and hook names in the ASCII art match the tables
 
 Fix any discrepancies by editing README.md directly. Apply the anonymization rules from `scripts/anonymization.yaml` to any new content (private app names → placeholders, personal URLs → example.com, etc.).
