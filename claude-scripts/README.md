@@ -102,16 +102,10 @@ this directory is out of scope, not missing.
   strips the literal values of known secrets and the `secret-scan` hook's
   patterns before anything leaves the machine.
 
-- **`act-local.sh`**, **`gha-bridge.sh`**, **`midas-ohlcv-bridge.sh`** — a
-  **temporary** family, and the dates in their headers are load-bearing. The
-  GitHub Actions included-usage meter was exhausted on 2026-08-18, which blocks
-  every GitHub-hosted run until it resets on 2026-09-17, so these run the same
-  work locally in the interval: the CI gates under `act`, one scheduled
-  workflow from a `.conf` declaration, and the desk-critical market-data fetch
-  respectively. The last one is deliberately NOT folded into the general
-  runner — it is proven and load-bearing, and it migrates only once the general
-  runner has a track record. All three expire with the quota; check the date
-  before treating them as permanent infrastructure.
+- **`act-local.sh`**, **`gha-bridge.sh`**, **`midas-ohlcv-bridge.sh`** were a
+  temporary family that ran GitHub Actions work locally while the included-usage
+  meter was exhausted. They were retired on 2026-09-04, after the quota reset, and
+  are no longer in this directory.
 
 ## The exit convention
 
