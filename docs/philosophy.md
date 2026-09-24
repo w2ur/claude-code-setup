@@ -78,6 +78,8 @@ Since making this change: I've never hit the rate limit again. Not once. And the
 
 This isn't just a cost decision. It's a quality decision. A model that's rate-limited when you need it most is worse than a cheaper model that's always available.
 
+*2026-09 note: architect became troubleshooter (inherits the session model); Opus is now the default tier.*
+
 ### Advisory hooks, not blocking (a design choice, not a lesson)
 
 I never used blocking hooks. This was a deliberate choice from the start, not something I learned the hard way.
