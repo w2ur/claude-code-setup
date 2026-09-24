@@ -378,13 +378,17 @@ def build_skills(source: Path, existing: dict, existing_order: list[str]) -> tup
     return lines, todos
 
 
-def _hook_event_map(source: Path) -> dict[str, tuple[str, str]]:
-    """Map hook name -> (event_type, matcher) from settings.json.
+def _hook_event_map(source: Path) -> dict[str, list[tuple[str, str]]]:
+    """Map hook name -> every (event_type, matcher) it is registered under.
+
+    A list, not one pair: a hook may be registered under several matchers
+    (secret-scan runs on Write|Edit|NotebookEdit AND on Bash), and keeping one
+    pair published whichever registration settings.json happened to list last.
 
     Empty when the live hooks config is unusable; generate_guide() refuses to
     write in that case, so build_hooks() never publishes a "0 hooks" guide.
     """
-    mapping: dict[str, tuple[str, str]] = {}
+    mapping: dict[str, list[tuple[str, str]]] = {}
     hooks = read_hooks_config(source)
     if hooks is None:
         return mapping
@@ -395,7 +399,7 @@ def _hook_event_map(source: Path) -> dict[str, tuple[str, str]]:
                 cmd = hook.get("command", "")
                 m = re.search(r"hooks/([^/]+)/hook\.sh", cmd)
                 if m:
-                    mapping[m.group(1)] = (event_type, matcher)
+                    mapping.setdefault(m.group(1), []).append((event_type, matcher))
     return mapping
 
 
@@ -409,15 +413,17 @@ def build_hooks(source: Path, existing: dict, existing_order: list[str]) -> tupl
         name = hook_sh.parent.name
         if name not in event_map:
             continue  # present on disk but not registered in settings.json
-        event_type, matcher = event_map[name]
         script = hook_sh.read_text(encoding="utf-8", errors="ignore")
-        # Refine a Bash matcher with the git sub-command the hook targets.
-        if matcher == "Bash":
-            if "git push" in script:
-                matcher = "Bash(git push)"
-            elif "git commit" in script:
-                matcher = "Bash(git commit)"
-        event = f"{event_type} {ARROW} {matcher}"
+        labels: list[str] = []
+        for event_type, matcher in event_map[name]:
+            # Refine a Bash matcher with the git sub-command the hook targets.
+            if matcher == "Bash":
+                if "git push" in script:
+                    matcher = "Bash(git push)"
+                elif "git commit" in script:
+                    matcher = "Bash(git commit)"
+            labels.append(f"{event_type} {ARROW} {matcher}")
+        event = " · ".join(labels)
         mode = "Blocking" if "exit 2" in script else "Advisory"
         live[name] = {"event": event, "mode": mode}
 
