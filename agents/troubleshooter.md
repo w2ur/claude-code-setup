@@ -7,6 +7,7 @@ description: |
   a plan for the implementer.
 tools: Read, Bash, Glob, Grep
 model: inherit
+effort: high
 memory: project
 skills:
   - portfolio-conventions

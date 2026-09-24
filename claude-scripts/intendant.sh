@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # intendant.sh — what needs a human today, and nothing else.
 #
-# vigie is a panel you OPEN: 17 sources, everything, always.
+# vigie collects everything, once a day, and pushes only what changed.
 # intendant is an address you ASK: only the items requiring a decision.
 # Same data, different consumer — so the data stays in vigie and this only reads it.
 #
@@ -62,7 +62,7 @@ mark() { # name ok reason
 # ── vigie snapshot ──────────────────────────────────────────────────────────
 # READABLE AND PARSEABLE IS NOT HEALTHY (2026-09-05, round-5 review). Until
 # this, `[ -r ] && jq -e .` was the entire health test, and two ways a
-# snapshot lies without being malformed both rendered as a full, healthy panel
+# snapshot lies without being malformed both read as a full, healthy answer
 # — the queue getting SHORTER when an input dies, which is the failure this
 # script's header names:
 #
@@ -121,7 +121,7 @@ fi
 if [ -n "$vigie_lost" ]; then
   mark vigie false "$vigie_lost"
 else
-  # A DEAD COLLECTOR SHORTENS THIS QUEUE, not just vigie's own panel
+  # A DEAD COLLECTOR SHORTENS THIS QUEUE, not just vigie's own push
   # (2026-09-05, round-4 review). A failed collector leaves
   # `.sources.<name>.ok == false` AND `.data.<name> == null` — verified live
   # against the snapshot's own `techdebt` entry — so every `// 0` and every
@@ -134,14 +134,14 @@ else
   # the accountability mechanism.
   if [ "$down" -gt 0 ]; then
     mark vigie true "$down of vigie's own collectors are down — every count below is derived from a partial snapshot, so a dead collector reads here as a short queue"
-    add_item vigie warn "$down of vigie's own collectors are down — its panel is partial"
+    add_item vigie warn "$down of vigie's own collectors are down — this queue is partial"
   else
     mark vigie true
   fi
   n=$(jq -r '.data.gatewatch.missing // 0' "$SNAPSHOT")
   [ "$n" -gt 0 ] 2>/dev/null && add_item vigie act "$n repo(s) have PR traffic but no CI gate — /tech-debt"
   n=$(jq -r '[.data.envdrift[]?|(.undocumented//{})|keys[]?]|length' "$SNAPSHOT")
-  [ "$n" -gt 0 ] 2>/dev/null && add_item vigie act "$n env var(s) documented nowhere — see vigie envdrift band"
+  [ "$n" -gt 0 ] 2>/dev/null && add_item vigie act "$n env var(s) documented nowhere — see .data.envdrift in the vigie snapshot"
   n=$(jq -r '[.data.plans.plans[]?|select((.held|not) and .days_until_archive<=0)]|length' "$SNAPSHOT")
   [ "$n" -gt 0 ] 2>/dev/null && add_item vigie act "$n plan(s) past the archive cutoff and not held — /cleanup"
 fi
@@ -159,7 +159,7 @@ if { [ "$JRC" = 0 ] || [ "$JRC" = 1 ]; } && jq -e . <<<"$J" >/dev/null 2>&1; the
   #   0   healthy
   #   1   a finding — the watcher already reported it through its own channel;
   #       re-surfacing here is the nagging that teaches you to skip the queue
-  #   143 launchd cycling a KeepAlive job with SIGTERM (vigie-serve) — normal
+  #   143 launchd cycling a KeepAlive job with SIGTERM — normal for any such
   #   "(never exited)" — jobs-inventory's own wording for an agent that has not
   #       run since load. Normal for a monthly/weekly schedule, not a failure.
   #   2   could not run = *unknown*. Nobody else reports this one. It is the

@@ -47,9 +47,10 @@ an argument to an interpreter bypasses the one place its dependencies are declar
 **A binary guard does not cover a project's installed dependencies.** Guards check
 `node`, not `node_modules`. A 2026-08 disk sweep deleted 16 repos' `node_modules`;
 every guarded binary was still present, so `vigie-refresh` ran, regenerated
-`snapshot.json`, then died in `astro build`. The visible result was the worst shape
-available: **a fresh snapshot behind a frozen `dist/`**, the panel answering with
-numbers that looked current. **Before deleting a dependency directory, list which
+`snapshot.json`, then died in the build step that then existed. The visible result
+was the worst shape available: **a fresh snapshot behind a frozen page**, answering
+with numbers that looked current. The build is gone, but the lesson is not
+vigie-specific. **Before deleting a dependency directory, list which
 scheduled jobs build from that repo.**
 
 **When a script's header states a cadence, check that something fires it before
@@ -90,6 +91,10 @@ AUTO tier only** and logs the rest as `owner action:`.
 
 **`usage-watch`** — guards on `curl` and a uv-managed Python with a **fatal exit
 rather than a skip**, so a missing interpreter cannot be mistaken for a quiet week.
+Its findings, payload growth included, **notify through `notifier.sh` itself**:
+`intendant.sh` and vigie drop exit 1 on the assumption that the job already
+reported it. A run that measured nothing (no route list, zero routes, the ratchet
+crashing) is exit 2, never a finding.
 
 **`model-watch`** — a model chain hides its own degradation, and a *delisted* entry
 is worse than a degraded one: OpenRouter validates the whole `models` array up front,
@@ -110,28 +115,28 @@ reads as *not found* — a false negative, the silent kind.
 **`devlog-collect`** — the plist executes `collect.py` directly so its `uv run
 --script` shebang selects the interpreter. See the FDA note above.
 
-**`vigie-refresh`** — the only scheduled job whose script lives in a project repo
-(it builds that project), so `/sync-setup` does not cover it. Guards on
-**`node`/`npm`/`git` only, fatal exit 2**: without those no snapshot exists at all.
+**`vigie-refresh`** — the only scheduled job whose script lives in a project repo,
+so `/sync-setup` does not cover it. It collects the snapshot and then **pushes
+what changed**: since 2026-09-13 vigie has no panel, so this agent is the whole
+of it. Guards on **`node`/`npm`/`git` only, fatal exit 2**: without those no
+snapshot exists at all.
 **`gh` and `uv` are deliberately NOT fatal.** Each feeds exactly one collector, and
 `runCollectors` isolates a collector that throws — a missing `gh` records
 `{ok:false}`, the columns render `SIGNAL LOST`, and the band names the missing
 source. That is the designed, visible, one-column failure. Making them fatal was
-tried and is strictly worse: the script exits *before* `npm run build`, so the panel
-keeps serving the last good snapshot with every source `ok:true` and the band reading
-ALL CLEAR. **A guard written to prevent a plausible-looking answer nobody measured
-was manufacturing one.** It `cd`s into the repo first, deliberately: Astro resolves
-its content-collection base against the cwd of `astro build`, and a scheduled job
-runs with cwd `$HOME`, which would silently collect zero documents rather than fail.
+tried and is strictly worse: the script exits *before* the collect, so nothing
+regenerates the snapshot and every push is computed from a stale one — every
+source `ok:true` and nothing wrong, under a `generated_at` nobody reads.
+**A guard written to prevent a plausible-looking answer nobody measured was
+manufacturing one.** It `cd`s into the repo first, deliberately: the collectors
+resolve `.env`, the snapshot and the previous snapshot against the cwd, and a
+scheduled job runs with cwd `$HOME`.
 
-**`vigie-serve`** — the only agent with `RunAtLoad` and `KeepAlive` both true. It
-only serves the static `dist/` the refresh agent built: **the refresh agent owns the
-data and this one only shows it**, because a server that also refreshed would make
-the panel's age depend on when a browser was last opened. Port 7707 is pinned
-**strictly** (`vite.preview.strictPort`) — Astro's default walks to the next free
-port, which for a bookmark means quietly answering from whatever else holds it.
-`astro dev` is left non-strict so `npm run dev` still works alongside it.
-A `143` exit is launchd cycling it (SIGTERM) and is normal.
+**It calls `notify.mjs` and must read three exit states.** Under
+`set -euo pipefail` a bare call would mark this agent failed in exactly the
+months an alert fires, because **1 means a finding, not a failure**. 0 and 1 are
+both success; only 2 — could not run — stops the script. `VIGIE_DIGEST_DOW`
+gates the Monday audience digest on the same agent rather than a second plist.
 
 **`gate-watch`** — here a cron failure would be worse than a visible error:
 unauthenticated `gh search prs` returns zero rows, byte-identical to "no repo has any
@@ -156,6 +161,57 @@ exactly one, so watching the service cannot consume what it watches.
 awesome-list PRs, the Chrome Web Store listing. Reports state, never proposes
 content, and checks for an already-open PR before naming "open a PR" as an action.
 The 3rd and 17th rather than the 1st and 15th, which are taken at 08:07.
+
+**`dev-snapshot`** (`~/Library/LaunchAgents/com.example.dev-snapshot.plist`,
+03:17) — one-way mirror of `~/Dev` onto iCloud Drive, `rsync -a --delete`. A git
+remote covers tracked files only; this covers gitignored personal files, repos
+never pushed anywhere, and model weights that live in a project but never went
+to GitHub. **Mirror, not archive**: a local deletion propagates within the next
+run (worst case ~24 h), and the only undo is iCloud's own 30-day Recently
+Deleted — this script has no undo of its own. 03:17 was picked clear of every
+other agent, the 05:xx model jobs in particular; `jobs-inventory.sh` gives the
+occupied slots before any move.
+**Two guards stand between a partially-wiped `~/Dev` and a wiped mirror.** A
+git-count floor refuses to run at all (exit 2) when `~/Dev` holds fewer
+`*/.git` dirs than a measured floor — read as UNKNOWN, never as "nothing to
+mirror". And because `--max-delete` only **caps** a real rsync's deletions
+(openrsync deletes up to the limit, exits 25, and would do the same again
+every subsequent night — a slow-motion wipe on the same ~30-day timescale as
+the iCloud undo window), the script runs a read-only pre-flight first and
+**refuses the entire run** (exit 1, nothing touched) when the pre-flight would
+delete at or above that same threshold. `--max-delete` stays on the real
+transfer too, as a redundant second fence. A third guard refuses (exit 2) if
+the source and the iCloud destination are nested inside each other. See
+`~/.claude/scripts/dev-snapshot.sh` for the filter list and every constant's
+rationale — each script owns its own numbers, not this file.
+**A clean run used to be silent, which broke the rule that log age is the only
+stop signal** — a dead agent never exits with an error, it goes quiet, so only
+the age of its log can say it has stopped. launchd does not touch a log file's mtime on a run that writes nothing, so a job
+that ran fine every night for a month and one silently un-triggered for a
+month (laptop asleep at 03:17, agent unloaded) looked identical — an old,
+empty log and a cached `last_exit 0` from months back. Fixed: every run,
+success included, now ends with one timestamped summary line
+(`<ISO8601> dev-snapshot ok: <N> files, <D> deleted, <dur>s, exit 0`, or
+`FAILED: exit <rc>` on stderr), so `jobs-inventory.sh`'s log-age column is a
+real liveness signal for this job too, not an exception to the rule.
+**Every non-zero exit also notifies once through `notifier.sh`** (job name,
+exit code, counts — never a path). The liveness line cannot carry a failure
+on its own: `intendant.sh` and vigie drop exit 1 on the assumption that the
+job already reported its finding, and the `FAILED` line keeps the log fresh,
+so a mirror refusing every night read as healthy everywhere.
+
+**`config-backup`** (`~/Library/LaunchAgents/com.example.config-backup.plist`,
+03:47) — commits and pushes the two private config repos, `~/.claude` and
+`~/.claude/plugins/local`; what `~/.claude` tracks is decided by its own
+`.gitignore` allow-list, never here. LaunchAgent because `git push`
+authenticates through the login keychain. **A secret in the index is exit 2
+with nothing committed** — `gitleaks git --staged` runs before the commit and
+the index is reset, so every following night stops at the same place until a
+human looks; the repos' pre-commit hook is a second scan, not the gate. It
+also sweeps in whatever was left uncommitted in `~/.claude` that day, by
+design: it is a backup, not a history. 03:47 is after `dev-snapshot` and well
+before the 05:xx model jobs. Ends every run with one summary line, for
+the same log-age reason as `dev-snapshot`.
 
 **`midas-ohlcv-bridge`** (retired 2026-09-04) — the last of the quota-outage
 bridges, and the only scheduled job that ever wrote to a remote. It outlived the

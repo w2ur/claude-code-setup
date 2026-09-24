@@ -20,9 +20,10 @@
 # LAUNCH_AGENTS_DIR redirects the tree so this can be tested against a fixture.
 #
 # Exit 0 = every agent healthy. Exit 1 = a finding (an agent's last run exited
-# non-zero, or its log is older than its schedule implies). Exit 2 = could not
-# run, which must be read as UNKNOWN and never as "no agents are scheduled" —
-# an empty glob is indistinguishable from a wiped LaunchAgents directory.
+# non-zero, or a com.example.* plist on disk is not loaded). Log staleness is
+# vigie's job, not this script's. Exit 2 = could not run, which must be read
+# as UNKNOWN and never as "no agents are scheduled" — an empty glob is
+# indistinguishable from a wiped LaunchAgents directory.
 
 set -uo pipefail
 
@@ -89,12 +90,22 @@ for p in "${plists[@]}"; do
          | awk -F'= *' '/last exit code/{print $2; exit}' | sed 's/^ *//;s/ *$//')
   last="${last:--}"
   keep=$(jq -r '.KeepAlive == true' <<<"$j")
-  # A KeepAlive daemon cycled by launchd exits 143 (SIGTERM). Normal, not a finding.
-  case "$last" in
-    0|-|"(never exited)") ;;
-    143) [ "$keep" = "true" ] || findings=$((findings+1)) ;;
-    *) findings=$((findings+1)) ;;
-  esac
+
+  # A plist on disk with no matching entry in `launchctl list` is not loaded
+  # at all — distinct from a calendar job's normal between-runs "-", which
+  # means "not running right now" and is expected. `launchctl list "$label"`
+  # only succeeds for a loaded label, loaded or not run yet.
+  if ! launchctl list "$label" >/dev/null 2>&1; then
+    last="NOT LOADED"
+    findings=$((findings+1))
+  else
+    # A KeepAlive daemon cycled by launchd exits 143 (SIGTERM). Normal, not a finding.
+    case "$last" in
+      0|-|"(never exited)") ;;
+      143) [ "$keep" = "true" ] || findings=$((findings+1)) ;;
+      *) findings=$((findings+1)) ;;
+    esac
+  fi
 
   rows+=$(jq -nc --arg l "$label" --arg s "$sched" --arg p "$prog" \
                  --arg g "$log" --arg a "$logstate" --arg e "$last" \

@@ -22,19 +22,29 @@ esac
 # erroring on input it could not read.
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
-# Match anywhere so chained forms (`npm test && git push`, `cd repo && git push`)
-# are caught too, not only commands that literally start with `git push`.
-echo "$cmd" | grep -qE "git[[:space:]]+push" || exit 0
+# Match anywhere so chained forms (`npm test && git push`, `cd repo && git push`,
+# `git -C <path> push`) are caught too, not only commands that literally start
+# with `git push`.
+echo "$cmd" | grep -qE "git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+push" || exit 0
 
-# Resolve target repo: leading `cd <path> &&` in the command takes priority
-# (at PreToolUse time the cd hasn't executed yet), stdin cwd as fallback.
-dir=$(echo "$cmd" | sed -E -n 's/^[[:space:]]*cd[[:space:]]+([^&]*)&&.*/\1/p' | sed -E -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e "s/^['\"]//" -e "s/['\"]\$//")
-dir="${dir/#\~/$HOME}"
-if [ -z "$dir" ]; then
-  dir=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
+# Resolve target repo: shared with push-build-gate/hook.sh, which is where the
+# `git -C <path> push` bypass this hook also had was originally fixed
+# (2026-08-03) — see that file's history for why this couldn't just
+# special-case a `cd`. Fail loudly (exit 1 is non-blocking, but its stderr is
+# still surfaced — unlike exit 0) if the sibling lib is missing, rather than
+# silently letting a failed `source` fall through this advisory hook.
+LIB="$(dirname "${BASH_SOURCE[0]}")/../lib/resolve-repo.sh"
+if [ ! -r "$LIB" ]; then
+  echo "stale-readme-guard: cannot load $LIB — check NOT RUN" >&2
+  exit 1
 fi
-[ -z "$dir" ] && dir="$PWD"
+# shellcheck source=../lib/resolve-repo.sh
+source "$LIB"
+dir=$(resolve_repo_dir "$cmd" "$input")
 
+# `resolve_repo_dir` does not itself validate that `$dir` is a git repo —
+# that is this line's job, and a directory it isn't is a silent no-op here
+# (this hook is advisory; push-build-gate is where a non-repo cwd matters).
 repo=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || exit 0
 
 # Base: upstream of current branch, fallback to origin/main

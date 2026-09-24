@@ -30,36 +30,40 @@ file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev
 [ -z "$file_path" ] && exit 0
 [ ! -f "$file_path" ] && exit 0
 
-# Walk up to find project root and format based on detected config
-dir=$(dirname "$file_path")
-while [ "$dir" != "/" ] && [ "$dir" != "$HOME" ]; do
-  case "$file_path" in
-    *.js|*.jsx|*.ts|*.tsx|*.json|*.md|*.css|*.scss|*.html|*.yaml|*.yml|*.mjs|*.cjs)
-      has_prettier_config=0
-      if [ -f "$dir/.prettierrc" ] || [ -f "$dir/.prettierrc.json" ] || [ -f "$dir/.prettierrc.js" ] || [ -f "$dir/.prettierrc.yaml" ] || [ -f "$dir/.prettierrc.yml" ] || [ -f "$dir/.prettierrc.toml" ] || [ -f "$dir/.prettierrc.json5" ] || [ -f "$dir/prettier.config.js" ] || [ -f "$dir/prettier.config.mjs" ]; then
-        has_prettier_config=1
-      elif [ -f "$dir/package.json" ] && node -e "const p=require('$dir/package.json'); process.exit(p.prettier ? 0 : 1)" 2>/dev/null; then
-        has_prettier_config=1
-      fi
-      if [ "$has_prettier_config" = "1" ]; then
-        (cd "$dir" && npx --no-install prettier --write "$file_path" >/dev/null 2>&1) || true
-        exit 0
-      fi
-      ;;
-    *.py)
-      if [ -f "$dir/pyproject.toml" ] || [ -f "$dir/ruff.toml" ] || [ -f "$dir/.ruff.toml" ]; then
-        (cd "$dir" && ruff format "$file_path" >/dev/null 2>&1) || true
-        exit 0
-      fi
-      ;;
-    *.rs)
+# No prettier branch: no repo in this portfolio ships a prettier config, so it
+# never fired (confirmed by grep across ~/Dev before removal) — owner decision
+# D16 drops it rather than fixing the per-directory `node -e require()` spawn
+# that never enabled it.
+case "$file_path" in
+  *.py)
+    dir=$(dirname "$file_path")
+    repo_root=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || exit 0
+    [ -z "$repo_root" ] && exit 0
+
+    # "Configured" = a ruff.toml / .ruff.toml at the repo root, or a
+    # pyproject.toml carrying a [tool.ruff] table or [tool.ruff.*] subtable.
+    # A bare pyproject.toml with no ruff section is NOT configured — that was
+    # the bug: my-trading-app and midas-core have pyproject.toml but no [tool.ruff],
+    # and every edit reformatted the whole file regardless.
+    ruff_configured=0
+    if [ -f "$repo_root/ruff.toml" ] || [ -f "$repo_root/.ruff.toml" ]; then
+      ruff_configured=1
+    elif [ -f "$repo_root/pyproject.toml" ] && grep -Eq '^\[tool\.ruff(\.[A-Za-z0-9_.-]+)?\]' "$repo_root/pyproject.toml"; then
+      ruff_configured=1
+    fi
+
+    [ "$ruff_configured" = "1" ] && (cd "$repo_root" && ruff format "$file_path" >/dev/null 2>&1)
+    ;;
+  *.rs)
+    dir=$(dirname "$file_path")
+    while [ "$dir" != "/" ] && [ "$dir" != "$HOME" ]; do
       if [ -f "$dir/Cargo.toml" ]; then
-        (cd "$dir" && rustfmt "$file_path" >/dev/null 2>&1) || true
-        exit 0
+        (cd "$dir" && rustfmt "$file_path" >/dev/null 2>&1)
+        break
       fi
-      ;;
-  esac
-  dir=$(dirname "$dir")
-done
+      dir=$(dirname "$dir")
+    done
+    ;;
+esac
 
 exit 0
