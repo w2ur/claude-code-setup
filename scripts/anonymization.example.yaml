@@ -98,7 +98,7 @@ skip:
   # suite that cannot run — and the fixtures themselves are the most likely
   # thing in a hook directory to hold private data.
   - 'hooks/**/test_*.py'
-  # account-synced third-party skills (4 of 13 "All rights reserved"); never ours to publish
+  # account-synced third-party skills (some are "All rights reserved"); never ours to publish
   - 'skills/synced/**'
   # DECIDE WHAT THIS REPO IS ABOUT, then skip everything else. `plugins/**`
   # below keeps a personal-workflow plugin's skills and commands out — but a

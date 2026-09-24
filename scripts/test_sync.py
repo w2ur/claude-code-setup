@@ -52,10 +52,17 @@ def test_discover_files_skips_account_synced_skills(tmp_path):
     synced = source / "skills" / "synced" / "x" / "y"
     synced.mkdir(parents=True)
     (synced / "SKILL.md").write_text("# vendor skill\n", encoding="utf-8")
+    # Positive control: a sibling skill that is NOT under skills/synced/ must
+    # still be discovered. Without this, a `skip` pattern broad enough to
+    # exclude all of skills/** would pass the assertion above for the wrong
+    # reason — nothing would be discovered either way.
+    real = source / "skills" / "real" / "skill"
+    real.mkdir(parents=True)
+    (real / "SKILL.md").write_text("# our skill\n", encoding="utf-8")
 
     pairs = discover_files(source, config["file_map"], config["skip"])
 
-    assert pairs == []
+    assert pairs == [(real / "SKILL.md", sync.REPO_ROOT / "skills" / "real" / "skill" / "SKILL.md")]
 
 
 # ── read_hooks_config ───────────────────────────────────────────
