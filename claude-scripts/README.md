@@ -76,6 +76,31 @@ this directory is out of scope, not missing.
   dotfile vs. README/CLAUDE.md prose); conflating them would report every
   prose-documented secret as a leak, which is the false alarm it exists to
   prevent. Exits non-zero only for a variable documented in neither tier.
+- **`claude-md-weight.sh`** — measures the per-session cost of every
+  `CLAUDE.md` on the machine, and flags the three strata that accumulate in
+  them: hand-typed state, retraction archaeology, dated narrative. It is the
+  source of truth for the size threshold; reports state, never edits a file.
+- **`jobs-inventory.sh`** — derives the scheduled-job inventory from the
+  LaunchAgent plists themselves, so no roster or count is ever hand-typed.
+  Exit 1 when an agent's last run exited non-zero or a plist on disk is not
+  loaded. Never loads, unloads or edits a plist.
+- **`config-backup.sh`** — nightly commit-and-push of the private config
+  backup repos, with a `gitleaks` scan of the index first: a finding exits 2
+  with nothing committed. It has no exit 1 — a backup that did not happen is
+  unknown, never healthy.
+- **`dev-snapshot.sh`** — nightly one-way `rsync --delete` mirror of `~/Dev`
+  onto iCloud Drive, covering what a git remote never does (gitignored files,
+  never-pushed repos). A mirror, not an archive: the undo path is iCloud's own
+  "Recently Deleted".
+- **`elenchus-watch.sh`** — how much of the Elenchus free tier's daily
+  allowance is left, and which service-wide ceiling is closest to binding. It
+  reads a status endpoint that claims no quota, and its schedule is part of
+  the design: the counters roll over at 00:00 UTC, so it samples late in the
+  UTC day.
+- **`notifier.sh`** — pushes a watcher's finding to the owner's ntfy topic.
+  Generic on purpose, so there is one channel and one redaction pass: it
+  strips the literal values of known secrets and the `secret-scan` hook's
+  patterns before anything leaves the machine.
 
 - **`act-local.sh`**, **`gha-bridge.sh`**, **`midas-ohlcv-bridge.sh`** — a
   **temporary** family, and the dates in their headers are load-bearing. The
