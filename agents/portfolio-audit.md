@@ -17,6 +17,11 @@ sig='Made with care by|Fait avec soin par'
 ex=(--exclude-dir={node_modules,dist,build,out,.next,.astro,.git,.claude,docs,plans,strategy} --exclude={README.md,CLAUDE.md})
 { grep -rliE "$sig" . "${ex[@]}" --include={'*.html','*.jsx','*.tsx','*.astro','*.vue','*.svelte','*.py','*.j2','*.jinja','*.ts','*.json'}
   grep -rliE "$sig" . "${ex[@]}" --include={'*.md','*.mdx'} | grep -E '/(content|pages|src)/'; }
+# A repo with no page or template file at all (a CLI, a library, a proxy) has
+# no footer to render: its README is the only page anyone sees, so there the
+# README signature counts.
+ui=$(find . \( -name node_modules -o -name .git -o -name dist -o -name build \) -prune -o -type f \( -name '*.html' -o -name '*.jsx' -o -name '*.tsx' -o -name '*.astro' -o -name '*.vue' -o -name '*.svelte' -o -name '*.j2' -o -name '*.jinja' \) -print -quit)
+[ -z "$ui" ] && grep -liE "$sig" README.md 2>/dev/null
 ```
 
 The name usually sits inside the link, so the command matches the prefix; read each listed file for the link. No output means the footer is missing. Report if:
