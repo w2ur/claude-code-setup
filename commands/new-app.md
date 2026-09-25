@@ -22,6 +22,7 @@ Before scaffolding, ask the owner:
 4. **User-facing language?** (French / English / Bilingual)
 5. **Deploy target?** (Netlify / Vercel / Cloudflare / local-only for now)
 6. **Should it get a tile on the hub ({portfolio-site-url})?** If yes, get a one-line French tagline, one-line English tagline, and (if it's a real project the hub would feature, not a personal-only tool) a facts line for each language.
+7. **Design direction?** (or I propose 2-3) If the owner has one, take it as given. Otherwise load the `design-tells` skill, propose 2-3 directions from subject, mood and audience — palette, type and one signature element each, none built on a pattern from the `~/.claude/CLAUDE.md` Design defaults avoid-list or the skill's section-1 traps — and **wait for the owner to pick one** before scaffolding. An app with no UI (CLI, script, library) may answer "none"; record that instead.
 
 ## Scaffold
 
@@ -41,6 +42,17 @@ Create covering: project overview, tech stack, dev/build commands, deployment, a
 - User-facing language
 - Development commands (npm install && npm run dev, or equivalent)
 - Deployment info
+- A **Design direction** section from question 7 — later UI sessions read it instead of falling back on a model default. Write the chosen direction concretely, then the avoid-list and the trigger line; do not copy the skill's full list. **The avoid-list is not written in this command:** read `~/.claude/CLAUDE.md` → "Design defaults" at scaffold time and copy its named list of patterns (the items after "Never default to") verbatim, so the new project holds its own self-contained copy of the current list:
+  ```markdown
+  ## Design direction
+
+  [Chosen direction: palette with hex values, type, the one signature element, mood.]
+
+  Avoid unless this section asks for it: [the list, copied verbatim from ~/.claude/CLAUDE.md → Design defaults].
+
+  **Before any UI or visual work here, load the `design-tells` skill** — it holds the full trap list. This section overrides it wherever they disagree.
+  ```
+  If question 7 was answered "none", write the section as a single line: `No UI yet — before adding one, propose 2-3 directions and load the design-tells skill.`
 
 ### README.md
 Write a real README (not boilerplate) with:
@@ -66,7 +78,7 @@ Appropriate for the chosen stack, including all standard exclusions.
 ### Initial project files
 Use the `implementer` agent to create the minimal project skeleton:
 - Package.json (or equivalent) with project name and scripts
-- Basic app entry point with "Hello World" or equivalent
+- Basic app entry point with "Hello World" or equivalent, styled per the CLAUDE.md "Design direction" section
 - Author signature footer already present
 - Dark/light mode support via `prefers-color-scheme`
 - Basic test setup (empty test file with framework configured)
@@ -120,7 +132,6 @@ After scaffolding:
 ### Next steps:
 1. Deploy when the app has enough content
 2. If it wasn't given a hub tile yet and should get one later, add an entry to `~/Dev/{portfolio-site}/src/data/editorial.ts`
-3. Run /sync to validate the hub's stories collection frontmatter (unrelated to this app unless it ships a story)
 
 ### Documents to update:
 - Inventaire: add $0 entry

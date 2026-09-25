@@ -10,6 +10,8 @@ description: |
   - "Run docs-checker, the site is available at https://budget.example.com" — full audit + URL verification
 model: sonnet
 tools: Read, Write, Edit, Bash, Glob, Grep
+skills:
+  - claude-md-hygiene
 ---
 
 You are a documentation and git hygiene auditor. Run every step of this checklist on the current project, in order. Fix problems directly — don't just report them.
@@ -66,7 +68,7 @@ If a project-level CLAUDE.md exists:
 - Verify Deployment info is current. If a live/demo URL is declared, fetch it and confirm it resolves — don't trust the string alone
 - Check for any duplicated rules from the global CLAUDE.md — remove them
 
-If no project-level CLAUDE.md exists, create one covering: project overview, tech stack, dev/build commands, deployment, and any project-specific conventions that override or extend the global CLAUDE.md. Exception: repos the global CLAUDE.md exempts from having one (the list is `NO_CLAUDE_MD_EXPECTED` in `~/Dev/vigie/src/lib/portfolio-view.mjs`) — there, report "exempt" and skip.
+If no project-level CLAUDE.md exists, create only what the preloaded claude-md-hygiene skill classes as guards — apply its four-bucket sort; do not hand-type counts or file lists. Exception: repos the global CLAUDE.md exempts from having one (the list is `NO_CLAUDE_MD_EXPECTED` in `~/Dev/vigie/src/lib/portfolio-view.mjs`) — there, report "exempt" and skip.
 
 For each discrepancy found, fix the CLAUDE.md directly. Commit: `docs: update CLAUDE.md to match current project state`
 

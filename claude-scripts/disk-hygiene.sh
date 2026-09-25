@@ -13,7 +13,7 @@
 # Output format (one action per line, tab-separated):
 #   <VERB>\t<path>\t<reason>
 # VERB is DELETE, ARCHIVE (reason carries the destination as "-> <dest>"),
-# or REPORT. Lines are grouped under "# <category>" comment lines. The
+# TRUNCATE (a job log cut to its tail, mtime preserved), or REPORT. Lines are grouped under "# <category>" comment lines. The
 # final line is always:
 #   SUMMARY actions=<n> auto=<n> confirm=<n>
 # A clean tree prints only that SUMMARY line, with actions=0.
@@ -25,6 +25,10 @@
 set -euo pipefail
 
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
+# The job-logs category discovers its targets from these plists; redirect it
+# to a fixture tree together with CLAUDE_DIR.
+LAUNCH_AGENTS_DIR="${LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
+JOB_PLIST_PREFIX="com.example."
 
 # ---------------------------------------------------------------------------
 # Retention constants -- this table is authoritative (verified in a prior
@@ -44,18 +48,25 @@ BACKUPS_KEEP=2          # backups/ -- keep the newest N *.claude.json.backup.*
 SHELL_SNAPSHOTS_KEEP=1  # shell-snapshots/ -- keep the newest N, PLUS any
                         # snapshot protected by the liveness guard (see
                         # oldest_claude_cli_start_epoch).
-PLANS_ARCHIVE_DAYS=21   # plans/*.md older than this are ARCHIVEd, never
+PLANS_ARCHIVE_DAYS=21   # plans/ entries older than this are ARCHIVEd, never
                         # deleted. Owner decision: 21 days, matching the
                         # one-off catch-up that first flattened plans/.
                         # The HOLD list below is what keeps long-running
                         # working documents alive past the cutoff.
+                        # Applies to every top-level entry of plans/ --
+                        # .md, other files and directories alike; a
+                        # directory's age is that of its NEWEST entry.
+JOB_LOG_KEEP_LINES=2000 # job-logs: a com.example.* log is truncated to its
+                        # last N lines...
+JOB_LOG_TRUNCATE_ABOVE_LINES=4000
+                        # ...once it exceeds THIS many. The gap is not
+                        # decoration: cleanup-cron.sh writes into its own
+                        # plist log between `apply` and its verify `plan`,
+                        # so a single threshold would re-plan that log on
+                        # the verify pass and fail the convergence check.
 
 # Plans that are live working documents regardless of age -- never archived.
 PLANS_HOLD_PATTERNS=(
-  "*master-plan.md"
-  "*fresh-eyes*"
-  "*progress-A.md"
-  "*progress-B.md"
   # Owner-action documents: the files the owner personally works from. Their
   # deadlines run past the 21-day cutoff, so archiving one would file away
   # instructions while they are still due.
@@ -391,6 +402,91 @@ do_changelog() {
   fi
 }
 
+# Prints, one per line and deduplicated, the StandardOutPath and
+# StandardErrorPath of every com.example.* plist, with the directory part
+# canonicalized so it compares equal to paths built from $ROOT.
+plist_log_paths() {
+  local p key raw dir
+  for p in "$LAUNCH_AGENTS_DIR/$JOB_PLIST_PREFIX"*.plist; do
+    [ -f "$p" ] || continue
+    for key in StandardOutPath StandardErrorPath; do
+      raw="$(plutil -extract "$key" raw -o - "$p" 2>/dev/null)" || continue
+      [ -n "$raw" ] || continue
+      dir="$(cd "$(dirname "$raw")" 2>/dev/null && pwd -P)" || dir="$(dirname "$raw")"
+      printf '%s\n' "$dir/$(basename "$raw")"
+    done
+  done | sort -u
+}
+
+# Cuts a log to its last JOB_LOG_KEEP_LINES lines WITHOUT changing its mtime.
+#
+# The mtime is load-bearing: jobs-inventory.sh reads a log's age as the job's
+# last-run signal -- a dead agent never exits with an error, it goes quiet --
+# so a truncation that bumped the mtime would make every rotated job read as
+# having run today. The reference is taken BEFORE the log is touched.
+#
+# Rewritten in place (same inode), never replaced by a mv: launchd holds the
+# log open in append mode for a running job, and a replaced file would take
+# that job's further output into an unlinked inode.
+truncate_keep_mtime() {
+  local log="$1" ref tail_tmp
+  ref="$(mktemp -t disk-hygiene-ref)"
+  tail_tmp="$(mktemp -t disk-hygiene-tail)"
+  touch -r "$log" "$ref"
+  tail -n "$JOB_LOG_KEEP_LINES" "$log" > "$tail_tmp"
+  cat "$tail_tmp" > "$log"
+  touch -r "$ref" "$log"
+  rm -f -- "$ref" "$tail_tmp"
+}
+
+do_job_logs() {
+  category_start "job-logs"
+
+  # The plists are the only authority on which logs are job logs. Without
+  # them nothing can be told apart, so say so rather than printing nothing
+  # -- an empty glob is indistinguishable from a wiped LaunchAgents dir.
+  local plist_count=0 p
+  for p in "$LAUNCH_AGENTS_DIR/$JOB_PLIST_PREFIX"*.plist; do
+    if [ -f "$p" ]; then plist_count=$((plist_count + 1)); fi
+  done
+  if [ "$plist_count" -eq 0 ] || ! command -v plutil >/dev/null 2>&1; then
+    emit "REPORT" "$LAUNCH_AGENTS_DIR" "job-log rotation SKIPPED -- no readable ${JOB_PLIST_PREFIX}*.plist (or no plutil); this is not a clean result" "confirm"
+    return 0
+  fi
+
+  local known log lines
+  known="$(plist_log_paths)"
+  while IFS= read -r log; do
+    [ -n "$log" ] || continue
+    case "$log" in
+      "$ROOT"/*) ;;
+      *) print_comment "not rotated (outside $ROOT): $log"; continue ;;
+    esac
+    [ -f "$log" ] || continue
+    lines="$(wc -l < "$log" | tr -d ' ')"
+    [ "$lines" -gt "$JOB_LOG_TRUNCATE_ABOVE_LINES" ] || continue
+    emit "TRUNCATE" "$log" "$lines lines > $JOB_LOG_TRUNCATE_ABOVE_LINES -> keep last $JOB_LOG_KEEP_LINES, mtime preserved" "auto"
+    if [ "$MODE" = "apply" ]; then
+      assert_under_root "$log"
+      truncate_keep_mtime "$log"
+    fi
+  done <<< "$known"
+
+  # Logs no plist writes: reported, NEVER touched. Some have a live writer
+  # that is not a LaunchAgent (the Claude Code daemon writes daemon.log, a
+  # script can keep its own log); others are leftovers of retired jobs. The
+  # owner tells them apart. A comment, not a REPORT action: a row that can
+  # never be acted on for daemon.log would sit in cleanup-cron's owner-action
+  # count every month and teach the owner to skip that count.
+  local f
+  while IFS= read -r -d '' f; do
+    # Here-string, not a pipe: under pipefail an early-exiting grep -q can
+    # SIGPIPE the printf and read a match as a miss.
+    grep -Fxq -- "$f" <<< "$known" && continue
+    print_comment "not written by any ${JOB_PLIST_PREFIX}* plist, left untouched: $f"
+  done < <(find "$ROOT" -mindepth 1 -maxdepth 1 -type f -name '*.log' -print0 | sort -z)
+}
+
 is_plans_hold() {
   local name="$1" pattern
   for pattern in "${PLANS_HOLD_PATTERNS[@]}"; do
@@ -406,18 +502,31 @@ do_plans_archive() {
   local dir="$ROOT/plans"
   [ -d "$dir" ] || return 0
   # AUTO tier, but never deletes. Never touches anything already under
-  # plans/archive/ (find is -maxdepth 1 here, so it never recurses into
-  # the archive/ subdirectory).
+  # plans/archive/ (find is -maxdepth 1 here and skips archive/ itself).
+  #
+  # Every top-level entry is a candidate, not only *.md: a scratch folder or
+  # a measurements .json filtered out by name would sit in plans/ forever. A
+  # directory is only as old as its newest entry, so a folder still being
+  # worked in is kept even when the folder's own mtime is old.
   local f base year dest
   while IFS= read -r -d '' f; do
     base="$(basename "$f")"
     is_plans_hold "$base" && continue
+    if [ -d "$f" ] && [ -n "$(find "$f" ! -mtime "+$PLANS_ARCHIVE_DAYS" -print -quit)" ]; then
+      continue
+    fi
     if [[ "$base" =~ ^([0-9]{4})-[0-9]{2}-[0-9]{2}- ]]; then
       year="${BASH_REMATCH[1]}"
     else
       year="$(date -r "$(stat -f %m "$f")" +%Y)"
     fi
     dest="$dir/archive/$year"
+    # A same-name entry already in the archive would be overwritten by a file
+    # mv, or receive a directory INSIDE it -- either way a plan is lost.
+    if [ -e "$dest/$base" ]; then
+      print_comment "not archived, $dest/$base already exists: $f"
+      continue
+    fi
     emit "ARCHIVE" "$f" "older than ${PLANS_ARCHIVE_DAYS}d -> $dest/$base" "auto"
     if [ "$MODE" = "apply" ]; then
       assert_under_root "$f"
@@ -425,7 +534,8 @@ do_plans_archive() {
       mkdir -p -- "$dest"
       mv -- "$f" "$dest/$base"
     fi
-  done < <(find "$dir" -mindepth 1 -maxdepth 1 -type f -name '*.md' -mtime "+$PLANS_ARCHIVE_DAYS" -print0 | sort -z)
+  done < <(find "$dir" -mindepth 1 -maxdepth 1 ! -name archive ! -name '.*' \
+             \( \( -type f -mtime "+$PLANS_ARCHIVE_DAYS" \) -o -type d \) -print0 | sort -z)
 }
 
 # ---------------------------------------------------------------------------
@@ -597,6 +707,7 @@ main() {
   do_older_than "paste-cache" "$ROOT/paste-cache" "$PASTE_CACHE_DAYS"
   do_older_than "tasks" "$ROOT/tasks" "$TASKS_DAYS"
   do_changelog
+  do_job_logs
   do_plans_archive
   do_payload_baselines
   do_projects

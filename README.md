@@ -3,8 +3,8 @@ name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
 about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, 2 blocking hooks included."
-facts_fr: "8 commandes, 6 agents, 4 hooks — dont 2 bloquants."
-facts_en: "8 commands, 6 agents, 4 hooks — 2 of them blocking."
+facts_fr: "7 commandes, 5 agents, 8 skills, 4 hooks — dont 2 bloquants."
+facts_en: "7 commands, 5 agents, 8 skills, 4 hooks — 2 of them blocking."
 ---
 
 <div align="center">
@@ -50,8 +50,8 @@ Everything here is about writing code. I run other Claude Code automation that i
 ```
 ┌───────────────────────────────────────────────────────────┐
 │                    You type a command                     │
-│   /audit  /cleanup  /new-app  /next  /sync  /tech-debt    │
-│                        /sync-setup                        │
+│      /audit  /cleanup  /new-app  /tech-debt  /sync-setup  │
+│               /model-review  /ship-plan                   │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
@@ -61,7 +61,6 @@ Everything here is about writing code. I run other Claude Code automation that i
 │  implementer ───── sonnet                                 │
 │  troubleshooter ── inherit (never weaker than the caller) │
 │  docs-checker ─── sonnet (audits README, CLAUDE.md)       │
-│  portfolio-sync ─ sonnet (hub stories frontmatter)        │
 │  portfolio-audit  haiku (compliance checks)               │
 │  dummy-visitor ── sonnet (bilingual naive-visitor review) │
 │                                                           │
@@ -75,6 +74,7 @@ Everything here is about writing code. I run other Claude Code automation that i
 │                  │  ci-and-branch-protection        │     │
 │                  │  testing-conventions             │     │
 │                  │  memory-and-plans                │     │
+│                  │  design-tells                    │     │
 │                  └──────────────────────────────────┘     │
 └─────────────────────────────┬─────────────────────────────┘
                               │
@@ -97,17 +97,16 @@ Everything here is about writing code. I run other Claude Code automation that i
 <sub>The guide, on the scenario I run most: triage the environment first, then a one-way L1 → L2 → L3 escalation, then a regression test written before the fix.</sub>
 
 <details>
-<summary><strong>Commands (8)</strong> — entry points that orchestrate everything</summary>
+<summary><strong>Commands (7)</strong> — entry points that orchestrate everything</summary>
 
 <br>
 
 | Command | What it does | When to use it |
 |---------|-------------|----------------|
-| `/sync` | Validates the stories collection frontmatter across the portfolio hub | Weekly maintenance |
-| `/brief` | Aggregates every tracked source into one queue, names the commands that would clear it, runs none of them | Morning check-in |
 | `/audit` | Parallel docs-checker + portfolio-audit | Before releases, compliance sweeps |
-| `/new-app` | Full scaffold with portfolio compliance from day one | Starting a new project |
-| `/next` | Executes the next unblocked task from a multi-phase plan track, then stops | One session per phase of a large plan |
+| `/new-app` | Full scaffold with portfolio compliance from day one, including a design direction | Starting a new project |
+| `/ship-plan` | Plan review → fold findings → stop for approval → execute → `/code-review high` → stop before push | Taking a written plan to reviewed code |
+| `/model-review` | Derives every model pin and headless job, sets the new model's effort, re-tests prompts and design scaffolding | When a new model release lands |
 | `/cleanup` | Disk hygiene sweep of `~/.claude` first, then stale plans, plugin audit, memory compaction | Weekly housekeeping |
 | `/tech-debt` | Monthly triage → deep review → auto-fix | Monthly health check |
 | `/sync-setup` | Sync this repo from live `~/.claude/` config (anonymize + audit) | After workflow changes |
@@ -115,15 +114,14 @@ Everything here is about writing code. I run other Claude Code automation that i
 </details>
 
 <details>
-<summary><strong>Agents (6)</strong> — the workers, each with a specific role and model</summary>
+<summary><strong>Agents (5)</strong> — the workers, each with a specific role and model</summary>
 
 <br>
 
 | Agent | Model | Memory | What it does | What it doesn't do |
 |-------|-------|--------|--------------|--------------------|
 | **implementer** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | ✅ | Executes tasks with "done when" criteria | Architecture decisions |
-| **troubleshooter** | `inherit` (session model — never weaker than the caller) | ✅ | Diagnoses structural problems after 2 failed fixes, produces plans | Write production code |
-| **portfolio-sync** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | ✅ | Validates the hub's stories collection frontmatter | Creative content |
+| **troubleshooter** | `inherit` (session model — never weaker than the caller) | ✅ | L3 of the escalation cascade: diagnoses structural problems after a direct fix and systematic debugging have both failed, produces plans | Write production code |
 | **docs-checker** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Audits + fixes README, CLAUDE.md, verifies declared URLs actually resolve | Compliance standards |
 | **portfolio-audit** | ![haiku](https://img.shields.io/badge/haiku-10B981?style=flat-square) | — | Read-only compliance check (signature, secrets, tests) | Fix anything |
 | **dummy-visitor** | ![sonnet](https://img.shields.io/badge/sonnet-3B82F6?style=flat-square) | — | Bilingual FR/EN naive visitor — two-phase perception vs. intent review | Compare to competitors |
@@ -133,17 +131,18 @@ The model selection matters. I don't pay opus prices for a compliance check that
 </details>
 
 <details>
-<summary><strong>Skills (7)</strong> — preloaded knowledge and user-invocable utilities</summary>
+<summary><strong>Skills (8)</strong> — preloaded knowledge and user-invocable utilities</summary>
 
 <br>
 
-- **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, the three-layer inventory that replaced the per-repo manifest, quality gates, display order). Loaded into `troubleshooter` and `portfolio-sync`.
+- **portfolio-conventions**: condensed version of cross-project standards (naming, signature, dark mode, docs, the three-layer inventory that replaced the per-repo manifest, quality gates, display order). Loaded into `troubleshooter`.
 - **scheduled-jobs**: why each scheduled job exists, at the hour it is scheduled, and which plausible "fixes" are wrong — the login-keychain trap outside a GUI session, per-job PATH, the 0/1/2 exit convention. Current state is derived by `claude-scripts/jobs-inventory.sh`, never written into the skill — the prose version of that inventory drifted repeatedly before it was replaced by a script.
 - **claude-md-hygiene**: how to cut a CLAUDE.md without losing a fact — the four-bucket taxonomy (guard / instruction / domain knowledge / archaeology), the trigger-line shape without which an extracted skill never loads, the `.gitignore` prerequisite, and the line-coverage check that must be made to fail once before its silence counts as evidence.
 - **python-uv**: why `uv` is the only Python manager here, where the enforcement actually lives (a config file, emphatically not a shell rc — a scheduled job never sources one), and which plausible "fixes" are wrong.
 - **ci-and-branch-protection**: the zero-coverage hole in an aggregate CI job (`jq 'all(.[]; …)'` over an empty set returns `true`, so the obvious gate reports success on nothing), why branch protection is advisory on a private repo on the free tier, and the three traps that permanently deadlock a solo merge.
 - **testing-conventions**: the regression-test comment format, property-test setup, the financial-math tolerance that was measured too tight at `1e-10`, and the measured blind spots of a green suite.
 - **memory-and-plans**: how the two memory systems resolve on disk, why per-agent stores are project-scoped and must never be consolidated upward or committed.
+- **design-tells**: the named trap list for UI work in a project with no stated direction — the patterns a model reaches for by default (cream grounds, italic accent words, numbered section labels, pill buttons…), each with what to do instead. A project's own design section overrides it.
 
 The first two are the survivors of an earlier, larger set; the rest arrived the other way round. Everything after `scheduled-jobs` was **extracted from the global CLAUDE.md**, which is billed into every session under it and had grown past the point where that was worth paying. The rule that decides the split: a **guard** — anything that stops a wrong action, including "this looks like an obvious improvement but was measured to be wrong" — stays in CLAUDE.md; the **measurement behind it**, the falsifying control and the retraction story move into a skill. `claude-scripts/claude-md-weight.sh` measures the result and owns the threshold, so no number here can drift.
 
@@ -256,13 +255,13 @@ Browse the files, understand the patterns, and build your own version. The [phil
 
 <br>
 
-**If you have 1-3 apps:** You don't need half of this. Drop `portfolio-sync` and `portfolio-audit` — they exist because I have 10+ repos to keep in sync. Keep the `implementer` and `troubleshooter` agents, the escalation cascade in the global `CLAUDE.md`, and the two blocking hooks. That alone is a massive upgrade over bare Claude Code.
+**If you have 1-3 apps:** You don't need half of this. Drop `portfolio-audit` — it exists because I have 10+ repos to keep in sync. Keep the `implementer` and `troubleshooter` agents, the escalation cascade in the global `CLAUDE.md`, and the two blocking hooks. That alone is a massive upgrade over bare Claude Code.
 
 **If you work in a team:** The escalation rules still apply — they're about AI behavior, not team size. The `implementer`/`troubleshooter` split actually maps well to teams where juniors implement and seniors review. The memory system needs thought, though — per-developer or shared? I haven't solved that one.
 
 **If you have a different stack:** My skills are specific to my projects. Throw them out and write your own. The architecture (commands → agents → skills + hooks) doesn't care what language you write in.
 
-**If you use a monorepo:** The `portfolio-sync` agent assumes separate repos. You'd need a monorepo-aware version. Everything else works as-is.
+**If you use a monorepo:** The `portfolio-audit` agent and `/tech-debt` assume separate repos. You'd need monorepo-aware versions. Everything else works as-is.
 
 </details>
 

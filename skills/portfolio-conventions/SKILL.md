@@ -1,12 +1,12 @@
 ---
 name: portfolio-conventions
-description: Portfolio coherence rules — preloaded into troubleshooter and portfolio-sync agents as background knowledge.
+description: Portfolio three-layer data system (inventory, README pitch frontmatter, editorial.ts) and coherence rules. Load before changing how any project is described, listed, ordered or given a hub tile.
 user-invocable: false
 ---
 
 # Portfolio Conventions
 
-These are the active portfolio-wide rules. This skill is preloaded — do not invoke it manually.
+These are the active portfolio-wide rules.
 
 ## Identity
 
@@ -20,16 +20,6 @@ These are the active portfolio-wide rules. This skill is preloaded — do not in
 - All repos use kebab-case matching the folder name in ~/Dev.
 - No unintentional naming patterns (an "-or" suffix once read as an agent-noun and forced a rename).
 - New projects that get a hub tile are appended to `editorial.ts` (see below) — there is no numeric sort field to default.
-
-## Signature
-
-- Footer: "Made with care by {author-first-name}" with link to https://{portfolio-site-url}.
-- Present by default on all apps. Opt-out must be explicit in project CLAUDE.md.
-
-## Dark/Light Mode
-
-- All user-facing apps support dark and light mode via prefers-color-scheme.
-- Manual toggle is optional per project. Opt-out requires justification in CLAUDE.md.
 
 ## Documentation
 
@@ -81,16 +71,11 @@ facts_en: "51 biases, 510 prevention strategies, 131 references checked against 
 
 ## Infrastructure
 
-- Zero cost: free tiers only (Netlify, Vercel, Cloudflare, Neon, etc.)
-- Automatic deploys on push to main
 - Databases: Neon PostgreSQL (per-project isolation), Cloudflare D1 (lightweight)
 - Domain: example.com as root, subdomains for family apps, dedicated domains for main apps
 
 ## Quality Standards
 
-- Zero build warnings. Exceptions documented in project CLAUDE.md.
-- Conventional Commits. One logical change per commit.
 - Tests alongside implementation. No console.log in production.
-- No secrets in repos. No personal data in repos.
 - .gitignore covers: build artifacts, node_modules, .env*, OS files, backups.
 

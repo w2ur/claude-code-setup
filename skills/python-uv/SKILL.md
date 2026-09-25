@@ -41,8 +41,9 @@ the stable form** — write the config key.
 
 ## Homebrew's `python@3.14` stays installed, and that is not a loophole
 
-It is `installed_on_request=false` — a dependency of `gcloud-cli`, `mpv`, `yt-dlp`,
-`vapoursynth` and `peon-ping`. `brew uninstall python@3.14` takes those with it.
+It is `installed_on_request=false` — its dependents are whatever
+`brew uses --installed python@3.14` prints. `brew uninstall python@3.14` takes those
+with it.
 
 So the rule is *"Homebrew Python is a library dependency of Homebrew formulae, never
 a development interpreter"*, **not** *"no Homebrew Python exists"*. Do not try to

@@ -45,10 +45,12 @@ restate those numbers here, they will drift out of sync with the script.
    ```
    (both flags can be combined in one `apply` call if the owner confirms both.)
 
-4. Any `REPORT`-verb lines (currently: marketplaces with no enabled plugin)
-   are owner actions, surfaced verbatim with the `run: claude plugin
-   marketplace remove <name> (then delete)` instruction from the script's
-   reason field. Do NOT run `claude plugin marketplace remove` yourself —
+4. Any `REPORT`-verb lines are owner actions, surfaced verbatim with the
+   script's reason field — for a marketplace with no enabled plugin, the
+   `run: claude plugin marketplace remove <name> (then delete)` instruction.
+   The `# job-logs` comment lines naming logs no plist writes are surfaced
+   too; the script never touches those files, and neither does this
+   command. Do NOT run `claude plugin marketplace remove` yourself —
    deregistering a marketplace is a decision for the owner, not something
    this command automates.
 
@@ -106,16 +108,22 @@ Flag any conflicts:
 
 ## Step 3 — Memory Compaction
 
-Check agent memory files:
+Per-agent memory is project-scoped by design (see the `memory-and-plans` skill) —
+stores are scattered across every repo, not just `~/.claude`. Check every one of
+them, not just the `~/.claude` residue. Nested working dirs put stores deep (an
+archived snapshot's sits at depth 7), and a store can hold topic files with no
+`MEMORY.md`, so list store directories rather than index files:
 ```bash
-for dir in ~/.claude/agent-memory/*/; do
-  agent=$(basename "$dir")
-  if [ -f "$dir/MEMORY.md" ]; then
-    lines=$(wc -l < "$dir/MEMORY.md")
-    echo "$agent: $lines lines"
-  fi
+find ~/Dev ~/.claude -maxdepth 10 \( -name node_modules -o -name .git \) -prune -o \
+  -type d -path '*/.claude/agent-memory/*' ! -path '*/.claude/agent-memory/*/*' -print 2>/dev/null | sort | while read -r d; do
+  store=${d%/.claude/agent-memory/*}
+  files=$(find "$d" -type f | wc -l | tr -d ' ')
+  if [ -f "$d/MEMORY.md" ]; then lines="$(wc -l < "$d/MEMORY.md" | tr -d ' ') lines"; else lines="no MEMORY.md"; fi
+  echo "$store [$(basename "$d")]: $lines, $files files"
 done
 ```
+Do not propose consolidating these stores upward — that fights the resolver, which
+keys each one to the project root of the session that wrote it.
 
 If any MEMORY.md exceeds 200 lines:
 1. Read the file
@@ -127,32 +135,29 @@ If any MEMORY.md exceeds 200 lines:
 
 Check if the workflow guide and strategic docs are stale relative to the actual Claude Code config.
 
-**Workflow guide:**
+**Workflow guide:** its COMMANDS / AGENTS / SKILLS / HOOKS arrays are generated from live config, so ask the generator rather than grepping the HTML:
+
 ```bash
-# Compare commands in ~/.claude/commands/ with commands listed in workflow-guide.html DATA section
-ls ~/.claude/commands/*.md 2>/dev/null | xargs -I{} basename {} .md | sort > /tmp/cc-commands-actual
-grep -o '"\/[a-z-]*"' ~/Dev/workflow-guide.html 2>/dev/null | tr -d '"/' | sort -u > /tmp/cc-commands-guide
-diff /tmp/cc-commands-actual /tmp/cc-commands-guide
+g=~/Dev/claude-code-setup/scripts/generate_workflow_guide.py
+if [ -x "$g" ]; then "$g" --check; echo "exit=$?"; else echo "exit=2 (no generator at $g)"; fi
 ```
 
-If there's a diff, report which commands are missing from or extra in the guide.
+It is read-only. Bind to the exit code, never to silence:
+- `0` — the four arrays match live config and no entry owes prose.
+- `1` — a finding: report its `drift in <ARRAY>: <entries>` and `owed prose: …` lines verbatim. The fix is `--live` (rewrites the arrays in place) followed by writing the owed `desc`/`desc_en`/`when`/`when_en` prose in `~/Dev/workflow-guide.html`.
+- `2` — could not run (guide missing, an array block missing, unusable `settings.json`, an empty live directory). Report it as **unknown**, never as current.
 
-Do the same for agents (the guide's `AGENTS` array uses unquoted keys, e.g. `{ name: "implementer", ... }` — scope the extraction to that array so skill/hook `name:` fields scattered elsewhere in the file aren't picked up):
-```bash
-ls ~/.claude/agents/*.md 2>/dev/null | xargs -I{} basename {} .md | sort > /tmp/cc-agents-actual
-sed -n '/^const AGENTS = \[/,/^\];/p' ~/Dev/workflow-guide.html 2>/dev/null | grep -oP 'name:\s*"[^"]*"' | grep -oP '"[^"]*"$' | tr -d '"' | sort -u > /tmp/cc-agents-guide
-diff /tmp/cc-agents-actual /tmp/cc-agents-guide
-```
+SCENARIOS and the prose around the arrays are hand-written and outside this check. If a command, agent or skill was retired, grep the SCENARIOS array for its name yourself.
 
 **Strategic docs:**
-```bash
-# Check if charte mentions the current number of commands
-ACTUAL_CMD_COUNT=$(ls ~/.claude/commands/*.md 2>/dev/null | wc -l | tr -d ' ')
-CHARTE_CMD_COUNT=$(grep -oP '\d+ commandes' ~/Dev/{portfolio-site}/strategy/charte-coherence.md 2>/dev/null | grep -oP '\d+')
-if [ "$ACTUAL_CMD_COUNT" != "$CHARTE_CMD_COUNT" ] 2>/dev/null; then
-  echo "⚠️  Charte says $CHARTE_CMD_COUNT commands, actual is $ACTUAL_CMD_COUNT"
-fi
-```
+
+There is no automated count check here. The charte is expected to state a stale
+command/agent count in its dated history lines — that is prose recording what was
+true on a given date, not a claim about today (see the global rule against hand-typed
+counts). Read `~/Dev/{portfolio-site}/strategy/charte-coherence.md` yourself if
+you suspect drift, and flag it to the owner in prose; don't script a comparison
+against a "current count" line, since the doc carries more than one count on
+purpose.
 
 **claude-code-setup repo:**
 **Do NOT compare live and repo file hashes.** The repo copy is deliberately anonymized by `sync.py` (personal paths, usernames and app names are rewritten), so its bytes can never equal the live bytes. A hash comparison reports "stale" on every run, for ever, and is therefore no signal at all.
@@ -205,7 +210,7 @@ Report any staleness found for workflow guide and strategic docs. Do NOT fix tho
 - Compacted: [list or "none needed"]
 
 ### Staleness
-- Workflow guide: [OK / stale — missing commands: X, Y]
+- Workflow guide: [OK (--check exit 0) / drift or owed prose (exit 1, its lines) / unknown (exit 2)]
 - Charte de cohérence: [OK / stale — command count mismatch, etc.]
 - claude-code-setup repo: [OK / stale — synced and committed locally (push manually)]
 - Action needed: [list or "all up to date"]

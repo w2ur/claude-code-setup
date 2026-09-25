@@ -51,10 +51,10 @@
 #
 # Notification: a run with findings pushes ONE message through notifier.sh
 # (counts only — the ntfy topic is PUBLIC, so no host and no route). It has
-# to: intendant.sh and vigie drop exit 1 on the assumption that the job
+# to: vigie drops exit 1 on the assumption that the job
 # already reported its finding, so without this push a tripled payload would
-# land only in a log nobody opens. Exit 2 needs no push of its own — both
-# consumers surface it. NOTIFIER_BIN overrides the notifier (tests).
+# land only in a log nobody opens. Exit 2 needs no push of its own — vigie
+# surfaces it. NOTIFIER_BIN overrides the notifier (tests).
 #
 # Env overrides (for testing against a fixture tree — production runs use
 # every default):
