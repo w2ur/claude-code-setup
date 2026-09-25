@@ -103,8 +103,8 @@
 #
 # Notification: every non-zero exit — 1 and 2 alike, --dry-run included —
 # pushes ONE message through notifier.sh, from the EXIT trap so no exit path
-# can skip it. The liveness line alone is not enough: intendant.sh and vigie
-# both drop exit 1 on the assumption that the job already reported the
+# can skip it. The liveness line alone is not enough: vigie drops
+# exit 1 on the assumption that the job already reported the
 # finding itself, and the FAILED line keeps the log's mtime fresh, so a
 # mirror refusing every night used to look healthy on every dashboard. The
 # ntfy topic is PUBLIC: the message carries the job name, the exit code and

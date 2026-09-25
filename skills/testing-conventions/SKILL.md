@@ -60,12 +60,3 @@ Two measured blind spots in this portfolio:
   two components. Only the build gate caught it.
 - **A route-handler test never runs the middleware.** A gated API route can ship
   100% broken with a fully green suite. Test the middleware path separately.
-
-## After plan-driven sub-agent work
-
-Re-check **every plan requirement against the code** before reporting done. A
-subagent's "task complete" is a claim: re-run the gates and read `git status`
-yourself. (Skip this for direct single-file fixes.)
-
-Service worker cache is the **#1 false positive** for "my change isn't showing" —
-rule it out before any deeper debugging.

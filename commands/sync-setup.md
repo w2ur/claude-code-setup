@@ -75,10 +75,15 @@ Fix any discrepancies by editing README.md directly. Apply the anonymization rul
 
 ## Step 4: Update workflow-guide.html
 
+The live guide's arrays are generated too, by the same script: before syncing, run
+`~/Dev/claude-code-setup/scripts/generate_workflow_guide.py --check`. Exit 1 means run it with `--live`,
+then write the prose it lists as owed in `~/Dev/workflow-guide.html`; exit 2, or any
+other code (127 when the checkout is missing), means it could not run — stop and report it. Sync once `--check` exits 0.
+
 `sync.py` regenerates the `docs/workflow-guide.html` DATA arrays (COMMANDS,
 AGENTS, SKILLS, HOOKS) directly from live config via
 `scripts/generate_workflow_guide.py`. It derives the verifiable fields (agents
-lists, models, skills, memory, hook events/modes, preloaded) and preserves the
+lists, model and effort pins, skills, memory, hook events/modes, preloaded) and preserves the
 hand-written prose for existing entries.
 
 **The guide is bilingual.** Every prose field has an `_en` sibling —

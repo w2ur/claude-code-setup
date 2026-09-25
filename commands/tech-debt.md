@@ -48,7 +48,7 @@ For each app the owner selected, run a thorough analysis:
 ```bash
 npm outdated 2>/dev/null
 npm audit 2>/dev/null
-# For Python: pip list --outdated, pip-audit
+# For Python: uv run --with pip-audit pip-audit
 ```
 
 Classify:
@@ -86,8 +86,8 @@ npm run build 2>&1 | grep -i "warn"
 
 ### 2f. Previous Debt
 
-Check agent memory for items flagged in previous /tech-debt sessions for this app.
-If an item has been flagged 2+ months without action, mark it as **ESCALATE**.
+Check `~/Dev/.tech-debt-rotation.json` for a `flagged` map entry for this app (items carried forward from previous /tech-debt sessions, keyed by app: `{item, first_flagged}`).
+If an item's `first_flagged` date is 2+ months old, mark it as **ESCALATE**.
 
 
 ### Per-App Report
@@ -128,9 +128,9 @@ If yes, for each app:
 - Remove unused dependencies
 - Apply minor/patch updates: `npm update`
 
-Commit each category:
+`git status --porcelain` first; if anything is already staged, skip this app and report it. Commit each category with an explicit pathspec of the files that category changed — never a bare `git add` of everything:
 ```bash
-git add -A && git commit -m "chore(tech-debt): {description}"
+git commit -m "chore(tech-debt): {description}" -- <files that category changed>
 ```
 
 **Flag for later:**
@@ -142,12 +142,7 @@ Do NOT push. The owner reviews and pushes.
 
 ## Phase 4 — Update Tracking
 
-Update `~/Dev/.tech-debt-rotation.json` with today's date for each deeply-reviewed app.
-
-Write a summary to agent memory:
-- What was found and fixed per app
-- What was flagged for later
-- What was escalated
+Update `~/Dev/.tech-debt-rotation.json` with today's date for each deeply-reviewed app, and update its `flagged` map: drop items that were fixed, add new items carried forward with `first_flagged` set to today, keep the `first_flagged` date for items still unfixed.
 
 ## Consolidated Report
 

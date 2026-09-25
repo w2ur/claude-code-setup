@@ -92,7 +92,7 @@ AUTO tier only** and logs the rest as `owner action:`.
 **`usage-watch`** — guards on `curl` and a uv-managed Python with a **fatal exit
 rather than a skip**, so a missing interpreter cannot be mistaken for a quiet week.
 Its findings, payload growth included, **notify through `notifier.sh` itself**:
-`intendant.sh` and vigie drop exit 1 on the assumption that the job already
+vigie drops exit 1 on the assumption that the job already
 reported it. A run that measured nothing (no route list, zero routes, the ratchet
 crashing) is exit 2, never a finding.
 
@@ -196,7 +196,7 @@ success included, now ends with one timestamped summary line
 real liveness signal for this job too, not an exception to the rule.
 **Every non-zero exit also notifies once through `notifier.sh`** (job name,
 exit code, counts — never a path). The liveness line cannot carry a failure
-on its own: `intendant.sh` and vigie drop exit 1 on the assumption that the
+on its own: vigie drops exit 1 on the assumption that the
 job already reported its finding, and the `FAILED` line keeps the log fresh,
 so a mirror refusing every night read as healthy everywhere.
 
@@ -223,8 +223,8 @@ unmetered, so a hosted job is strictly better than one that needs this Mac awake
 
 ## Third-party agents
 
-Five plists are not `com.example.*`. Four only watch or update themselves (espanso,
-GoogleUpdater, Google keystone, alt-tab). **Pearcleaner's `homebrew-autoupdate` is the
+Non-`com.example.*` plists: `ls ~/Library/LaunchAgents/ | grep -v '^com.example.'`. Most
+only watch or update themselves. **Pearcleaner's `homebrew-autoupdate` is the
 only scheduled job on this machine that changes installed software unattended** —
 `brew update && brew upgrade --greedy && …`, and `--greedy` upgrades even casks that
 manage their own updates. Kept as-is by decision, recorded because an agent that
@@ -258,6 +258,16 @@ change. `gate-watch.sh` distinguishes `pending` (a fix already open in a PR) fro
 against `secrets.json` literals first and generic token patterns second, because a
 failing run can quote its own `curl` command. **That redaction covers secrets, not
 personal data** — never route personal content through it. Counts only.
+
+**Anything that rotates or rewrites a job log must preserve its mtime.** The log's
+age is the only signal that an agent has stopped, and `jobs-inventory.sh` reads it
+straight from the mtime — a rotation that bumps it makes every rotated job read as
+having run today, the silent kind of wrong. `disk-hygiene.sh`'s job-log tier takes a
+`touch -r` reference *before* it truncates, rewrites the file in place (a running job
+holds it open for append; a `mv` would send its output to an unlinked inode) and
+restores the mtime from the reference; its test proves an unguarded truncation reads
+0 days. That script owns the line counts. Logs no `com.example.*` plist writes are
+listed and never touched — `daemon.log` belongs to the Claude Code daemon.
 
 **`env-drift-check.py`**: tier 1 is `.env.example`/`.dev.vars.example`, tier 2 is
 `README.md`/`CLAUDE.md` prose. **Conflating them reports every prose-documented

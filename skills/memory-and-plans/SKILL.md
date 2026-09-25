@@ -20,7 +20,8 @@ Do not duplicate across them.
 **Do not call auto-memory "agent memory".** The bare phrase collides with the
 per-agent system's actual name and has caused real confusion.
 
-Plans are **not** a memory system. They live in `~/.claude/plans/`, never in a repo.
+Plans are **not** a memory system. They live in `~/.claude/plans/`, never in a repo
+(project repos under ~/Dev; the private my-config-backup repo is the plans backup).
 
 ## How the `memory:` frontmatter key resolves
 
@@ -55,8 +56,8 @@ simply not find what you moved.
 The harness default-ignores only `agent-memory-local/`, **not** `agent-memory/`. So a
 repo trusting that default will happily stage its memory files.
 
-Every repo with a store needs `.claude/` — or at minimum `.claude/agent-memory/` —
-in `.gitignore`.
+Every repo with a store needs `.claude/agent-memory/` in `.gitignore` — that path,
+never the whole `.claude/` directory.
 
 **Repos that deliberately track other `.claude/` content are the model here**: a
 committed project `CLAUDE.md`, shared commands, or project skills. Ignore

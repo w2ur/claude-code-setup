@@ -11,8 +11,8 @@
 #   2. retraction archaeology — correct to write once, then billed forever
 #   3. dated narrative — git log already holds it
 # This reports all three. It cannot judge which paragraph is a guard worth
-# keeping; that is the owner's call. See "A CLAUDE.md records rules, not
-# history" in the global CLAUDE.md for the taxonomy.
+# keeping; that is the owner's call. The taxonomy lives in the
+# claude-md-hygiene skill.
 #
 # THIS SCRIPT IS THE SOURCE OF TRUTH FOR THE SIZE THRESHOLD. Never restate the
 # number in CLAUDE.md prose — restated numbers are exactly what this measures.
