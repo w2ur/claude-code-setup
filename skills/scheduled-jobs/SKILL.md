@@ -93,8 +93,20 @@ AUTO tier only** and logs the rest as `owner action:`.
 rather than a skip**, so a missing interpreter cannot be mistaken for a quiet week.
 Its findings, payload growth included, **notify through `notifier.sh` itself**:
 vigie drops exit 1 on the assumption that the job already
-reported it. A run that measured nothing (no route list, zero routes, the ratchet
-crashing) is exit 2, never a finding.
+reported it. A run that measured nothing (no route list, zero routes, every probe
+failing at the transport level, the ratchet crashing) is exit 2, never a finding.
+Hosts that answer non-2xx or catch-all are findings, even when every one does.
+So is a Vercel token the API rejects (401/403, or a JSON `error` body): a dead
+discovery must not read as a quiet week.
+The baselines follow the rules written at the top of the script's ratchet. A
+route still listed but not measured keeps its entry, because dropping it would
+reset that route's growth ratchet. Only a carried entry written before
+`measured_at` existed gets `measured_at: null`, never an invented date; a
+carried entry that already has a date keeps it. An ignored host's entry is
+dropped, because nothing will ever refresh it. A route is dropped only when it
+verifiably left the overlay, or when discovery answered without it: a failed
+discovery, or a run where every probe failed at the transport level, prunes
+nothing discovery could have produced.
 
 **`model-watch`** — a model chain hides its own degradation, and a *delisted* entry
 is worse than a degraded one: OpenRouter validates the whole `models` array up front,

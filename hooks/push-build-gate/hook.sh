@@ -185,7 +185,26 @@ done < <(git -C "$dir" -c core.quotePath=false ls-files -- ':(glob)*/package.jso
 # every package here has finished. Overridable so the test suite can force a
 # tiny deadline without actually waiting out the default.
 GATE_DEADLINE=${PUSH_GATE_DEADLINE:-150}
-GATE_START=$(date +%s)
+
+# Milliseconds on the system monotonic clock. Every stage and every poll tick
+# measures elapsed time against the ONE start stamp below, so the deadline is
+# a wall-time bound rather than a tick count. Until 2026-09-26 the poll loop
+# counted 0.2 s ticks, and each tick's own fork overhead landed on top:
+# measured 6.4 % per stage, which at the 150 s default killed a hung build at
+# 159.98 s. Read through the interpreter already resolved above (12.8 ms a
+# read, measured) — bash 3.2 has no sub-second clock, `date +%s` is whole
+# seconds of wall clock, and this adds no dependency the hook lacks.
+# The per-tick read costs ~12 ms of every 200 ms tick (measured); that is an
+# accepted cost, since it is what keeps the bound from drifting.
+mono_ms() {
+  "$PYTHON" -S -c 'import time; print(int(time.monotonic() * 1000))' 2>/dev/null
+}
+GATE_START_MS=$(mono_ms)
+if [ -z "$GATE_START_MS" ]; then
+  echo "push-build-gate: cannot read the monotonic clock — build/test gate SKIPPED, this push was NOT checked" >&2
+  exit 1
+fi
+GATE_END_MS=$((GATE_START_MS + GATE_DEADLINE * 1000))
 
 # run_deadline <workdir> <shell command>
 # Runs `<shell command>` in `<workdir>`, bounded by whatever time is LEFT on
@@ -200,13 +219,12 @@ GATE_START=$(date +%s)
 # timeout instead of a failure — a flag the caller checks first removes the
 # collision.
 run_deadline() {
-  local workdir="$1" runcmd="$2" now remaining ticks tick_deadline pid
+  local workdir="$1" runcmd="$2" now pid
   DEADLINE_LOG=$(mktemp)
   DEADLINE_TIMED_OUT=0
 
-  now=$(date +%s)
-  remaining=$((GATE_DEADLINE - (now - GATE_START)))
-  if [ "$remaining" -le 0 ]; then
+  now=$(mono_ms)
+  if [ -z "$now" ] || [ "$now" -ge "$GATE_END_MS" ]; then
     DEADLINE_TIMED_OUT=1
     return 1
   fi
@@ -220,18 +238,38 @@ run_deadline() {
   set +m
 
   # Poll in fifths of a second: a 1 s granularity would add up to a full second
-  # to every push, and the hub's whole suite finishes in 1.2 s.
-  ticks=0
-  tick_deadline=$((remaining * 5))
-  while kill -0 "$pid" 2>/dev/null && [ "$ticks" -lt "$tick_deadline" ]; do
+  # to every push, and the hub's whole suite finishes in 1.2 s. The loop ends
+  # on elapsed time, never on a tick count, so a slow tick only coarsens the
+  # polling. A clock read that fails ends it too: that is the guard
+  # malfunctioning, which the caller reports as TIMED OUT, push allowed.
+  while kill -0 "$pid" 2>/dev/null; do
+    now=$(mono_ms)
+    { [ -n "$now" ] && [ "$now" -lt "$GATE_END_MS" ]; } || break
     sleep 0.2
-    ticks=$((ticks + 1))
   done
 
+  # Signalling the job because the deadline passed IS the verdict: TIMED OUT,
+  # whatever status the job then exits with (a runner that traps TERM and
+  # exits 1 is still a timeout, never a FAILED block).
+  #
+  # Signals go to the job's process group whenever that group exists. A bare
+  # PID is signalled only for a job that never got its own group (`set -m`
+  # not taking effect), and only while `kill -0` still sees it alive: bash
+  # reaps an exited job asynchronously (measured), so a job that is gone is
+  # never found alive here. After the grace, such a job that ignored TERM is
+  # KILLed by bare PID, or `wait` would block until it ends on its own.
   if kill -0 "$pid" 2>/dev/null; then
-    kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+    if kill -0 -"$pid" 2>/dev/null; then
+      kill -TERM -"$pid" 2>/dev/null
+    else
+      kill -TERM "$pid" 2>/dev/null
+    fi
     sleep 0.5
-    kill -KILL -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+    if kill -0 -"$pid" 2>/dev/null; then
+      kill -KILL -"$pid" 2>/dev/null
+    elif kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null
+    fi
     wait "$pid" 2>/dev/null
     DEADLINE_TIMED_OUT=1
     return 1
@@ -305,6 +343,7 @@ for pkgdir in "${PKG_DIRS[@]}"; do
   # Fail open on the guard's own malfunction, loudly: NOT GATED, exit 1. The
   # root is exempt, as for the no-scripts case above: a root that was never
   # installed fails the same way it always has.
+  # Won't fix (2026-09-26): a zero-dependency nested package is still built and can block; blocking is the safe side.
   if [ "$pkgdir" != "$dir" ] \
      && [ ! -d "$pkgdir/node_modules" ] && [ ! -d "$dir/node_modules" ]; then
     DEP_COUNT=$(node -e "const p=require('$pkgdir/package.json'); console.log(Object.keys(Object.assign({}, p.dependencies, p.devDependencies)).length)" 2>/dev/null)

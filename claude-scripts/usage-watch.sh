@@ -21,8 +21,11 @@
 # beyond "/", and per-host control paths. A discovered Vercel project with no
 # overlay entry is still probed at "/" with a generic bogus control path, so
 # a newly deployed project is monitored automatically. Discovery is entirely
-# optional: an unreadable token or a failed API call falls back to the
-# overlay alone and logs "discovery skipped" — it never fails the run.
+# optional: an unreadable token logs "discovery skipped", a failed or
+# unparseable API call logs a WARN, and both fall back to the overlay alone
+# without failing the run. A readable token that Vercel REJECTS is an auth
+# failure and a finding (exit 1). None of them prunes a discovery-derived
+# baseline.
 #
 # Three drift signals so staleness is never silent:
 #   NEW   — a route with no prior baseline entry (logged, not a warning).
@@ -43,11 +46,19 @@
 # Exit:  0 ok · 1 finding · 2 could not run
 #        1 = payload growth or collapse (the ratchet's warnings), curl
 #            failure, non-2xx, catch-all, stale overlay entry, bad ignore
-#            flag, billing endpoint trouble
+#            flag, discovery auth failure, billing endpoint trouble
 #        2 = missing dependency (curl, uv-managed Python), bad arguments,
-#            no readable route list, zero routes resolved, the ratchet's
+#            no readable route list, zero routes resolved, every probe
+#            failing at the transport level (curl itself), the ratchet's
 #            Python crashing — nothing was measured, which is UNKNOWN,
-#            never a finding and never "healthy"
+#            never a finding and never "healthy". Every such path but one
+#            leaves the baselines untouched; the transport-failure one may
+#            drop routes that verifiably left the overlay (rule 5 of the
+#            ratchet). Hosts that ANSWER non-2xx or catch-all are findings
+#            (exit 1), even if every one does.
+#
+# Baselines: the five rules in the ratchet header (search "THE RULES") are
+# the whole contract for usage-baselines.json.
 #
 # Notification: a run with findings pushes ONE message through notifier.sh
 # (counts only — the ntfy topic is PUBLIC, so no host and no route). It has
@@ -78,7 +89,7 @@ TEAM_ID="${VERCEL_TEAM_ID:-team_UQ5YF1tQxCCq3SObgTXoHcE0}"
 DISCOVERY_CONTROL="/nope-xyz-control"
 
 case "${1:-}" in
-  --help|-h) sed -n '2,64p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  --help|-h) sed -n '2,75p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
   "") ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
@@ -159,13 +170,42 @@ probe() {  # $1 = url -> "<http_code> <wire_bytes> <redirects>" or "" plus a non
 # back to the first alias when a project has none (dev-only projects like
 # elevate_conversations).
 DISCOVERED_TSV=""
+# 1 only when discovery answered with a parseable, non-empty project list.
+# Otherwise the ratchet prunes nothing discovery could have produced (rule 4
+# in the ratchet header): a failed API call is not a project leaving.
+DISCOVERY_TRUSTED=0
 if [ -r "$TOKEN_FILE" ]; then
   TOKEN="$(tr -d '\n' < "$TOKEN_FILE")"
+  # The HTTP status travels on a last line of its own (-w), so a token that
+  # is readable but REJECTED can be told from a response that will not parse.
+  # A rejection (401/403, or a JSON `error` body at any status) is an auth
+  # failure and a finding (warn): a revoked token would otherwise leave every
+  # run looking healthy while discovery is silently off. A failed request or an
+  # unparseable 200 stays a WARN line that is not a finding (discovery is
+  # optional). None of them prunes a discovery-derived baseline (rule 4).
   RAW_PROJECTS=""
-  RAW_PROJECTS="$(curl -sS -H "Authorization: Bearer $TOKEN" -m 25 \
-    "https://api.vercel.com/v9/projects?limit=100&teamId=$TEAM_ID" 2>/dev/null || true)"
-  if [ -z "$RAW_PROJECTS" ]; then
-    echo "INFO: discovery skipped — Vercel API request failed" >&2
+  DISC_RC=0
+  RAW_PROJECTS="$(curl -sS -H "Authorization: Bearer $TOKEN" -m 25 -w '\n%{http_code}' \
+    "https://api.vercel.com/v9/projects?limit=100&teamId=$TEAM_ID" 2>/dev/null)" || DISC_RC=$?
+  DISC_CODE="${RAW_PROJECTS##*$'\n'}"
+  RAW_PROJECTS="${RAW_PROJECTS%$'\n'*}"
+  DISC_ERROR=""
+  if [ "$DISC_RC" -eq 0 ] && [ -n "$RAW_PROJECTS" ]; then
+    DISC_ERROR="$("$PYTHON" -c "
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+if isinstance(data, dict) and data.get('error') is not None:
+    err = data['error']
+    print((err.get('code') if isinstance(err, dict) else None) or 'error')
+" "$RAW_PROJECTS" 2>/dev/null || true)"
+  fi
+  if [ "$DISC_RC" -ne 0 ] || [ -z "$RAW_PROJECTS" ]; then
+    echo "WARN: discovery failed — Vercel API request failed; no discovery-derived baseline will be pruned" >&2
+  elif [ "$DISC_CODE" = "401" ] || [ "$DISC_CODE" = "403" ] || [ -n "$DISC_ERROR" ]; then
+    warn "discovery: Vercel API rejected the token (HTTP $DISC_CODE${DISC_ERROR:+, $DISC_ERROR}) — auth failure; discovery off this run, no discovery-derived baseline will be pruned"
   else
     DISCOVERED_TSV="$("$PYTHON" -c "
 import json, sys
@@ -192,7 +232,11 @@ for p in projects:
         continue
     print('\t'.join([name, chosen, ','.join(aliases)]))
 " "$RAW_PROJECTS" || true)"
-    [ -z "$DISCOVERED_TSV" ] && echo "INFO: discovery skipped — could not parse Vercel API response" >&2
+    if [ -z "$DISCOVERED_TSV" ]; then
+      echo "WARN: discovery failed — could not parse Vercel API response; no discovery-derived baseline will be pruned" >&2
+    else
+      DISCOVERY_TRUSTED=1
+    fi
   fi
 else
   echo "INFO: discovery skipped — token unreadable at $TOKEN_FILE" >&2
@@ -265,6 +309,20 @@ fi
 # and the site falls through to normal probing instead of being silenced,
 # so a bare `"ignore": true` cannot quietly turn the detector off.
 RESULTS=""
+# Routes that were probed but produced no recordable measurement (curl failure,
+# non-2xx, catch-all). Their previous baseline entries are carried forward
+# verbatim by the ratchet instead of being dropped: losing an entry throws away
+# its first_seen, so one bad night would silently reset the cumulative
+# comparison and the route would come back as NEW.
+UNRECORDED=""
+# skip <baseline key> <warning> — the one way a probed route leaves the loop
+# unrecorded: it is a finding (warn) AND its baseline entry is carried.
+skip() { warn "$2"; UNRECORDED="$UNRECORDED$1"$'\n'; }
+# Routes whose probe failed at the TRANSPORT level (curl itself failing, on
+# the control or the route). Only these mean "could not measure": a non-2xx
+# or a catch-all is a reachable host answering, which is a finding.
+TRANSPORT_FAILS=0
+KNOWN_KEYS=""
 ROUTE_COUNT=0
 IGNORED_COUNT=0
 while IFS=$'\t' read -r KIND F1 F2 F3 F4; do
@@ -273,6 +331,12 @@ while IFS=$'\t' read -r KIND F1 F2 F3 F4; do
     IGNORED)
       IGNORED_COUNT=$((IGNORED_COUNT + 1))
       echo "INFO: $F2 ignored — $F3" >&2
+      continue
+      ;;
+    KNOWN)
+      # A listed route that is not probed (declared by an overlay entry with
+      # no control): in the route list, so carried, never dropped (rule 2).
+      KNOWN_KEYS="$KNOWN_KEYS$F1"$'\n'
       continue
       ;;
     BADIGNORE)
@@ -284,20 +348,20 @@ while IFS=$'\t' read -r KIND F1 F2 F3 F4; do
   [ -z "$site" ] && continue
   ROUTE_COUNT=$((ROUTE_COUNT + 1))
 
-  CTL=$(probe "$base$control") || { warn "$site: curl exit $? on control $control"; continue; }
+  CTL=$(probe "$base$control") || { rc=$?; TRANSPORT_FAILS=$((TRANSPORT_FAILS + 1)); skip "$site$route" "$site: curl exit $rc on control $control"; continue; }
   read -r _CTL_CODE CTL_BYTES _CTL_REDIRECTS <<< "$CTL"
 
-  OUT=$(probe "$base$route") || { warn "$site$route: curl exit $?"; continue; }
+  OUT=$(probe "$base$route") || { rc=$?; TRANSPORT_FAILS=$((TRANSPORT_FAILS + 1)); skip "$site$route" "$site$route: curl exit $rc"; continue; }
   read -r CODE BYTES REDIRECTS <<< "$OUT"
 
-  case "$CODE" in 2*) ;; *) warn "$site$route: HTTP $CODE"; continue ;; esac
+  case "$CODE" in 2*) ;; *) skip "$site$route" "$site$route: HTTP $CODE"; continue ;; esac
 
   # A catch-all rewrite serves the same body for every path. STRICT EQUALITY
   # IS NOT ENOUGH: an SPA that echoes the path into its HTML differs by a few
   # bytes and would sail through. Measured — my-bias-app / vs control: 5142 vs
   # 5153 (0.2%). Use a 10% band.
   if "$PYTHON" -c "import sys; r=$BYTES; c=$CTL_BYTES; sys.exit(0 if abs(r-c)/max(r,c,1) < 0.10 else 1)"; then
-    warn "$site$route: CATCHALL — $BYTES vs control $CTL_BYTES (<10% apart); not recorded"
+    skip "$site$route" "$site$route: CATCHALL — $BYTES vs control $CTL_BYTES (<10% apart); not recorded"
     continue
   fi
 
@@ -327,6 +391,11 @@ for site, cfg in d.items():
         # validation above) — fall back to the generic discovery default
         # so a misconfigured ignore still results in real monitoring.
         print('\t'.join(['ROUTE', site, base, '/', '$DISCOVERY_CONTROL']))
+        # Routes declared without a control cannot be probed, but they are
+        # still listed: KNOWN, so the ratchet carries their baselines.
+        if isinstance(routes, list):
+            for r in routes:
+                print('\t'.join(['KNOWN', site + r]))
 
 for line in new_lines:
     if not line.strip():
@@ -345,6 +414,20 @@ for line in new_lines:
 if [ "$ROUTE_COUNT" -eq 0 ] && [ "$IGNORED_COUNT" -eq 0 ]; then
   echo "FATAL: no routes to check — overlay is empty and discovery yielded nothing; UNKNOWN" >&2
   exit 2
+fi
+
+# Every probed route failed at the TRANSPORT level: the network was down, or
+# every host was unreachable at once, which says more about this machine than
+# about the portfolio. Nothing measured is UNKNOWN (exit 2, after the ratchet
+# below, with no push: exit 2 is surfaced by vigie). Routes that ANSWERED
+# (non-2xx, catch-all) are findings and do not count toward this. The
+# ratchet still runs, under rule 5 of its header: discovery is not trusted
+# on such a run, so the only drops are routes that verifiably left the
+# overlay.
+ALL_TRANSPORT_FAILED=0
+if [ "$ROUTE_COUNT" -gt 0 ] && [ "$TRANSPORT_FAILS" -eq "$ROUTE_COUNT" ]; then
+  ALL_TRANSPORT_FAILED=1
+  DISCOVERY_TRUSTED=0
 fi
 
 # --------------------------------------------------- ratchet + log write
@@ -370,17 +453,57 @@ fi
 # it is read — the fragile pattern this replaces re-tested `$?` a line later,
 # after `set -e` semantics around a piped command make that unreliable.
 RATCHET_RC=0
+# THE RULES — what usage-baselines.json holds after a run (header invariant;
+# the code below implements exactly this, and each rule has a test):
+#   1. Measured this run -> the entry is updated and measured_at = this run's
+#      stamp.
+#   2. In the route list but not measured (the probe failed, answered non-2xx
+#      or catch-all, or the route is listed by an overlay entry with no
+#      control) -> carried as it was. An entry with no measured_at is written
+#      with measured_at: null (carried, date unknown), never an invented
+#      date. This holds on EVERY rewrite, the drop-only one included.
+#   3. Owned by an ignored overlay host -> DROPPED. It is never measured, so
+#      carrying it would be a permanent stale value.
+#   4. Not in the route list: a key owned by an overlay site (key = site +
+#      route) verifiably left the overlay -> dropped. A key owned by no
+#      overlay site could have come from discovery -> dropped only when
+#      discovery answered this run (DISCOVERY_TRUSTED=1), otherwise carried
+#      as in 2: a transient API outage is not a project leaving.
+#   5. Every probe failed at the transport level -> the run exits 2, and
+#      discovery counts as not answered, so only overlay-owned departures
+#      (rules 3 and 4) are dropped.
+# A run that measured nothing rewrites the file only if it drops something.
+# Every rewrite appends a log line: routes= is the number of routes measured
+# this run, carried= the number carried.
+LISTED_KEYS="$UNRECORDED$KNOWN_KEYS"
 printf "$RESULTS" | "$PYTHON" -c "
 import sys, json, os, datetime
 bl_path = '$BASELINES'
+listed = set(k for k in sys.argv[1].splitlines() if k)
+discovery_trusted = sys.argv[2] == '1'
+stamp = datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 try:
     bl = json.load(open(bl_path))
     if not isinstance(bl, dict):
         bl = {}
 except Exception:
     bl = {}                       # corrupt baseline must never block the run
+try:
+    overlay = json.load(open('$ROUTES'))
+    if not isinstance(overlay, dict):
+        overlay = {}
+except Exception:
+    overlay = {}
 
+def owner(key):
+    for site in overlay:
+        if key.startswith(site + '/'):
+            return site
+    return None
+
+# Rule 1. measured/total/redirected are counted here, as entries are written.
 warnings, new_keys, redirect_starts, out = [], [], [], {}
+measured = total = redirected = 0
 for line in sys.stdin:
     line = line.strip()
     if not line:
@@ -402,16 +525,40 @@ for line in sys.stdin:
     else:
         first = byts
         new_keys.append(key)
-    out[key] = {'last': byts, 'first_seen': first, 'redirects': hops}
+    out[key] = {'last': byts, 'first_seen': first, 'redirects': hops, 'measured_at': stamp}
+    measured += 1
+    total += byts
+    redirected += 1 if hops > 0 else 0
 
-tmp = bl_path + '.tmp'
-json.dump(out, open(tmp, 'w'), indent=2)
-os.replace(tmp, bl_path)
-stamp = datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
-total = sum(v['last'] for v in out.values())
-redirected = sum(1 for v in out.values() if v['redirects'] > 0)
-with open('$LOG', 'a') as fh:
-    fh.write(f'{stamp}\troutes={len(out)}\ttotal_bytes={total}\twarnings={len(warnings)}\tnew={len(new_keys)}\tredirected={redirected}\n')
+# Rules 2 to 5, for every previous entry this run did not measure.
+carried = dropped = 0
+for key, old in bl.items():
+    if key in out:
+        continue
+    if key in listed:
+        keep = True                          # rule 2
+    elif owner(key) is not None:
+        keep = False                         # rules 3 and 4, overlay-owned
+    else:
+        keep = not discovery_trusted         # rule 4, discovery-derived
+    if keep and isinstance(old, dict):
+        entry = dict(old)
+        entry.setdefault('measured_at', None)
+        out[key] = entry
+        carried += 1
+    else:
+        dropped += 1
+
+if measured or dropped:
+    tmp = bl_path + '.tmp'
+    json.dump(out, open(tmp, 'w'), indent=2)
+    os.replace(tmp, bl_path)
+    with open('$LOG', 'a') as fh:
+        fh.write(f'{stamp}\troutes={measured}\ttotal_bytes={total}\twarnings={len(warnings)}\tnew={len(new_keys)}\tredirected={redirected}\tcarried={carried}\n')
+if dropped:
+    print(f'INFO: dropped {dropped} route(s) no longer in the route list', file=sys.stderr)
+if not measured:
+    print('INFO: no route measured this run', file=sys.stderr)
 for k in new_keys:
     print('NEW: ' + k, file=sys.stderr)
 for r in redirect_starts:
@@ -419,7 +566,7 @@ for r in redirect_starts:
 for w in warnings:
     print('WARN: ' + w, file=sys.stderr)
 sys.exit(3 if warnings else 0)
-" || RATCHET_RC=$?
+" "$LISTED_KEYS" "$DISCOVERY_TRUSTED" || RATCHET_RC=$?
 
 # Exit 3 carries the growth/collapse warnings — the finding this job exists
 # for. Any other non-zero is the ratchet crashing: nothing was recorded, so
@@ -434,6 +581,11 @@ if [ "$RATCHET_RC" -eq 3 ]; then
 elif [ "$RATCHET_RC" -ne 0 ]; then
   echo "FATAL: ratchet step failed (python exit $RATCHET_RC) — nothing recorded, UNKNOWN" >&2
   UNKNOWN=1
+fi
+
+if [ "$ALL_TRANSPORT_FAILED" -eq 1 ]; then
+  echo "FATAL: every one of $ROUTE_COUNT probe(s) failed at the transport level — nothing measured, UNKNOWN" >&2
+  exit 2
 fi
 
 # --------------------------------------- Layer 2b — billing (optional extra)
