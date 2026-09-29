@@ -22,7 +22,7 @@ Monthly technical health review. Two phases: triage everything, then deep-dive o
 
 ## Phase 1 — Fast Triage (~1 min for all apps)
 
-**Phase 1 is fully deterministic, so it is a script and not model work** (CLAUDE.md: deterministic work gets a script, no model). Run it and present its output:
+**Phase 1 is fully deterministic, so it is a script and not model work** (the `scheduled-jobs` skill: deterministic work gets a script, not an agent). Run it and present its output:
 
 ```bash
 bash ~/.claude/scripts/tech-debt-triage.sh
@@ -32,7 +32,7 @@ It scans every git repo in `~/Dev` (via `dev-scanner.sh --json`), scores each on
 
 **The script owns the weights.** Read them in `tech-debt-triage.sh`; never restate or re-implement them here — that is how the two drift apart.
 
-Exit codes: `0` clean · `2` ran but **degraded** (a required tool was missing, so the numbers are incomplete — say so before presenting them) · `1` hard error.
+Exit codes (the script's header is the source of truth): `0` ok · `1` ran but **degraded** (a required tool was missing, so the numbers are incomplete — say so before presenting them) · `2` could not run (git, the dev scanner or a uv-managed Python unavailable, or bad arguments) — report the triage as **unknown** and present no table.
 
 Then ask: **"Which apps do you want me to review in depth? (names or numbers, or 'top N')"**
 
@@ -60,6 +60,8 @@ Classify:
 - Node version vs current LTS
 - Main framework version vs latest (Next.js, Astro, Vite, React, etc.)
 - TypeScript version vs latest
+
+Look up "latest" and "current LTS" at run time — `npm view <pkg> version`, and `https://nodejs.org/dist/index.json` for LTS — even when you feel sure of them; versions move after training.
 
 Flag if more than 1 major behind.
 
@@ -127,6 +129,8 @@ If yes, for each app:
 - Remove console.log statements
 - Remove unused dependencies
 - Apply minor/patch updates: `npm update`
+
+After each category, run the project's tests and build and read the result. A category that breaks either is not committed: leave it out and list it under **Flag for later** with the failing output. If no test or build exists, say so in the report instead of calling the fix verified.
 
 `git status --porcelain` first; if anything is already staged, skip this app and report it. Commit each category with an explicit pathspec of the files that category changed — never a bare `git add` of everything:
 ```bash
