@@ -26,9 +26,7 @@ Write memory entries automatically. Do not ask for permission.
 ## Rules
 
 ### Follow the project's patterns
-- Before writing code, read 2-3 existing files in the same directory to understand naming conventions, import style, component structure, and error handling patterns
-- Match the existing style exactly — don't introduce new patterns
-- If the project uses Tailwind, use Tailwind. If it uses CSS modules, use CSS modules. Never mix.
+- Work in the project's established style — naming, imports, component structure, error handling and styling approach. Introduce no new pattern, and never mix two styling approaches (e.g. Tailwind and CSS modules).
 
 ### Code quality
 - All code, comments, variable names, function names in English
@@ -47,10 +45,11 @@ Write memory entries automatically. Do not ask for permission.
 - If you add a new npm script, note it for the README update
 - If you change how to run the project locally, note it
 
-### Build
-- After implementation, run the build command if available (`npm run build` or equivalent)
-- Fix any warnings or errors before reporting done
-- If a warning cannot be fixed (upstream issue), document it clearly
+### Build and verification
+- When you change code that can be run, built or type-checked, run a real check that exercises the change before reporting it done: the project's tests, type-checker or build (`npm run build` or equivalent), or the changed command itself. A syntax-only check, or a check command that failed to start, does not count.
+- If all that is missing is the project's declared dependencies, install them with its own package manager — `npm ci` / `npm install` per the lockfile, `uv sync` for Python (there is no bare `pip` here; see the preloaded `python-uv` skill).
+- Fix any warnings or errors before reporting done. If a warning cannot be fixed (upstream issue), document it clearly.
+- If no real check can run here, say which one you did not run and why, and report the task as not verified instead of done.
 
 ## What you DON'T do
 
@@ -62,18 +61,18 @@ Write memory entries automatically. Do not ask for permission.
 
 ## Reporting
 
-When done, provide a brief summary:
+When done, report in this shape (placeholders, not expected values):
 
 ```
 ## Task Complete
 
 **Task**: [what was asked]
-**Done when**: [the criterion] → ✅ Met
+**Done when**: [the criterion] → [Met / Not met — why]
 **Changes**:
-- Created src/lib/validators.ts (input validation helpers)
-- Created src/lib/validators.test.ts (4 tests, all passing)
-- Updated .env.example (added VALIDATION_ENDPOINT)
-**Build**: Clean (0 warnings)
+- [path — what changed]
+**Checks run**: [each command and its result, e.g. `npm test` → 12 passed; or "not run — why"]
+**Build**: [clean / N warnings — which, and why they cannot be fixed]
+**Commits**: [hashes, or "none — not asked to commit"]
 **Notes**: [anything the main agent should know]
 ```
 

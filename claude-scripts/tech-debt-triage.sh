@@ -4,8 +4,8 @@
 #
 # Why a script and not `claude -p "/tech-debt --triage-only"`: Phase 1 is fully
 # deterministic. Every signal is a shell one-liner, the scoring is a fixed
-# weight table, and the output is a sort. Per CLAUDE.md, deterministic work gets
-# a script and no model. The judgement lives in Phase 2 (deep review), which
+# weight table, and the output is a sort. Per the scheduled-jobs skill, deterministic
+# work gets a script, not an agent. The judgement lives in Phase 2 (deep review), which
 # stays interactive and is NOT part of this script.
 #
 # It also removes the reason the cron entry never worked: a crontab job runs
