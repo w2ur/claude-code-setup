@@ -3,8 +3,8 @@ name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
 about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, 2 blocking hooks included."
-facts_fr: "7 commandes, 5 agents, 8 skills, 4 hooks — dont 2 bloquants."
-facts_en: "7 commands, 5 agents, 8 skills, 4 hooks — 2 of them blocking."
+facts_fr: "7 commandes, 5 agents, 8 skills, 4 hooks — dont 2 bloquants — et 3 mods."
+facts_en: "7 commands, 5 agents, 8 skills, 4 hooks — 2 of them blocking — and 3 mods."
 ---
 
 <div align="center">
@@ -87,6 +87,14 @@ Everything here is about writing code. I run other Claude Code automation that i
 │  secret-scan ─────── "API key in source?"      (blocking) │
 │  push-build-gate ─── "Build + tests green?"    (blocking) │
 └───────────────────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────┐
+│               Mods (inside Claude Code itself)            │
+│                                                           │
+│  context-bar ──── /context-bar  context window, by kind   │
+│  usage-forecast ─ /usage-bar    5h / 7d burn and reset    │
+│  fanout-guard ─── asks before a fan-out near the limit    │
+└───────────────────────────────────────────────────────────┘
 ```
 
 > [!TIP]
@@ -166,6 +174,21 @@ Half the hooks are advisory — in a system where I don't review code, I need Cl
 
 </details>
 
+<details>
+<summary><strong>Mods (3)</strong> — TypeScript hooks into Claude Code itself</summary>
+
+<br>
+
+A mod is a plugin of function hooks: a small TypeScript module that hooks into Claude Code itself — it can draw UI above the prompt, register a slash command, or hold a tool call. Each one lives in `mods/<name>/` and loads through `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`'s `env`, read straight from disk and reloaded on every edit (a marketplace install is a copy that needs reinstalling after each change).
+
+- **context-bar** (`/context-bar`): the context window as a stacked bar above the prompt, one colour per `/context` category, with a token legend
+- **usage-forecast** (`/usage-bar`): one line per rate-limit window — gauge, reset countdown, burn rate, and the time it fills if that comes before the reset; toasts at 80% and 95%
+- **fanout-guard** (no command): past 85% of the 5-hour window or 90% of the 7-day one, asks before any Workflow and before the second Agent of a turn; a held or unanswered question refuses the call
+
+Each mod carries its own tests (`claude plugin test mods/<name>`).
+
+</details>
+
 ### The Global CLAUDE.md
 
 The `CLAUDE.md` at the root is the backbone — ~120 lines of rules that apply to every project. The most important ones:
@@ -233,10 +256,13 @@ cp -r claude-code-setup/commands/ ~/.claude/commands/
 cp -r claude-code-setup/agents/ ~/.claude/agents/
 cp -r claude-code-setup/skills/ ~/.claude/skills/
 cp -r claude-code-setup/hooks/ ~/.claude/hooks/
+cp -r claude-code-setup/mods/ ~/.claude/mods/
 cp claude-code-setup/CLAUDE.md ~/.claude/CLAUDE.md
 ```
 
 Copying the scripts is not enough — hooks don't run until they're registered in `~/.claude/settings.json`. Merge `hooks/settings.hooks.json` into your own settings file (`jq -s '.[0] * .[1]' ~/.claude/settings.json claude-code-setup/hooks/settings.hooks.json > /tmp/settings.merged.json && mv /tmp/settings.merged.json ~/.claude/settings.json` if you don't already have a `hooks` key — see [`hooks/README.md`](hooks/README.md) for the manual-merge path if you do, plus how to verify a hook actually fired).
+
+Mods are the same: copying `mods/` loads nothing. List each mod folder in `CLAUDE_CODE_PLUGIN_DIRS`, colon-separated, in the `env` block of `~/.claude/settings.json` (for example `"CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/context-bar:~/.claude/mods/usage-forecast:~/.claude/mods/fanout-guard"`), then start a new session.
 
 Then edit `CLAUDE.md` and the agent files to replace `w2ur`, `{portfolio-site}`, and other placeholders with your own values.
 

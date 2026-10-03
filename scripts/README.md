@@ -95,7 +95,7 @@ package would make every such person install it.
 ## The direction of the arrow
 
 **Everything under a synced root is generated.** `commands/`, `agents/`,
-`skills/`, `hooks/` and `claude-scripts/` are an image of `~/.claude/`; the live
+`skills/`, `hooks/`, `mods/` and `claude-scripts/` are an image of `~/.claude/`; the live
 file is the only input. Editing the repo's copy feels like it works — the file
 changes, the tests pass, the diff reads right — and the next sync reverts it,
 because nothing ever read it.
@@ -163,9 +163,9 @@ show them in full.
    the hand-written French and English descriptions and flagging genuinely new
    entries
 7. Prunes orphaned repo files under synced roots (`commands/`, `agents/`,
-   `skills/`, `hooks/`, `claude-scripts/`) whose live source has disappeared
+   `skills/`, `hooks/`, `mods/`, `claude-scripts/`) whose live source has disappeared
 8. Runs an audit: greps all output files (`.md`, `.html`, `.yml`, `.yaml`,
-   `.sh`, `.json`) for patterns that should not survive. Gitignored paths are
+   `.sh`, `.json`, `.ts`, `.tsx`) for patterns that should not survive. Gitignored paths are
    skipped — they can never be pushed — and so are the owner-maintained
    `README.md` and `LICENSE`, whose real name and links are deliberate. Without
    those two exclusions the gate is red on a clean tree, which makes it useless

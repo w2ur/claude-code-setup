@@ -415,8 +415,10 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     warnings: list[str] = []
 
     # JSON belongs here: hooks/settings.hooks.json is a synced output too, and
-    # scripts/README.md advertises the audit as covering all output files.
-    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml", "*.sh", "*.json")
+    # scripts/README.md advertises the audit as covering all output files. So do
+    # .py (hooks and claude-scripts publish Python) and .ts/.tsx (every mod is
+    # TypeScript): an extension missing here is a file the audit passes unread.
+    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml", "*.sh", "*.json", "*.py", "*.ts", "*.tsx")
     all_files: list[Path] = []
     for ext in audit_extensions:
         all_files.extend(target_dir.rglob(ext))

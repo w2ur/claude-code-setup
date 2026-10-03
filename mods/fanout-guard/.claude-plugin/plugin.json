@@ -1,0 +1,1 @@
+{ "name": "fanout-guard", "version": "0.1.0", "description": "Asks before a Workflow or a second Agent dispatch in one turn while the 5h or 7d window runs high" }

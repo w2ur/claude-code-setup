@@ -65,6 +65,39 @@ def test_discover_files_skips_account_synced_skills(tmp_path):
     assert pairs == [(real / "SKILL.md", sync.REPO_ROOT / "skills" / "real" / "skill" / "SKILL.md")]
 
 
+def test_discover_files_publishes_a_mod_and_skips_what_the_engine_generates(tmp_path):
+    # glob.glob never enters a hidden directory, so .claude-plugin/plugin.json
+    # needs its own mapping — and that same rule is what keeps the engine's
+    # .claude-plugin/types/ out. tsconfig.json and node_modules/ are kept out by
+    # `skip`. Uses the shipped example config, like the test above.
+    config = sync.load_config(Path(__file__).resolve().parent / "anonymization.example.yaml")
+
+    mod = tmp_path / "live" / "mods" / "bar"
+    for rel, body in {
+        ".claude-plugin/plugin.json": '{"name": "bar"}',
+        ".claude-plugin/types/claude-code/index.d.ts": "declare module 'claude-code' {}",
+        "tsconfig.json": "{}",
+        "hooks/hooks.json": '{"modules": ["./register.tsx"]}',
+        "hooks/register.tsx": "export const register = () => {}",
+        "types/index.d.ts": "export type X = 1",
+        "node_modules/dep/package.json": "{}",
+        "node_modules/dep/index.d.ts": "export {}",
+    }.items():
+        (mod / rel).parent.mkdir(parents=True, exist_ok=True)
+        (mod / rel).write_text(body, encoding="utf-8")
+
+    pairs = discover_files(tmp_path / "live", config["file_map"], config["skip"])
+    published = sorted(str(src.relative_to(mod)) for src, _dest in pairs)
+
+    assert published == [
+        ".claude-plugin/plugin.json",
+        "hooks/hooks.json",
+        "hooks/register.tsx",
+        "types/index.d.ts",
+    ]
+    assert (mod / ".claude-plugin" / "plugin.json", sync.REPO_ROOT / "mods" / "bar" / ".claude-plugin" / "plugin.json") in pairs
+
+
 # ── read_hooks_config ───────────────────────────────────────────
 
 
@@ -148,6 +181,14 @@ def test_audit_scans_json_output(tmp_path, monkeypatch):
     warnings = _audit(tmp_path, monkeypatch, {"settings.hooks.json"})
     assert len(warnings) == 1
     assert "settings.hooks.json" in warnings[0]
+
+
+@pytest.mark.parametrize("name", ["register.tsx", "guard.ts", "payload_gate.py"])
+def test_audit_scans_published_code(tmp_path, monkeypatch, name):
+    (tmp_path / "mods" / "bar" / "hooks").mkdir(parents=True)
+    (tmp_path / "mods" / "bar" / "hooks" / name).write_text("// w2ur", encoding="utf-8")
+    warnings = _audit(tmp_path, monkeypatch, {f"mods/bar/hooks/{name}"})
+    assert len(warnings) == 1
 
 
 def test_audit_skips_gitignored_files(tmp_path, monkeypatch):
