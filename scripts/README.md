@@ -61,7 +61,7 @@ Edit `scripts/anonymization.yaml` with your real data — app names, URLs, domai
 ./scripts/sync.py --source /path/to/claude-config
 ```
 
-The workflow guide's four reference arrays (COMMANDS, AGENTS, SKILLS, HOOKS)
+The workflow guide's reference arrays (COMMANDS, AGENTS, SKILLS, HOOKS, MODS)
 are generated in the live guide as well, un-anonymized, by the same script the
 sync uses for the published copy:
 
@@ -159,7 +159,7 @@ show them in full.
 4. Applies exact string replacements (longest first, to avoid partial matches)
 5. Applies regex patterns for catch-all rules (paths, emails)
 6. Regenerates the `docs/workflow-guide.html` DATA arrays (commands, agents,
-   skills, hooks) from live config via `generate_workflow_guide.py`, preserving
+   skills, hooks, mods) from live config via `generate_workflow_guide.py`, preserving
    the hand-written French and English descriptions and flagging genuinely new
    entries
 7. Prunes orphaned repo files under synced roots (`commands/`, `agents/`,
