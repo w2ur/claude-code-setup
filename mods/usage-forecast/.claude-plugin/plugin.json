@@ -1,0 +1,1 @@
+{ "name": "usage-forecast", "version": "0.1.0", "description": "Rate-limit band above the prompt, toggled with /usage-bar: usage per window, reset countdown, burn rate, projected full time; toasts at 80/95%", "types": "./types/index.d.ts" }

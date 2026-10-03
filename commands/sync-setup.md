@@ -10,7 +10,7 @@ Sync the claude-code-setup repo from the live ~/.claude/ configuration.
 ## The rule that governs every step below
 
 **The arrow only points one way: `~/.claude/` → the repo.** Everything under
-`commands/`, `agents/`, `skills/`, `hooks/` and `claude-scripts/` is generated,
+`commands/`, `agents/`, `skills/`, `hooks/`, `mods/` and `claude-scripts/` is generated,
 so fixing something by editing the repo's copy accomplishes nothing — the next
 sync reverts it. `sync.py` refuses
 (exit 2) when a destination matches neither the incoming content nor HEAD,
@@ -43,7 +43,7 @@ one that belongs in `~/.claude/`, and porting it there is the fix.
 ## Step 2: Verify stale-file cleanup
 
 `sync.py` prunes orphans: any file under a synced root
-(`commands/`, `agents/`, `skills/`, `hooks/`, `claude-scripts/`) whose live
+(`commands/`, `agents/`, `skills/`, `hooks/`, `mods/`, `claude-scripts/`) whose live
 source has disappeared is deleted on a real run (reported on `--dry-run`) and listed under
 the `── Orphans ──` section of the output. Common cases: renamed agents (e.g.,
 old `architect.md` after rename to `troubleshooter.md`), deleted commands,
@@ -60,16 +60,18 @@ Read `~/Dev/claude-code-setup/README.md` and verify these match reality:
 2. **Agents count** in `<summary><strong>Agents (N)</strong>` — count files in `~/.claude/agents/*.md`
 3. **Skills count** in `<summary><strong>Skills (N)</strong>` — count files matching `~/.claude/skills/*/SKILL.md` (excludes `skills/synced/`, which nests deeper and is never published)
 4. **Hooks count** in `<summary><strong>Hooks (N)</strong>` — count `~/.claude/hooks/*/hook.sh`, one per hook, the same glob `generate_workflow_guide.py` uses. Not `hooks/**/*.sh`: that also counts `hooks/lib/`, which holds shared helpers, not hooks
+   **Mods count** in `<summary><strong>Mods (N)</strong>` — count `~/.claude/mods/*/.claude-plugin/plugin.json`, one per mod, the same glob `generate_workflow_guide.py` uses (a folder without a manifest is not a mod)
 4b. **README frontmatter** — `facts_fr` / `facts_en` at the top of README.md
-   restate the same four counts in prose ("7 commandes, 6 agents, 4 hooks…").
+   restate the same counts in prose ("7 commandes, 6 agents, 4 hooks…").
    They are not covered by the `<summary>` checks above and have rotted before.
-   Verify them against the same four counts, and against the blocking-hook
+   Verify them against the counts above (mods included), and against the blocking-hook
    count (hooks whose script can `exit 2`).
 5. **Commands table** — verify each command in the table exists in `~/.claude/commands/`, and each command file has a row. Add missing rows, remove stale rows.
 6. **Agents table** — same check against `~/.claude/agents/`
 7. **Skills list** — same check against `~/.claude/skills/*/SKILL.md`
 8. **Hooks list** — same check against `~/.claude/hooks/*/hook.sh` (never `hooks/lib/`; exclude hooks/scripts/ legacy directory if it exists only in the repo)
-9. **Architecture diagram** — verify command names, agent names, skill names, and hook names in the ASCII art match the tables
+   **Mods list** — same check against `~/.claude/mods/*/.claude-plugin/plugin.json`, and each listed command matches the mod's `command.run` filters
+9. **Architecture diagram** — verify command names, agent names, skill names, hook names and mod names in the ASCII art match the tables
 
 Fix any discrepancies by editing README.md directly. Apply the anonymization rules from `scripts/anonymization.yaml` to any new content (private app names → placeholders, personal URLs → example.com, etc.).
 

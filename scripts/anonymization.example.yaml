@@ -114,6 +114,14 @@ skip:
   - 'settings.json'
   - 'settings.local.json'
 
+  # Mods: the engine writes a tsconfig.json into every mod it loads (generated,
+  # machine-specific), and a mod that installs packages grows a node_modules/
+  # the recursive mappings below would otherwise publish whole. The engine's
+  # .claude-plugin/types/ needs no line: glob never enters a hidden directory,
+  # which is why plugin.json has its own mapping.
+  - 'mods/*/tsconfig.json'
+  - 'mods/**/node_modules/**'
+
 file_map:
   'CLAUDE.md': 'CLAUDE.md'
   'commands/*.md': 'commands/'
@@ -128,6 +136,15 @@ file_map:
   'hooks/*.md': 'hooks/'
   'scripts/*.sh': 'claude-scripts/'
   'scripts/*.py': 'claude-scripts/'
+  # Function-hook mods (~/.claude/mods/<name>/). The manifest needs its own
+  # literal line: glob.glob never enters a hidden directory such as
+  # .claude-plugin/, and include_hidden needs Python 3.11 while these scripts
+  # declare >=3.10 — without it every published mod would lack the plugin.json
+  # it loads from.
+  'mods/**/*.ts': 'mods/'
+  'mods/**/*.tsx': 'mods/'
+  'mods/**/*.json': 'mods/'
+  'mods/*/.claude-plugin/plugin.json': 'mods/'
 
 # Extra files outside ~/.claude/ that should also be synced + anonymized.
 # NOTE: docs/workflow-guide.html is generated from live config by
