@@ -11,10 +11,11 @@
 # kept in step by hand. See the note in sync.py about requirements.txt.
 """Generate the DATA arrays of the workflow guide from live config.
 
-The workflow guide carries four JS array literals — COMMANDS, AGENTS, SKILLS,
-HOOKS — that used to be hand-maintained and drifted from the real ~/.claude/
-configuration. This module rebuilds those four arrays from the live
-frontmatter / settings.json and rewrites ONLY those arrays, leaving the
+The workflow guide carries JS array literals — COMMANDS, AGENTS, SKILLS,
+HOOKS, MODS (the ARRAYS tuple below is the list) — that used to be
+hand-maintained and drifted from the real ~/.claude/ configuration. This
+module rebuilds those arrays from the live frontmatter / settings.json / mod
+manifests and rewrites ONLY those arrays, leaving the
 renderer, the SCENARIOS array and everything else byte-for-byte untouched.
 
 Three modes:
@@ -34,6 +35,9 @@ Field policy per array:
       - skills:   file path, preloaded (which agents declare the skill)
       - hooks:    event — every matcher it is registered under
                   (settings.json), mode (exit 2 => Blocking)
+      - mods:     commands (command.run filters in hooks/*.ts*), loaded
+                  (listed in CLAUDE_CODE_PLUGIN_DIRS); hooked events are
+                  not derived, the prose carries them
   * Hand-written prose that cannot be derived is PRESERVED verbatim from the
     current guide for entries that already exist. The guide is bilingual, so
     every prose field has an `_en` sibling (desc/desc_en, when/when_en,
@@ -49,7 +53,9 @@ guide only through the live guide's prose, and are anonymized on the way.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
@@ -467,6 +473,104 @@ def build_hooks(source: Path, existing: dict, existing_order: list[str]) -> tupl
     return lines, todos
 
 
+# A command a mod answers: its `on('command.run', { command: 'x' })` filter,
+# `command` anywhere in that filter object. Hooked events are deliberately not
+# derived: a regex keeps `tool.call` and loses the `{ tool: 'Workflow' }`
+# filter that is the whole point of a guard mod, so the prose carries them.
+_MOD_COMMAND = re.compile(r"""on\(\s*['"]command\.run['"]\s*,\s*\{[^}]*?\bcommand:\s*['"]([\w:-]+)['"]""")
+
+
+def _loaded_mods(source: Path) -> set[str]:
+    """Folder names of the mods `CLAUDE_CODE_PLUGIN_DIRS` loads from a mods/ dir.
+
+    Matched by the `mods/<folder>` tail, never by the absolute path: the env
+    names the machine's own ~/.claude, while `--source` may be a copy of it,
+    and an absolute comparison marks every mod of a copy as not loaded.
+    """
+    try:
+        data = json.loads((source / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    env = (data.get("env") or {}) if isinstance(data, dict) else {}
+    raw = str(env.get("CLAUDE_CODE_PLUGIN_DIRS") or "")
+    loaded: set[str] = set()
+    for entry in raw.split(os.pathsep):
+        parts = Path(entry.strip().rstrip("/")).parts
+        if len(parts) >= 2 and parts[-2] == "mods":
+            loaded.add(parts[-1])
+    return loaded
+
+
+def _mod_modules(mod_dir: Path) -> list[Path]:
+    """The hooks modules a mod loads: hooks/hooks.json `modules`, as the engine reads them."""
+    hooks_json = mod_dir / "hooks" / "hooks.json"
+    try:
+        data = json.loads(hooks_json.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise GuideError(f"unreadable mod hooks file {hooks_json}: {exc}") from exc
+    modules = data.get("modules") if isinstance(data, dict) else None
+    if not isinstance(modules, list) or not all(isinstance(m, str) for m in modules):
+        raise GuideError(f"mod hooks file {hooks_json} has no `modules` list")
+    return [hooks_json.parent / m for m in modules]
+
+
+def build_mods(source: Path, existing: dict, existing_order: list[str]) -> tuple[list[str], list[str]]:
+    """One entry per `mods/*/.claude-plugin/plugin.json`.
+
+    Derived: name (manifest), commands (command.run filters), loaded (listed in
+    CLAUDE_CODE_PLUGIN_DIRS). A new entry seeds desc_en from the manifest's
+    description; after that both prose fields are preserved like every other
+    array. A manifest that cannot be read raises GuideError: an unknown, never
+    a silently shorter list.
+    """
+    lines: list[str] = []
+    todos: list[str] = []
+    loaded_mods = _loaded_mods(source)
+
+    live: dict[str, dict] = {}
+    for manifest in sorted((source / "mods").glob("*/.claude-plugin/plugin.json")):
+        mod_dir = manifest.parent.parent
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise GuideError(f"unreadable mod manifest {manifest}: {exc}") from exc
+        name = data.get("name") if isinstance(data, dict) else None
+        if not isinstance(name, str) or not name:
+            raise GuideError(f"mod manifest {manifest} has no name")
+        commands: list[str] = []
+        for module in _mod_modules(mod_dir):
+            try:
+                text = module.read_text(encoding="utf-8", errors="ignore")
+            except OSError as exc:
+                raise GuideError(f"unreadable mod module {module}: {exc}") from exc
+            for cmd in _MOD_COMMAND.findall(text):
+                if f"/{cmd}" not in commands:
+                    commands.append(f"/{cmd}")
+        live[name] = {
+            "commands": commands,
+            "loaded": mod_dir.name in loaded_mods,
+            "description": str(data.get("description") or ""),
+        }
+
+    for name in order_entries(existing_order, list(live.keys())):
+        info = live[name]
+        prev = existing.get(name)
+        entry = f"mod {name}"
+        if prev:
+            desc_val = _preserved(prev, "desc", entry, todos)
+            desc_en_val = _preserved(prev, "desc_en", entry, todos)
+        else:
+            desc_val = js_str("TODO: write desc")
+            desc_en_val = js_str(info["description"] or "TODO: write desc_en")
+            todos.append(f"{entry} (new — needs desc{'' if info['description'] else '/desc_en'})")
+        lines.append(
+            f"  {{ name: {js_str(name)}, commands: {js_arr(info['commands'])}, "
+            f"loaded: {'true' if info['loaded'] else 'false'}, "
+            f"desc: {desc_val}, desc_en: {desc_en_val} }},"
+        )
+    return lines, todos
+
+
 # ── Top-level generation ────────────────────────────────────────
 
 
@@ -479,7 +583,14 @@ ARRAYS = (
     ("AGENTS", build_agents),
     ("SKILLS", build_skills),
     ("HOOKS", build_hooks),
+    ("MODS", build_mods),
 )
+
+# Arrays that may render empty: a machine with no mods is a normal state, and
+# a guide written before MODS existed may lack the block while there is
+# nothing to put in it. Any other array empty or blockless means unusable
+# config or a broken guide.
+MAY_BE_EMPTY = {"MODS"}
 
 # A literal left behind by a previous write. _preserved() keeps an existing
 # value verbatim, so after one write a "TODO: write desc" placeholder reads as
@@ -500,30 +611,38 @@ def _replace_block(html: str, name: str, body_lines: list[str]) -> str:
 
 
 def render_arrays(source: Path, html: str) -> tuple[str, list[str]]:
-    """Return `html` with the four DATA arrays rebuilt from live config.
+    """Return `html` with every DATA array rebuilt from live config.
 
     Raises GuideError when the result would be vacuous: a guide missing one of
-    the four `const NAME = [` blocks (the substitution would silently match
+    the `const NAME = [` blocks (the substitution would silently match
     nothing), an unusable settings.json, or a live directory yielding no
     entries at all. Each of those renders a guide that looks generated and
-    documents nothing.
+    documents nothing. A MAY_BE_EMPTY array may render empty, and its block may
+    be absent while it has no entries; absent with entries is still an error.
     """
     if read_hooks_config(source) is None:
         raise GuideError(f"no usable hooks config in {source / 'settings.json'}")
 
     todos: list[str] = []
     for arr_name, builder in ARRAYS:
-        if not extract_block(html, arr_name):
+        has_block = extract_block(html, arr_name) is not None
+        if not has_block and arr_name not in MAY_BE_EMPTY:
             raise GuideError(f"the guide has no `const {arr_name} = [` block")
         by_name, order = parse_existing(html, arr_name, "name")
         body_lines, arr_todos = builder(source, by_name, order)
-        if not body_lines:
+        if not body_lines and arr_name not in MAY_BE_EMPTY:
             raise GuideError(f"live config under {source} yields no {arr_name} entries")
+        if not has_block:
+            if body_lines:
+                raise GuideError(f"the guide has no `const {arr_name} = [` block for {len(body_lines)} entries")
+            continue
         todos.extend(arr_todos)
         html = _replace_block(html, arr_name, body_lines)
 
     for arr_name, _builder in ARRAYS:
         block = extract_block(html, arr_name)
+        if block is None:
+            continue
         for line in block.group(1).splitlines():
             if PLACEHOLDER in line:
                 entry = f"{arr_name.lower()[:-1]} {_field_str(line, 'name') or '?'}"
@@ -581,10 +700,10 @@ def generate_guide(
 
 
 def write_live(source: Path, guide: Path) -> list[str]:
-    """Rewrite the four arrays of the live guide in place. Returns the TODOs.
+    """Rewrite the DATA arrays of the live guide in place. Returns the TODOs.
 
     No anonymization: this is the owner's own file, and the published copy is
-    anonymized later by generate_guide(). Everything outside the four arrays —
+    anonymized later by generate_guide(). Everything outside the arrays —
     the prose header, SCENARIOS, the renderer — is left byte-for-byte.
     """
     if not guide.exists():
@@ -612,8 +731,11 @@ def check_live(source: Path, guide: Path) -> tuple[int, list[str]]:
 
     report: list[str] = []
     for arr_name, _builder in ARRAYS:
-        now = extract_block(current, arr_name).group(1).splitlines()
-        want = extract_block(rendered, arr_name).group(1).splitlines()
+        now_block, want_block = extract_block(current, arr_name), extract_block(rendered, arr_name)
+        if now_block is None or want_block is None:
+            continue  # a MAY_BE_EMPTY block absent with nothing to render
+        now = now_block.group(1).splitlines()
+        want = want_block.group(1).splitlines()
         if now == want:
             continue
         now_by = {_field_str(line, "name"): line for line in now}

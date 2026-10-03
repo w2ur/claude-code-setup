@@ -63,6 +63,12 @@ const HOOKS = [
   { name: "push-build-gate", event: "PreToolUse → Bash(git push)", desc: "Avant push : lance npm run build PUIS npm test dans le repo ciblé. Bloque (exit 2) si le build échoue, si des warnings apparaissent, ou si la suite de tests est rouge — le stage tests a été ajouté le 2026-08-05 après qu'un commit à suite rouge soit arrivé sur origin/main avec un build vert. Depuis le 2026-09-24 (D11) il gate aussi tout package.json imbriqué suivi par git (jusqu'à 2 niveaux de dossiers, hors node_modules) qui a un script build ou test ; un package imbriqué sans script est signalé mais pas bloquant (nested <nom> NOT GATED), de même qu'un package imbriqué qui déclare des dépendances sans node_modules installé, ni dans son dossier ni à la racine (NOT GATED (dependencies not installed), exit 1 — jamais un échec de build). Racine et imbriqués partagent un seul budget global (PUSH_GATE_DEADLINE, 150 s par défaut) au lieu d'un budget par étape — un dépassement est non bloquant (exit 1, TIMED OUT, push autorisé) : on échoue ouvert sur une panne du garde, fermé sur son verdict. Contourner le stage tests avec TEST_GATE_SKIP=1 git push. Il remplace l'ancien hook Stop build-check. Depuis 2026-08-03 il embarque aussi le payload gate : il bloque quand une route passe de prérendue (○/●/◐) à dynamique (ƒ) et avertit (exit 1, non bloquant) si le payload prérendu ou le total RSC dépasse 3× sa baseline. Contourner avec PAYLOAD_GATE_ACCEPT=1 git push. Baselines dans ~/.claude/payload-baselines/. Sa propre logique d'aiguillage est couverte par hooks/push-build-gate/test_hook.sh.", desc_en: "Before a push: runs npm run build and THEN npm test in the target repo. Blocks (exit 2) on a failed build, on warnings, or on a red test suite — the test stage was added on 2026-08-05 after a commit with a red suite reached origin/main behind a green build. Since 2026-09-24 (D11) it also gates every git-tracked nested package.json (up to 2 directory levels, excluding node_modules) that has a build or test script; a nested package with neither is flagged but non-blocking (nested <name> NOT GATED), as is a nested package that declares dependencies with no node_modules installed in its own dir or at the root (NOT GATED (dependencies not installed), exit 1 — never a build failure). Root and nested packages share one global budget (PUSH_GATE_DEADLINE, 150 s by default) instead of a per-stage one — exceeding it is non-blocking (exit 1, TIMED OUT, push allowed): fail open on the guard's own malfunction, closed on its verdict. Skip the test stage with TEST_GATE_SKIP=1 git push. Since 2026-08-03 it also carries the payload gate: it blocks when a route flips from prerendered to dynamic and warns (exit 1, non-blocking) when the prerendered payload or the RSC total exceeds 3x its baseline. Bypass with PAYLOAD_GATE_ACCEPT=1 git push. Baselines in ~/.claude/payload-baselines/. Its own dispatch logic is covered by hooks/push-build-gate/test_hook.sh.", mode: "Blocking" },
 ];
 
+const MODS = [
+  { name: "context-bar", commands: ["/context-bar"], loaded: true, desc: "Barre empilée au-dessus du prompt : la fenêtre de contexte par catégorie, avec les couleurs de /context, et une légende en tokens. Estimation locale (summary), recalculée quand le contexte bouge. /context-bar l'affiche ou la masque, et l'état survit aux sessions. Se superpose à usage-forecast sans le masquer.", desc_en: "Stacked bar above the prompt: the context window by category, in /context's colours, with a token legend. Local estimate (summary), recomputed when context moves. /context-bar shows or hides it, and the state survives across sessions. Stacks with usage-forecast instead of hiding it." },
+  { name: "fanout-guard", commands: [], loaded: true, desc: "Garde de consommation : à partir de 85 % sur la fenêtre 5h ou 90 % sur la 7j, demande confirmation avant tout Workflow et avant le deuxième Agent d'un même tour (une seule question par tour). Hold, une question écartée ou un run -p sans personne pour répondre refusent l'appel ; si l'usage est illisible, l'appel passe. Aucune commande.", desc_en: "Usage guard: from 85% on the 5h window or 90% on the 7d one, asks before any Workflow and before the second Agent of a turn (one question per turn). Hold, a dismissed question or a -p run with nobody to ask refuses the call; if usage cannot be read, the call goes through. No command." },
+  { name: "usage-forecast", commands: ["/usage-bar"], loaded: true, desc: "Bandeau au-dessus du prompt, une ligne par fenêtre (5h, 7j) : jauge colorée, %, temps avant reset, vitesse de consommation en points/h et heure de saturation si elle tombe avant le reset. Les relevés sont partagés entre sessions (la limite est celle du compte). Toast à 80 % et 95 %, une fois par fenêtre. /usage-bar l'affiche ou le masque.", desc_en: "Band above the prompt, one line per window (5h, 7d): coloured gauge, %, time to reset, burn rate in points/h and the time it fills if that comes before the reset. Readings are shared across sessions (the limit is the account's). Toast at 80% and 95%, once per window. /usage-bar shows or hides it." },
+];
+
 const SCENARIOS = [
   { id:"new-app",icon:"✦",title:"Nouvelle app",title_en:"New app",when:"Tu as une idée validée et tu veux la construire",when_en:"You have a validated idea and you want to build it",category:"dev",frequency:"Ponctuel",frequency_en:"One-off",
     steps:[
@@ -165,14 +171,16 @@ const CATEGORIES={dev:{label:"Développement",label_en:"Development",color:"#3B8
 
 // Static UI chrome — everything the renderer writes itself, per language.
 const UI={
-  fr:{title:"Workflow Guide — Claude Code Portfolio",scenarios:"scénarios",commands:"commandes",agents:"agents",skills:"skills",hooks:"hooks",
-    tabScenarios:"Scénarios",tabCommands:"Commandes",tabAgents:"Agents & Skills",tabHooks:"Hooks",
+  fr:{title:"Workflow Guide — Claude Code Portfolio",scenarios:"scénarios",commands:"commandes",agents:"agents",skills:"skills",hooks:"hooks",mods:"mods",
+    tabScenarios:"Scénarios",tabCommands:"Commandes",tabAgents:"Agents & Skills",tabHooks:"Hooks",tabMods:"Mods",
+    modsNoCommand:"pas de commande",modsLoaded:"chargé",modsNotLoaded:"non chargé",modsNoteA:"Un mod est un plugin de hooks TypeScript qui s'accroche à Claude Code lui-même (UI, commandes, appels d'outils). Chacun vit dans ",modsNoteCode:"~/.claude/mods/<nom>/",modsNoteB:" et se charge via CLAUDE_CODE_PLUGIN_DIRS (settings.json, env), relu à chaque modification.",
     agentsLabel:"Agents : ",noneLabel:"aucun",whenLabel:"Quand : ",
     agentsHeading:"Agents",skillsHeading:"Skills (préchargées dans les agents)",preloadedIn:"Préchargée dans : ",
     hooksNoteA:"La plupart des hooks sont ",hooksNoteAdvisory:"advisory",hooksNoteB:" (ils affichent des warnings sans bloquer) — ",hooksNoteBlocking:"sauf secret-scan et push-build-gate qui bloquent",hooksNoteC:" (exit 2) si un secret est détecté ou si le build échoue/a des warnings. Chaque hook vit dans son dossier ",hooksNoteCode:"~/.claude/hooks/<nom>/",hooksNoteD:".",
     filterAll:"Tous",emptyState:"← Sélectionne un scénario",trapsTitle:"⚠ Pièges courants",legendProject:"projet Claude"},
-  en:{title:"Workflow Guide — Claude Code Portfolio",scenarios:"scenarios",commands:"commands",agents:"agents",skills:"skills",hooks:"hooks",
-    tabScenarios:"Scenarios",tabCommands:"Commands",tabAgents:"Agents & Skills",tabHooks:"Hooks",
+  en:{title:"Workflow Guide — Claude Code Portfolio",scenarios:"scenarios",commands:"commands",agents:"agents",skills:"skills",hooks:"hooks",mods:"mods",
+    tabScenarios:"Scenarios",tabCommands:"Commands",tabAgents:"Agents & Skills",tabHooks:"Hooks",tabMods:"Mods",
+    modsNoCommand:"no command",modsLoaded:"loaded",modsNotLoaded:"not loaded",modsNoteA:"A mod is a TypeScript hooks plugin that hooks into Claude Code itself (UI, commands, tool calls). Each one lives in ",modsNoteCode:"~/.claude/mods/<name>/",modsNoteB:" and loads through CLAUDE_CODE_PLUGIN_DIRS (settings.json, env), reloaded on every edit.",
     agentsLabel:"Agents: ",noneLabel:"none",whenLabel:"When: ",
     agentsHeading:"Agents",skillsHeading:"Skills (preloaded into agents)",preloadedIn:"Preloaded into: ",
     hooksNoteA:"Most hooks are ",hooksNoteAdvisory:"advisory",hooksNoteB:" (they print warnings without blocking) — ",hooksNoteBlocking:"except secret-scan and push-build-gate, which block",hooksNoteC:" (exit 2) when a secret shows up or the build fails / warns. Each hook lives in its own ",hooksNoteCode:"~/.claude/hooks/<name>/",hooksNoteD:" folder.",
@@ -215,7 +223,7 @@ function App(){
       <div style={{marginBottom:20,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,flexWrap:"wrap"}}>
         <div>
           <h1 style={{fontSize:20,fontWeight:700,color:"#F8FAFC",margin:0}}>{U.title}</h1>
-          <p style={{fontSize:12,color:"#64748B",margin:"4px 0 0"}}>{pl(SCENARIOS.length,U.scenarios)} · {pl(COMMANDS.length,U.commands)} · {pl(AGENTS.length,U.agents)} · {pl(SKILLS.length,U.skills)} · {pl(HOOKS.length,U.hooks)}</p>
+          <p style={{fontSize:12,color:"#64748B",margin:"4px 0 0"}}>{pl(SCENARIOS.length,U.scenarios)} · {pl(COMMANDS.length,U.commands)} · {pl(AGENTS.length,U.agents)} · {pl(SKILLS.length,U.skills)} · {pl(HOOKS.length,U.hooks)} · {pl(MODS.length,U.mods)}</p>
         </div>
         <div style={{display:"flex",borderRadius:6,overflow:"hidden",border:"1px solid #1E293B"}}>
           {LANGS.map(l=>(
@@ -225,8 +233,8 @@ function App(){
       </div>
 
       {/* Tabs */}
-      <div style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid #1E293B"}}>
-        {[{id:"scenarios",label:U.tabScenarios},{id:"commands",label:U.tabCommands},{id:"agents",label:U.tabAgents},{id:"hooks",label:U.tabHooks}].map(tb=>(
+      <div style={{display:"flex",flexWrap:"wrap",gap:2,marginBottom:20,borderBottom:"1px solid #1E293B"}}>
+        {[{id:"scenarios",label:U.tabScenarios},{id:"commands",label:U.tabCommands},{id:"agents",label:U.tabAgents},{id:"hooks",label:U.tabHooks},{id:"mods",label:U.tabMods}].map(tb=>(
           <button key={tb.id} onClick={()=>{setTab(tb.id);setAid(null);setFlt("all")}} style={{padding:"10px 18px",fontSize:12,fontWeight:600,fontFamily:F,background:tab===tb.id?"#1E293B":"transparent",color:tab===tb.id?"#F8FAFC":"#64748B",border:"none",borderBottom:tab===tb.id?"2px solid #3B82F6":"2px solid transparent",transition:"all 0.15s"}}>{tb.label}</button>
         ))}
       </div>
@@ -293,6 +301,21 @@ function App(){
         </div>))}
         <div style={{padding:"12px 16px",borderRadius:8,background:"#1E293B",marginTop:8}}>
           <p style={{fontSize:11,color:"#64748B",lineHeight:1.6}}>{U.hooksNoteA}<strong style={{color:"#10B981"}}>{U.hooksNoteAdvisory}</strong>{U.hooksNoteB}<strong>{U.hooksNoteBlocking}</strong>{U.hooksNoteC}<code>{U.hooksNoteCode}</code>{U.hooksNoteD}</p>
+        </div>
+      </div>)}
+
+      {/* === MODS TAB === */}
+      {tab==="mods"&&(<div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {MODS.map((m,i)=>(<div key={i} style={{padding:"14px 18px",borderRadius:8,background:"#0F172A",border:"1px solid #1E293B"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+            <code style={{fontSize:14,fontWeight:800,color:"#F8FAFC"}}>{m.name}</code>
+            {m.commands.length?m.commands.map(c=>(<span key={c}>{pill("#3B82F622","#3B82F6",c)}</span>)):pill("#64748B22","#64748B",U.modsNoCommand)}
+            {m.loaded?pill("#10B98122","#10B981",U.modsLoaded):pill("#EF444422","#EF4444",U.modsNotLoaded)}
+          </div>
+          <p style={{fontSize:11,color:"#94A3B8",lineHeight:1.5}}>{t(m,"desc")}</p>
+        </div>))}
+        <div style={{padding:"12px 16px",borderRadius:8,background:"#1E293B",marginTop:8}}>
+          <p style={{fontSize:11,color:"#64748B",lineHeight:1.6}}>{U.modsNoteA}<code>{U.modsNoteCode}</code>{U.modsNoteB}</p>
         </div>
       </div>)}
 

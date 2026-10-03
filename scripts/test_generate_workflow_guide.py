@@ -18,12 +18,14 @@ from pathlib import Path
 import pytest
 
 from generate_workflow_guide import (
+    GuideError,
     _field_arr,
     _field_str,
     _preserved,
     build_agents,
     build_commands,
     build_hooks,
+    build_mods,
     check_live,
     parse_existing,
     write_live,
@@ -149,6 +151,10 @@ const HOOKS = [
 {hooks}
 ];
 
+const MODS = [
+{mods}
+];
+
 const SCENARIOS = [
   {{ id:"x", tool:"/code-review high" }}
 ];
@@ -193,6 +199,7 @@ def _live_guide(tmp_path: Path) -> Path:
             'desc: "Diagnostique.", desc_en: "Diagnoses." },',
             skills='  { name: "conv", file: "x", preloaded: [], desc: "Charte.", desc_en: "Charter." },',
             hooks='  { name: "secret-scan", event: "old", desc: "Bloque.", desc_en: "Blocks.", mode: "Advisory" },',
+            mods="",
         ),
         encoding="utf-8",
     )
@@ -235,7 +242,7 @@ def test_write_live_touches_only_the_four_arrays_and_keeps_the_prose(tmp_path):
     write_live(src, guide)
     after = guide.read_text(encoding="utf-8")
 
-    outside = lambda html: re.sub(r"const (COMMANDS|AGENTS|SKILLS|HOOKS) = \[\n.*?\n\];", "", html, flags=re.S)  # noqa: E731
+    outside = lambda html: re.sub(r"const (COMMANDS|AGENTS|SKILLS|HOOKS|MODS) = \[\n.*?\n\];", "", html, flags=re.S)  # noqa: E731
     assert outside(after) == outside(before)
     assert '"Diagnoses."' in after and '"Charter."' in after
     assert 'mode: "Blocking"' in after
@@ -298,3 +305,119 @@ def test_a_hook_registered_under_two_matchers_shows_both(tmp_path):
     )
     lines, _todos = build_hooks(tmp_path, {}, [])
     assert _field_str(lines[0], "event") == "PreToolUse → Write|Edit|NotebookEdit · PreToolUse → Bash"
+
+
+# ── Mods (MODS array) ───────────────────────────────────────────
+
+
+def _write_mod(src: Path, name: str, register: str, description: str = "") -> Path:
+    mod = src / "mods" / name
+    (mod / ".claude-plugin").mkdir(parents=True)
+    (mod / "hooks").mkdir()
+    (mod / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": name, "version": "0.1.0", "description": description}), encoding="utf-8"
+    )
+    (mod / "hooks" / "register.tsx").write_text(register, encoding="utf-8")
+    (mod / "hooks" / "hooks.json").write_text('{"modules": ["./register.tsx"]}', encoding="utf-8")
+    return mod
+
+
+def _plugin_dirs_env(src: Path, value: str) -> None:
+    (src / "settings.json").write_text(json.dumps({"env": {"CLAUDE_CODE_PLUGIN_DIRS": value}}), encoding="utf-8")
+
+
+def test_build_mods_derives_commands_and_loaded(tmp_path):
+    loaded = _write_mod(
+        tmp_path, "bar", "on('command.run', { command: 'bar' }, async $ => ({ text: 'x' }))\n", "A bar."
+    )
+    _write_mod(tmp_path, "guard", "on('tool.call', { tool: 'Workflow' }, gate)\n")
+    _plugin_dirs_env(tmp_path, str(loaded))
+
+    lines, _todos = build_mods(tmp_path, {}, [])
+    by_name = {_field_str(line, "name"): line for line in lines}
+
+    assert '"/bar"' in _field_arr(by_name["bar"], "commands")
+    assert _field_arr(by_name["guard"], "commands") == "[]"
+    assert "loaded: true" in by_name["bar"]
+    assert "loaded: false" in by_name["guard"]
+
+
+def test_build_mods_matches_loaded_by_the_mods_tail_so_a_config_copy_works(tmp_path):
+    # --source may be a copy of ~/.claude while the env still names the real
+    # one: an absolute-path comparison marked every mod of a copy not loaded.
+    _write_mod(tmp_path, "bar", "")
+    _plugin_dirs_env(tmp_path, "~/.claude/mods/bar:/elsewhere/notmods/baz")
+
+    lines, _todos = build_mods(tmp_path, {}, [])
+    assert "loaded: true" in lines[0]
+
+
+def test_build_mods_seeds_desc_en_from_the_manifest_then_preserves_prose(tmp_path):
+    _write_mod(tmp_path, "bar", "", "A bar above the prompt.")
+    lines, todos = build_mods(tmp_path, {}, [])
+    assert _field_str(lines[0], "desc_en") == "A bar above the prompt."
+    assert _field_str(lines[0], "desc") == "TODO: write desc"
+    assert todos == ["mod bar (new — needs desc)"]
+
+    prev = '  { name: "bar", commands: [], loaded: false, desc: "Une barre.", desc_en: "A bar." },'
+    lines, todos = build_mods(tmp_path, {"bar": prev}, ["bar"])
+    assert _field_str(lines[0], "desc") == "Une barre."
+    assert _field_str(lines[0], "desc_en") == "A bar."
+    assert todos == []
+
+
+def test_no_mods_folder_renders_an_empty_array_without_error(tmp_path):
+    src, guide = _live_source(tmp_path), _live_guide(tmp_path)
+    assert build_mods(src, {}, []) == ([], [])
+    assert write_live(src, guide) == []
+    assert check_live(src, guide) == (0, [])
+
+
+def test_an_unreadable_mod_manifest_is_unknown_never_a_shorter_list(tmp_path):
+    src, guide = _live_source(tmp_path), _live_guide(tmp_path)
+    mod = _write_mod(src, "broken", "")
+    (mod / ".claude-plugin" / "plugin.json").write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(GuideError):
+        build_mods(src, {}, [])
+    code, report = check_live(src, guide)
+    assert code == 2
+    assert "broken" in report[0]
+
+
+def test_build_mods_reads_only_the_modules_hooks_json_loads(tmp_path):
+    mod = _write_mod(tmp_path, "bar", "on('command.run', { description: 'd', command: 'bar' }, h)\n")
+    # A leftover module hooks.json does not list must not add a command.
+    (mod / "hooks" / "old.tsx").write_text("on('command.run', { command: 'gone' }, h)\n", encoding="utf-8")
+
+    lines, _todos = build_mods(tmp_path, {}, [])
+    assert _field_arr(lines[0], "commands") == '["/bar"]'
+
+
+def test_a_mod_with_no_hooks_json_is_unknown(tmp_path):
+    mod = _write_mod(tmp_path, "bar", "")
+    (mod / "hooks" / "hooks.json").unlink()
+    with pytest.raises(GuideError):
+        build_mods(tmp_path, {}, [])
+
+
+def _guide_without_mods_block(tmp_path: Path) -> Path:
+    guide = _live_guide(tmp_path)
+    html = guide.read_text(encoding="utf-8")
+    guide.write_text(re.sub(r"\nconst MODS = \[\n.*?\n\];\n", "\n", html, flags=re.S), encoding="utf-8")
+    assert "const MODS" not in guide.read_text(encoding="utf-8")
+    return guide
+
+
+def test_a_guide_older_than_mods_still_renders_when_there_are_none(tmp_path):
+    src, guide = _live_source(tmp_path), _guide_without_mods_block(tmp_path)
+    assert write_live(src, guide) == []
+    assert check_live(src, guide) == (0, [])
+
+
+def test_a_guide_older_than_mods_is_unknown_when_mods_exist(tmp_path):
+    src, guide = _live_source(tmp_path), _guide_without_mods_block(tmp_path)
+    _write_mod(src, "bar", "")
+    code, report = check_live(src, guide)
+    assert code == 2
+    assert "MODS" in report[0]
