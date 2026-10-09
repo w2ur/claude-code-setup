@@ -3,8 +3,8 @@ name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
 about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, 2 blocking hooks included."
-facts_fr: "7 commandes, 5 agents, 8 skills, 4 hooks — dont 2 bloquants — et 3 mods."
-facts_en: "7 commands, 5 agents, 8 skills, 4 hooks — 2 of them blocking — and 3 mods."
+facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks — dont 2 bloquants — et 3 mods."
+facts_en: "8 commands, 5 agents, 10 skills, 4 hooks — 2 of them blocking — and 3 mods."
 ---
 
 <div align="center">
@@ -51,7 +51,7 @@ Everything here is about writing code. I run other Claude Code automation that i
 ┌───────────────────────────────────────────────────────────┐
 │                    You type a command                     │
 │      /audit  /cleanup  /new-app  /tech-debt  /sync-setup  │
-│               /model-review  /ship-plan                   │
+│        /model-review  /ship-plan  /design-audit           │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
@@ -75,6 +75,8 @@ Everything here is about writing code. I run other Claude Code automation that i
 │                  │  testing-conventions             │     │
 │                  │  memory-and-plans                │     │
 │                  │  design-tells                    │     │
+│                  │  design-critique                 │     │
+│                  │  design-direction                │     │
 │                  └──────────────────────────────────┘     │
 └─────────────────────────────┬─────────────────────────────┘
                               │
@@ -105,7 +107,7 @@ Everything here is about writing code. I run other Claude Code automation that i
 <sub>The guide, on the scenario I run most: triage the environment first, then a one-way L1 → L2 → L3 escalation, then a regression test written before the fix.</sub>
 
 <details>
-<summary><strong>Commands (7)</strong> — entry points that orchestrate everything</summary>
+<summary><strong>Commands (8)</strong> — entry points that orchestrate everything</summary>
 
 <br>
 
@@ -115,6 +117,7 @@ Everything here is about writing code. I run other Claude Code automation that i
 | `/new-app` | Full scaffold with portfolio compliance from day one, including a design direction | Starting a new project |
 | `/ship-plan` | Plan review → fold findings → stop for approval → execute → `/code-review high` → stop before push | Taking a written plan to reviewed code |
 | `/model-review` | Derives every model pin and headless job, sets the new model's effort, re-tests prompts and design scaffolding | When a new model release lands |
+| `/design-audit` | Audits the rendered design of live sites: evidence capture first, then one critique per site | After a visual change, or a periodic design sweep |
 | `/cleanup` | Disk hygiene sweep of `~/.claude` first, then stale plans, plugin audit, memory compaction | Weekly housekeeping |
 | `/tech-debt` | Monthly triage → deep review → auto-fix | Monthly health check |
 | `/sync-setup` | Sync this repo from live `~/.claude/` config (anonymize + audit) | After workflow changes |
@@ -139,7 +142,7 @@ The model selection matters. I don't pay opus prices for a compliance check that
 </details>
 
 <details>
-<summary><strong>Skills (8)</strong> — preloaded knowledge and user-invocable utilities</summary>
+<summary><strong>Skills (10)</strong> — preloaded knowledge and user-invocable utilities</summary>
 
 <br>
 
@@ -151,6 +154,8 @@ The model selection matters. I don't pay opus prices for a compliance check that
 - **testing-conventions**: the regression-test comment format, property-test setup, the financial-math tolerance that was measured too tight at `1e-10`, and the measured blind spots of a green suite.
 - **memory-and-plans**: how the two memory systems resolve on disk, why per-agent stores are project-scoped and must never be consolidated upward or committed.
 - **design-tells**: the named trap list for UI work in a project with no stated direction — the patterns a model reaches for by default (cream grounds, italic accent words, numbered section labels, pill buttons…), each with what to do instead. A project's own design section overrides it.
+- **design-critique**: loaded before reviewing any rendered UI — a live site, a local build, or a page just changed — and before claiming a visual change is done.
+- **design-direction**: loaded before designing or redesigning a site or page when no `DESIGN.md` exists yet; it writes the direction down before any code.
 
 The first two are the survivors of an earlier, larger set; the rest arrived the other way round. Everything after `scheduled-jobs` was **extracted from the global CLAUDE.md**, which is billed into every session under it and had grown past the point where that was worth paying. The rule that decides the split: a **guard** — anything that stops a wrong action, including "this looks like an obvious improvement but was measured to be wrong" — stays in CLAUDE.md; the **measurement behind it**, the falsifying control and the retraction story move into a skill. `claude-scripts/claude-md-weight.sh` measures the result and owns the threshold, so no number here can drift.
 

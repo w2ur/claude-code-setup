@@ -104,7 +104,7 @@ Decided 2026-08-17. **Before writing any Python here, touching a hook or schedul
 - **Budget multiple review rounds after any money-path fix.** The first pass on a pricing or ledger change reliably surfaces a second defect in the same neighbourhood — measured repeatedly, never once fewer than three rounds. Treat one clean round as the start of the review, not the end of it. Log the round count and model id of each money-path review in auto-memory; re-derive the number from that log.
 - **Never trust an empty review without checking the finders ran.** Zero findings and zero coverage are the same output — confirm the agents produced work before reading silence as a result. Same family as the falsifiable-control rule above.
 - **A test can pin a defect.** When a check disagrees with what you expect, read the test's *intent* before assuming the code is wrong — or right.
-- Before merging any nontrivial diff: run `/code-review` at **high** effort. Sub-agent-produced diffs are always reviewed before merge; when the change has a UI surface, take screenshots at 390 px and 1440 px in light and dark mode (Playwright or the `run` skill) and read them with the console.
+- Before merging any nontrivial diff: run `/code-review` at **high** effort. Sub-agent-produced diffs are always reviewed before merge; when the change has a UI surface, **load the `design-critique` skill** and review the rendered page with it, reading the console too.
 - **`ultra` is not the default, and "multi-file" is not the trigger.** A prompt that is always declined is worse than no prompt: it trains both of us to skip the question, so the one time it matters gets waived on reflex too. Reserve `ultra` for a diff that touches a **money path** (pricing, ledger, fills, billing), **auth or secrets**, a **data migration**, or a **public API contract** — or when a normal review has already found a real defect and you want the surrounding neighbourhood swept. Otherwise `high` is the ceiling. Do not offer `ultra` merely because a change spans files.
 
 ## Generalization check
@@ -113,7 +113,8 @@ Before implementing a specific request, consider whether it's a special case of 
 
 ## Design defaults
 
-- **No stated direction → no model default.** Never default to purple/violet/indigo, a cream or off-white page ground, an italic accent word in headlines, numbered 01/02/03 section labels, monospace eyebrow labels, pill-shaped buttons, or a terracotta/clay accent. Propose 2-3 directions from subject, mood and audience, and wait for approval. A project's own design section overrides this list; the `design-tells` skill holds the full trap list.
+- **No stated direction → no model default.** Never default to purple/violet/indigo, a cream or off-white page ground, an italic accent word in headlines, numbered 01/02/03 section labels, monospace eyebrow labels, pill-shaped buttons, or a terracotta/clay accent. Propose 2-3 directions from subject, mood and audience, and wait for approval. A project's own design section or `DESIGN.md` overrides this list.
+- **Design work: load the skill for the situation.** Any frontend or visual work with no stated direction → `design-tells` (the full ban list). A new site or page, or a redesign, with no `DESIGN.md` yet → `design-direction`, which writes one before code. Reviewing any rendered UI, or before claiming a visual change done → `design-critique`.
 - Dark + light mode default, via `prefers-color-scheme`. Opt-out requires justification in the project CLAUDE.md.
 - Author signature default: footer **"Made with care by {author-first-name}"** → `https://{portfolio-site-url}`. Opt-out requires justification.
 
@@ -136,4 +137,4 @@ Three exceptions to the lazy-load preference, all deliberate:
 
 - **`superpowers` is the standing exception.** Its SessionStart hook injects the `using-superpowers` skill into every single session. That cost is **accepted, not overlooked** — owner's call, "an absolute necessity". Do not propose removing it, and do not re-raise the context cost as a finding.
 - **`plan-reviewer` carries a Stop hook** (`check-new-plans.sh`) that flags any recently-touched file in `~/.claude/plans/` with no `-review.md` sibling.
-- **`frontend-design` is uninstalled and stays that way.** It overlapped `ui-ux-pro-max`, which is the design skill here. Do not reinstall it or suggest it.
+- **`frontend-design` (uninstalled) and `ui-ux-pro-max` (disabled) stay off.** Both overlap the design skills (`design-tells`, `design-direction`, `design-critique`), and ui-ux-pro-max's catalogue output read as generic. Do not reinstall, re-enable or suggest either.

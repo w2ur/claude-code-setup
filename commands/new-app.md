@@ -22,7 +22,7 @@ Before scaffolding, ask the owner:
 4. **User-facing language?** (French / English / Bilingual)
 5. **Deploy target?** (Netlify / Vercel / Cloudflare / local-only for now)
 6. **Should it get a tile on the hub ({portfolio-site-url})?** If yes, get a one-line French tagline, one-line English tagline, and (if it's a real project the hub would feature, not a personal-only tool) a facts line for each language.
-7. **Design direction?** (or I propose 2-3) If the owner has one, take it as given. Otherwise load the `design-tells` skill, propose 2-3 directions from subject, mood and audience — palette, type and one signature element each, none built on a pattern from the `~/.claude/CLAUDE.md` Design defaults avoid-list or the skill's section-1 traps — and **wait for the owner to pick one** before scaffolding. An app with no UI (CLI, script, library) may answer "none"; record that instead.
+7. **Design direction?** (or I propose 2-3) If the owner has one, take it as given. Otherwise load the `design-direction` skill and run its steps 1-5 on the answers above (question 1 is the subject), and **wait for the owner to pick one** before scaffolding. Its step 6 (`DESIGN.md`) runs at scaffold time, below; its step 7 runs once there is a page to render. An app with no UI (CLI, script, library) may answer "none"; record that instead.
 
 ## Scaffold
 
@@ -35,6 +35,9 @@ cd ~/Dev/$0
 git init
 ```
 
+### DESIGN.md
+Unless question 7 was answered "none", write `DESIGN.md` at the repo root as the `design-direction` skill's step 6 says (from its `references/design-md-template.md`). If the owner gave a direction, fill the template from it. The CLAUDE.md "Design direction" section below is the pointer line that step 6 asks for.
+
 ### CLAUDE.md
 Create covering: project overview, tech stack, dev/build commands, deployment, and any conventions that override or extend the global CLAUDE.md. Include:
 - Project overview from the owner's description
@@ -46,13 +49,13 @@ Create covering: project overview, tech stack, dev/build commands, deployment, a
   ```markdown
   ## Design direction
 
-  [Chosen direction: palette with hex values, type, the one signature element, mood.]
+  [Chosen direction in one or two sentences: palette, type, the one signature element.] The full direction is in `DESIGN.md`, this project's identity.
 
   Avoid unless this section asks for it: [the list, copied verbatim from ~/.claude/CLAUDE.md → Design defaults].
 
   **Before any UI or visual work here, load the `design-tells` skill** — it holds the full trap list. This section overrides it wherever they disagree.
   ```
-  If question 7 was answered "none", write the section as a single line: `No UI yet — before adding one, propose 2-3 directions and load the design-tells skill.`
+  If question 7 was answered "none", write the section as a single line: `No UI yet — before adding one, load the design-direction skill.`
 
 ### README.md
 Write a real README (not boilerplate) with:

@@ -97,10 +97,10 @@ Propose changes; do not apply them. Before editing any CLAUDE.md, load the
 
 ## Step 4 — re-test design and visual scaffolding
 
-Load the `ui-ux-pro-max:ui-ux-pro-max` skill and have the new model propose a palette and
-one screen for a throwaway subject. Check the result against the **Design defaults**
-section of `~/.claude/CLAUDE.md` (the colour bias it names, dark + light mode, the author
-signature). Report whether each default still has to be enforced or is now met unprompted.
+Load the `design-direction` skill and have the new model propose directions and one
+screen for a throwaway subject. Check the result against the **Design defaults** section
+of `~/.claude/CLAUDE.md` (the colour bias it names, dark + light mode, the author
+signature) and the `design-tells` ban list. Report whether each default still has to be enforced or is now met unprompted.
 Write nothing into a repo for this step.
 
 ## Report
