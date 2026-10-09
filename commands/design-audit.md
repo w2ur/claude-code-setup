@@ -42,7 +42,7 @@ Load the `workflow-authoring` skill before writing the Workflow script. Use the 
 
 - One agent per site whose exit code is not `2`. **Name a model on every agent: `opus`** (per-site critique is judgment work).
 - Keep each run under 10 agents. With more sites, batch into successive runs.
-- Agent prompt, per site: "Load design-critique; audit mode (no fixes); evidence already captured in `<dir>`, design-detect exit `<N>` — do not re-run design-detect.sh; return the full report as your final message, write no file; repo is `~/Dev/<repo>`." When the repo column is `-`, replace the last clause with "no repo context". `<N>` is that site's exit code from step 2. Agents run in parallel, and a re-run would launch one Chrome per agent and overwrite the evidence the others read. Each agent runs design-critique's benchmark step (3b), which captures 2-3 reference sites into `<dir>/refs/` with its own Chrome: that is the one capture allowed in this phase, because it writes nowhere another agent reads.
+- Agent prompt, per site: "Load design-critique; audit mode (no fixes); evidence already captured in `<dir>`, design-detect exit `<N>` — do not re-run design-detect.sh; return the full report as your final message, write no file; repo is `~/Dev/<repo>`." When the repo column is `-`, replace the last clause with "no repo context". `<N>` is that site's exit code from step 2. Agents run in parallel, and a re-run would launch one Chrome per agent and overwrite the evidence the others read. Each agent runs design-critique's benchmark step (3b), which reads galleries with `gallery.mjs` and captures 2-3 reference sites into `<dir>/refs/`, each with its own Chrome: those are the only browser runs allowed in this phase, because they write nowhere another agent reads.
 - Sites with exit `2` get no agent. They appear in the summary as `unknown`, quoting `<dir>/detect.stderr`.
 
 ## 4. Coverage check
@@ -58,7 +58,7 @@ Write `~/.claude/state/design-audit/<date>/summary.md`:
 - Detector findings are deduped across widths on `antipattern` + `snippet`; the per-width JSON in `<dir>` keeps everything.
 - A site whose `capture.json` has `redirectedPath: true` is flagged "audited `<final path>` only" (use `finalUrl`). It is not a full-site audit.
 - Sanctioned findings are counted as sanctioned, never as defects.
-- A `Benchmark` column names the references each report used (from its `## Benchmark` table), or `none` when it wrote "no reference captured".
+- A `Benchmark` column names the references each report used (from its `## Benchmark` table) and how many came from a gallery (its `source` column), or `none` when it wrote "no reference captured".
 
 Then offer to publish the summary as an artifact. Never publish automatically.
 

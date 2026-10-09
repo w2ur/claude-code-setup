@@ -192,7 +192,10 @@ every subsequent night — a slow-motion wipe on the same ~30-day timescale as
 the iCloud undo window), the script runs a read-only pre-flight first and
 **refuses the entire run** (exit 1, nothing touched) when the pre-flight would
 delete at or above that same threshold. `--max-delete` stays on the real
-transfer too, as a redundant second fence. A third guard refuses (exit 2) if
+transfer too, as a redundant second fence. **Deletions under `*/.git/` are
+not counted**: a `git gc` repack deletes thousands of loose objects at once,
+and counting them refused the mirror every night for a week in October 2026.
+Do not "tighten" the guard back. A third guard refuses (exit 2) if
 the source and the iCloud destination are nested inside each other. See
 `~/.claude/scripts/dev-snapshot.sh` for the filter list and every constant's
 rationale — each script owns its own numbers, not this file.
