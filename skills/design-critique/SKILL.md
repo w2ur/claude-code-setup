@@ -79,6 +79,40 @@ Judgment comes **before** the detector output, so the detector cannot anchor it.
      never as a finding;
    - the same `antipattern` + `snippet` at more than one width → one finding.
 
+## 3b. Benchmark against references (audit mode)
+
+After the merge, never before: a reference seen first anchors the blind pass the
+same way the detector would. Fix mode skips this step unless the caller asks for it,
+and the fix loop's re-check never repeats it.
+
+1. **Pick 2-3 references.** The project's `DESIGN.md` references section, when it
+   has one, comes first. Otherwise choose live sites that do **the same job for the
+   same audience** (a finance dashboard against finance dashboards, a reading tool
+   against reading tools), and are among the best of that kind: from the galleries
+   in `~/.claude/skills/design-direction/references/inspiration.md`, or ones you
+   know. Never a site behind a login, never a paid source.
+2. **Capture each** into its own directory under the evidence dir, never into the
+   evidence dir itself (the script clears its output dir first):
+   ```
+   node ~/.claude/scripts/design/capture.mjs <ref-url> <outdir>/refs/<ref-host>
+   node ~/.claude/scripts/design/dna-harness.mjs <ref-url> light
+   ```
+   Do not use the Playwright MCP browser for this: parallel audit agents share it.
+   A reference that exits `2` is dropped and named under `Not verified`; with none
+   left, write `Benchmark: no reference captured` and go on.
+3. **Compare on craft, never on identity.** Read each reference's fold frames
+   next to the target's, on these axes: what the first screen proves, type
+   hierarchy and scale steps, spacing rhythm and density, how many jobs the accent
+   has, mobile navigation and tap targets, empty and error states if visible. A
+   reference's palette, fonts or style are never a finding: the project's identity
+   is its own, and copying the reference is the convergence `design-direction`
+   exists to avoid.
+4. **Gaps become findings.** Where a reference clearly does better on an axis, add a
+   row: `Why` reads `benchmark: <ref-host> <what it does>`, `seen in` names both
+   frames. A benchmark finding is never a `blocker`, and is `major` only when the
+   gap is on the first screen. A gap already found in step 3 gets the benchmark
+   appended to its `Why` rather than a second row.
+
 ## 4. Motion and interaction
 
 When the target animates or responds to gestures, read
@@ -104,6 +138,11 @@ Blockers: <n>  Majors: <n>  Minors: <n>  Sanctioned: <n>
 ## Sanctioned
 | rule id | sanctioned by |
 
+## Benchmark
+| reference | why chosen | does better on |
+|---|---|---|
+| <ref-host> | <same job, same audience> | <axes, or "nothing the target lacks"> |
+
 ## Not verified
 - <each claim not seen in a screenshot>
 ```
@@ -124,7 +163,7 @@ Blockers: <n>  Majors: <n>  Minors: <n>  Sanctioned: <n>
 1. Fix **all** findings in one batch.
 2. Re-run step 1 **once** on the same target — running the script, since the
    evidence-already-captured path never applies to a re-check — and redo
-   steps 3-5 on the new evidence.
+   steps 3-5 on the new evidence, without step 3b.
 3. Stop. Report what is fixed, what remains, and what the fix introduced. **Never
    a third round without the owner** — a loop that keeps finding something is
    chasing taste, not defects.
