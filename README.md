@@ -314,6 +314,18 @@ This is a personal setup, not a framework. I'm not accepting PRs that change the
 - **Questions:** open an issue, I'll answer and improve the docs
 - **Adaptations:** if you built something interesting on top of this, I'd love to hear about it
 
+## Third-party skills I use
+
+Three skills in my setup are not mine. I vendor them verbatim apart from one local change (noted below) and do not republish them here: `/sync-setup` skips them, so this repo ships none of their files. The author's repository is the source; read and install them there. All three are MIT-licensed, by [Emil Kowalski](https://github.com/emilkowalski).
+
+| Skill | What it does | Source | Licence |
+|---|---|---|---|
+| `apple-design` | Apple's fluid-interface principles (springs, momentum, interruptible gestures) translated for the web | [emilkowalski/skills](https://github.com/emilkowalski/skills/tree/e8a175de22ae1e49370fc144c1f3bb9aeedf988d/skills/apple-design) | MIT |
+| `review-animations` | Reviews animation code against a high craft bar; defaults to flagging | [emilkowalski/skills](https://github.com/emilkowalski/skills/tree/e8a175de22ae1e49370fc144c1f3bb9aeedf988d/skills/review-animations) | MIT |
+| `break-ui` | Stress-tests UI with worst-case data and reports what breaks, with fixes | [emilkowalski/skills](https://github.com/emilkowalski/skills/tree/e8a175de22ae1e49370fc144c1f3bb9aeedf988d/skills/break-ui) | MIT |
+
+Local change: I removed the canned greeting block from `apple-design`; the other two are verbatim.
+
 ## Related
 
 - [claude-code-best-practice](https://github.com/shanraisshan/claude-code-best-practice) — the comprehensive reference (encyclopedic, community-maintained)
