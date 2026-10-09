@@ -58,7 +58,7 @@ Read `~/Dev/claude-code-setup/README.md` and verify these match reality:
 
 1. **Commands count** in `<summary><strong>Commands (N)</strong>` — count files in `~/.claude/commands/*.md`
 2. **Agents count** in `<summary><strong>Agents (N)</strong>` — count files in `~/.claude/agents/*.md`
-3. **Skills count** in `<summary><strong>Skills (N)</strong>` — count files matching `~/.claude/skills/*/SKILL.md` (excludes `skills/synced/`, which nests deeper and is never published)
+3. **Skills count** in `<summary><strong>Skills (N)</strong>` — count files matching `~/.claude/skills/*/SKILL.md`, excluding any skill directory that contains an `UPSTREAM.md` (vendored third-party copies: credited in README "Third-party skills I use", never published, never counted; `skills/synced/` nests deeper and is never published either)
 4. **Hooks count** in `<summary><strong>Hooks (N)</strong>` — count `~/.claude/hooks/*/hook.sh`, one per hook, the same glob `generate_workflow_guide.py` uses. Not `hooks/**/*.sh`: that also counts `hooks/lib/`, which holds shared helpers, not hooks
    **Mods count** in `<summary><strong>Mods (N)</strong>` — count `~/.claude/mods/*/.claude-plugin/plugin.json`, one per mod, the same glob `generate_workflow_guide.py` uses (a folder without a manifest is not a mod)
 4b. **README frontmatter** — `facts_fr` / `facts_en` at the top of README.md
@@ -68,7 +68,7 @@ Read `~/Dev/claude-code-setup/README.md` and verify these match reality:
    count (hooks whose script can `exit 2`).
 5. **Commands table** — verify each command in the table exists in `~/.claude/commands/`, and each command file has a row. Add missing rows, remove stale rows.
 6. **Agents table** — same check against `~/.claude/agents/`
-7. **Skills list** — same check against `~/.claude/skills/*/SKILL.md`
+7. **Skills list** — same check against `~/.claude/skills/*/SKILL.md`, with the same `UPSTREAM.md` exclusion
 8. **Hooks list** — same check against `~/.claude/hooks/*/hook.sh` (never `hooks/lib/`; exclude hooks/scripts/ legacy directory if it exists only in the repo)
    **Mods list** — same check against `~/.claude/mods/*/.claude-plugin/plugin.json`, and each listed command matches the mod's `command.run` filters
 9. **Architecture diagram** — verify command names, agent names, skill names, hook names and mod names in the ASCII art match the tables
