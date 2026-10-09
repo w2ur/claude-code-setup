@@ -39,3 +39,4 @@ Probed the same day and refused under the zero-cost rule; never use them.
 - `browser_navigate` returns a snapshot file path; read the first part of it (grep headings and `/url:` lines) instead of dumping the whole snapshot.
 - Client-rendered sites (Apple HIG) need a wait before the snapshot; an early snapshot that holds only navigation is not a verdict.
 - Galleries add `?ref=<gallery>` to outbound links; strip it when opening the real site.
+- **Audit agents read galleries with `~/.claude/scripts/design/gallery.mjs <url>`**, not the Playwright MCP, which parallel agents share. It drops the `HeadlessChrome` marker from the user agent: without that, Land-book and Lapa Ninja answer 403 (measured 2026-10-10), and with it all eight galleries tried returned their listings.

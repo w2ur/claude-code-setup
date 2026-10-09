@@ -71,6 +71,17 @@
 # entire run — nothing touched — when that count is >= MAX_DELETE.
 # --max-delete stays on the real run too, as a second, redundant fence.
 #
+# Deletions under a `.git/` directory are NOT counted against MAX_DELETE.
+# `git gc` / auto-repack folds thousands of loose objects into a pack in one
+# go: on 2026-10-04 a my-trading-app repack made the pre-flight see ~6,800 deletions,
+# all `my-trading-app/.git/objects/*`, and the mirror refused every night for a week.
+# That churn is git rewriting its own store, not a wipe — the pack holding
+# the same objects is transferred in the same run. A wipe of working trees
+# still counts in full, and a ~/Dev emptied of repos still trips GIT_FLOOR.
+# The real run's --max-delete is therefore the pre-flight's TOTAL (git
+# included) plus MAX_DELETE: still a fence against the tree changing
+# between the two passes, no longer a cap a repack can hit on its own.
+#
 # Exit: 0 ok (mirror ran clean, or a clean --dry-run) ·
 #       1 a finding (the pre-flight would delete >= MAX_DELETE files, rsync's
 #         own --max-delete was hit, or rsync itself errored — in either
@@ -256,14 +267,16 @@ if [ "$PREFLIGHT_RC" -ne 0 ]; then
   exit 1
 fi
 
-DELETE_COUNT="$(printf '%s\n' "$PREFLIGHT_OUT" | grep -c '^\*deleting')"
+DELETE_TOTAL="$(printf '%s\n' "$PREFLIGHT_OUT" | grep -c '^\*deleting')"
+# Git's own store churn (see the header) is excluded from the refusal count.
+DELETE_COUNT="$(printf '%s\n' "$PREFLIGHT_OUT" | grep '^\*deleting' | grep -vc '/\.git/')"
 if [ "$DELETE_COUNT" -ge "$MAX_DELETE" ]; then
   echo "FATAL: pre-flight would delete $DELETE_COUNT files (>= MAX_DELETE=$MAX_DELETE) — refusing the whole run, nothing deleted" >&2
   FAIL_REASON="pre-flight would delete $DELETE_COUNT files (limit $MAX_DELETE), nothing deleted"
   exit 1
 fi
 
-SUMMARY_DELETED="$DELETE_COUNT"
+SUMMARY_DELETED="$DELETE_TOTAL"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   SUMMARY_FILES="$(printf '%s\n' "$PREFLIGHT_OUT" | awk -F': ' '/^Number of files transferred:/{print $2}')"
@@ -273,11 +286,12 @@ fi
 # --stats is added here (never printed on success — only the one summary
 # line above is) purely so the liveness line can report a file count
 # without a second rsync invocation.
-REAL_OUT="$(rsync -a --delete --max-delete="$MAX_DELETE" --stats "${RSYNC_FILTERS[@]}" "$DEV_DIR/" "$MIRROR_DEST/" 2>&1)"
+REAL_MAX_DELETE=$((DELETE_TOTAL + MAX_DELETE))
+REAL_OUT="$(rsync -a --delete --max-delete="$REAL_MAX_DELETE" --stats "${RSYNC_FILTERS[@]}" "$DEV_DIR/" "$MIRROR_DEST/" 2>&1)"
 RC=$?
 
 if [ "$RC" -ne 0 ]; then
-  echo "FATAL: rsync exited $RC (--max-delete=$MAX_DELETE hit, or a transfer error)" >&2
+  echo "FATAL: rsync exited $RC (--max-delete=$REAL_MAX_DELETE hit, or a transfer error)" >&2
   printf '%s\n' "$REAL_OUT" >&2
   FAIL_REASON="rsync exited $RC (delete limit hit, or a transfer error)"
   exit 1

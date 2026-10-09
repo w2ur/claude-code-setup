@@ -88,9 +88,22 @@ and the fix loop's re-check never repeats it.
 1. **Pick 2-3 references.** The project's `DESIGN.md` references section, when it
    has one, comes first. Otherwise choose live sites that do **the same job for the
    same audience** (a finance dashboard against finance dashboards, a reading tool
-   against reading tools), and are among the best of that kind: from the galleries
-   in `~/.claude/skills/design-direction/references/inspiration.md`, or ones you
-   know. Never a site behind a login, never a paid source.
+   against reading tools), and are among the best of that kind. Never a site behind
+   a login, never a paid source.
+   **At least one comes from a gallery actually read**, not from memory: sites you
+   already know are the same few for every audit, and the galleries are where
+   current work is. Pick the gallery and the category page from the table in
+   `~/.claude/skills/design-direction/references/inspiration.md` ("how to read
+   it" gives each one's category URLs), then read it with its own Chrome:
+   ```
+   node ~/.claude/scripts/design/gallery.mjs <gallery-category-url>
+   ```
+   It prints the page's headings and links as JSON; exit `2` means a wall or an
+   error page, so try another gallery. Open a detail page the same way when the
+   listing does not give the live site's URL, and strip `?ref=<gallery>` from it.
+   The Benchmark table's `source` column names the gallery page for each such
+   reference, or `known` for one picked from memory. When every gallery tried
+   exits `2`, say so under `Not verified` and go on with known sites.
 2. **Capture each** into its own directory under the evidence dir, never into the
    evidence dir itself (the script clears its output dir first):
    ```
@@ -139,9 +152,9 @@ Blockers: <n>  Majors: <n>  Minors: <n>  Sanctioned: <n>
 | rule id | sanctioned by |
 
 ## Benchmark
-| reference | why chosen | does better on |
-|---|---|---|
-| <ref-host> | <same job, same audience> | <axes, or "nothing the target lacks"> |
+| reference | source | why chosen | does better on |
+|---|---|---|---|
+| <ref-host> | <gallery page URL, or "known"> | <same job, same audience> | <axes, or "nothing the target lacks"> |
 
 ## Not verified
 - <each claim not seen in a screenshot>
