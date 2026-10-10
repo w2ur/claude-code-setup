@@ -1,0 +1,6 @@
+{
+  "name": "design-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": { "playwright-core": "1.64.0", "impeccable": "4.1.0" }
+}
