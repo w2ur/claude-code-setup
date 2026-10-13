@@ -169,6 +169,18 @@ which ships inside the `.crx`. **A 405 is exit 2, not exit 0.** Status reads cla
 quota — a test pins that six status reads around one analysis move the counter by
 exactly one, so watching the service cannot consume what it watches.
 
+**`netlify-plan-watch`** — the Netlify account is on the Legacy Free plan, which
+has no credits. On a credit plan each production deploy costs credits, and running
+out **pauses every site on the account**, the hub included. So the event worth
+catching is Netlify ending Legacy, and the job watches two sentences on the "How
+credits work" docs page: the Legacy one and the deploy-cost one. **No deploy
+counter, deliberately**: on Legacy a deploy costs nothing, so counting deploys
+measures nothing. **A finding never rewrites the baseline.** It re-alerts every
+week until the owner reads the page and runs the script with `--accept`; an alert
+that clears itself after one push is lost in a busy week. A missing page anchor is
+exit 2: the page moved, and nothing was measured. It reads no keychain, and it is
+a LaunchAgent only so that `jobs-inventory.sh` sees it.
+
 **`distribution-watch`** — are the publish-once channels actually done: npm, PyPI,
 awesome-list PRs, the Chrome Web Store listing. Reports state, never proposes
 content, and checks for an already-open PR before naming "open a PR" as an action.
