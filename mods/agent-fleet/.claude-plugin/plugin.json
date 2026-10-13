@@ -1,0 +1,1 @@
+{ "name": "agent-fleet", "version": "0.2.0", "description": "Follow subagents and workflow runs: a live band above the prompt and a pane; /fleet toggles it, /fleet clear drops finished runs", "types": "./types/index.d.ts" }
