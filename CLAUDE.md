@@ -137,4 +137,4 @@ Three exceptions to the lazy-load preference, all deliberate:
 
 - **`superpowers` is the standing exception.** Its SessionStart hook injects the `using-superpowers` skill into every single session. That cost is **accepted, not overlooked** — owner's call, "an absolute necessity". Do not propose removing it, and do not re-raise the context cost as a finding.
 - **`plan-reviewer` carries a Stop hook** (`check-new-plans.sh`) that flags any recently-touched file in `~/.claude/plans/` with no `-review.md` sibling.
-- **`frontend-design` (uninstalled) and `ui-ux-pro-max` (disabled) stay off.** Both overlap the design skills (`design-tells`, `design-direction`, `design-critique`), and ui-ux-pro-max's catalogue output read as generic. Do not reinstall, re-enable or suggest either.
+- **`frontend-design` (uninstalled) and `ui-ux-pro-max` (marketplace removed) stay off.** Both overlap the design skills (`design-tells`, `design-direction`, `design-critique`), and ui-ux-pro-max's catalogue output read as generic. Do not reinstall, re-enable or suggest either.
