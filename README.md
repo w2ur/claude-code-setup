@@ -3,8 +3,8 @@ name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
 about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, 2 blocking hooks included."
-facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks — dont 2 bloquants — et 3 mods."
-facts_en: "8 commands, 5 agents, 10 skills, 4 hooks — 2 of them blocking — and 3 mods."
+facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks — dont 2 bloquants — et 4 mods."
+facts_en: "8 commands, 5 agents, 10 skills, 4 hooks — 2 of them blocking — and 4 mods."
 ---
 
 <div align="center">
@@ -96,6 +96,7 @@ Everything here is about writing code. I run other Claude Code automation that i
 │  context-bar ──── /context-bar  context window, by kind   │
 │  usage-forecast ─ /usage-bar    5h / 7d burn and reset    │
 │  fanout-guard ─── asks before a fan-out near the limit    │
+│  agent-fleet ──── /fleet        subagents and workflows   │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -180,7 +181,7 @@ Half the hooks are advisory — in a system where I don't review code, I need Cl
 </details>
 
 <details>
-<summary><strong>Mods (3)</strong> — TypeScript hooks into Claude Code itself</summary>
+<summary><strong>Mods (4)</strong> — TypeScript hooks into Claude Code itself</summary>
 
 <br>
 
@@ -189,6 +190,7 @@ A mod is a plugin of function hooks: a small TypeScript module that hooks into C
 - **context-bar** (`/context-bar`): the context window as a stacked bar above the prompt, one colour per `/context` category, with a token legend
 - **usage-forecast** (`/usage-bar`): one line per rate-limit window — gauge, reset countdown, burn rate, and the time it fills if that comes before the reset; toasts at 80% and 95%
 - **fanout-guard** (no command): past 85% of the 5-hour window or 90% of the 7-day one, asks before any Workflow and before the second Agent of a turn; a held or unanswered question refuses the call
+- **agent-fleet** (`/fleet`): follows subagents and Workflow runs — a band above the prompt while a run is live, and a pane with one row per agent (model tier, effort, current tool, tokens, elapsed) plus the workflow's phases and Done / Failed / Denied / Lost sections. Known limits are listed at the top of `hooks/fleet.ts`
 
 Each mod carries its own tests (`claude plugin test mods/<name>`).
 
@@ -267,7 +269,7 @@ cp claude-code-setup/CLAUDE.md ~/.claude/CLAUDE.md
 
 Copying the scripts is not enough — hooks don't run until they're registered in `~/.claude/settings.json`. Merge `hooks/settings.hooks.json` into your own settings file (`jq -s '.[0] * .[1]' ~/.claude/settings.json claude-code-setup/hooks/settings.hooks.json > /tmp/settings.merged.json && mv /tmp/settings.merged.json ~/.claude/settings.json` if you don't already have a `hooks` key — see [`hooks/README.md`](hooks/README.md) for the manual-merge path if you do, plus how to verify a hook actually fired).
 
-Mods are the same: copying `mods/` loads nothing. List each mod folder in `CLAUDE_CODE_PLUGIN_DIRS`, colon-separated, in the `env` block of `~/.claude/settings.json` (for example `"CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/context-bar:~/.claude/mods/usage-forecast:~/.claude/mods/fanout-guard"`), then start a new session.
+Mods are the same: copying `mods/` loads nothing. List each mod folder in `CLAUDE_CODE_PLUGIN_DIRS`, colon-separated, in the `env` block of `~/.claude/settings.json` (for example `"CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/context-bar:~/.claude/mods/usage-forecast:~/.claude/mods/fanout-guard:~/.claude/mods/agent-fleet"`), then start a new session.
 
 Then edit `CLAUDE.md` and the agent files to replace `w2ur`, `{portfolio-site}`, and other placeholders with your own values.
 
