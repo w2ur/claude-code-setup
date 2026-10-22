@@ -105,7 +105,7 @@ Either way, the registration assumes the path convention `~/.claude/hooks/<name>
 
 ## Requirements
 
-- **`jq`** — all four hooks read the tool-call JSON on stdin with it. It ships as `/usr/bin/jq` on macOS; elsewhere install it from your package manager. `secret-scan` does not guess without it: it prints a reason to stderr and exits 2, so every write is refused until `jq` is found on `PATH`.
+- **`jq`** — all four hooks read the tool-call JSON on stdin with it. It ships as `/usr/bin/jq` on macOS 15 and later; on older macOS or elsewhere, `brew install jq` or use your package manager. `secret-scan` does not guess without it: it prints a reason to stderr and exits 2, so every write is refused until `jq` is found on `PATH`.
 - **`node`** — `push-build-gate` reads `package.json`'s `scripts.build` with it.
 - **A uv-managed Python** — `push-build-gate` runs its env-prefix parser and `payload_gate.py` with an interpreter it resolves through `uv python find`, never a bare `python3`. Install uv, then `uv python install` to get a managed interpreter. On a machine without one the hook cannot resolve an interpreter, exits 1 (non-blocking, with the reason on stderr) and the push goes through ungated: it fails open on its own malfunction, and only blocks on the verdict of a build it could run.
 

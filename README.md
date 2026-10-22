@@ -3,8 +3,8 @@ name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
 about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, hooks included."
-facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks — dont 2 bloquants — et 4 mods."
-facts_en: "8 commands, 5 agents, 10 skills, 4 hooks — 2 of them blocking — and 4 mods."
+facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks et 4 mods."
+facts_en: "8 commands, 5 agents, 10 skills, 4 hooks and 4 mods."
 ---
 
 <div align="center">
@@ -335,7 +335,7 @@ Browse the files, understand the patterns, and build your own version. The [phil
 
 This repo stays in sync with my actual `~/.claude/` setup via `/sync-setup` — a command that runs a Python sync script to copy, anonymize, and audit for data leaks. After any workflow change (new agent, renamed command, new hook), I run `/sync-setup` and the repo updates itself. See [`scripts/`](scripts/) for details.
 
-The global `CLAUDE.md` also references fourteen helper scripts under `~/.claude/scripts/` — they're published in [`claude-scripts/`](claude-scripts/), synced and anonymized the same way as everything else.
+The global `CLAUDE.md` also references helper scripts under `~/.claude/scripts/` — they're published in [`claude-scripts/`](claude-scripts/), synced and anonymized the same way as everything else.
 
 If something looks outdated, it probably means I changed my setup and haven't synced yet. Open an issue — it's a good nudge.
 
