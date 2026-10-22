@@ -6,8 +6,8 @@ Four `hook.sh` scripts, each dropped in its own `~/.claude/hooks/<name>/hook.sh`
 |------|-------|---------|--------------|
 | `auto-format` | PostToolUse → `Write\|Edit` | Advisory | Runs `ruff format` on a `.py` file in a repo that configures ruff (`ruff.toml`, `.ruff.toml`, or a `[tool.ruff]` table in `pyproject.toml`), or `rustfmt` on a `.rs` file inside a Cargo project. Silent no-op otherwise — it never invents a style for a project that hasn't picked one. |
 | `stale-readme-guard` | PreToolUse → `Bash` (`git push`) | Advisory | Diffs the unpushed range against upstream. If a deploy/dependency file changed (`package.json`, `Cargo.toml`, `netlify.toml`, ...) but `README.md` didn't, it surfaces a note — the push still goes through. |
-| `secret-scan` | PreToolUse → `Write\|Edit\|NotebookEdit` | **Blocking** | Greps the content about to be written for API-key-shaped strings (OpenAI/Anthropic `sk-`, AWS `AKIA`, GitHub `ghp_`/`gho_`/`ghs_`, GitLab `glpat-`, Stripe `pk_`/`sk_live`/`sk_test`, hardcoded `password:`/`secret:`/`token:` assignments...). On a match it prints the pattern to stderr and `exit 2`s — the write never happens. Skips `.env.example` and `~/.claude/plans/`. |
-| `push-build-gate` | PreToolUse → `Bash` (`git push`) | **Blocking** | If the target repo has an npm `build` script, runs it before the push goes out. Non-zero exit, or any `N warning(s)` in the output, blocks the push with `exit 2`. |
+| `secret-scan` | PreToolUse → `Write\|Edit\|NotebookEdit` and `Bash` | **Blocking** | Greps the content about to be written, or the shell command about to run, for API-key-shaped strings (OpenAI/Anthropic `sk-`, AWS `AKIA`, GitHub `ghp_`/`gho_`/`ghs_`, GitLab `glpat-`, Stripe `pk_`/`sk_live`/`sk_test`, hardcoded `password:`/`secret:`/`token:` assignments...). On a match it prints the pattern to stderr and `exit 2`s — the write never happens. Skips `.env.example` and `~/.claude/plans/`. Without `jq` it refuses the call and says why, rather than letting it through. |
+| `push-build-gate` | PreToolUse → `Bash` (`git push`) | **Blocking** | If the target repo has an npm `build` script, runs it before the push goes out. Non-zero exit, or any `N warning(s)` in the output, blocks the push with `exit 2`. Needs a uv-managed Python (see [Requirements](#requirements)); without one it fails open and says so. |
 
 ## These hooks protect a machine, not a repository
 
@@ -16,13 +16,9 @@ means they see exactly one thing: what Claude is about to do there. A commit
 pushed from a git worktree on another machine, or a file created through the
 GitHub web editor, or a branch opened by anyone else, meets none of them.
 
-Two consequences worth stating plainly, because both were measured rather than
+One consequence worth stating plainly, because it was measured rather than
 assumed:
 
-- **`secret-scan` matches on `Write|Edit|NotebookEdit`, so a file created by a
-  shell heredoc is invisible to it.** `printf 'AWS_ACCESS_KEY_ID=AKIA…' > f.txt`
-  in a `Bash` call is not a `Write`, and the hook never runs. Verified 2026-08-15
-  by pushing exactly that; the push went through untouched.
 - **`push-build-gate` is the strongest hook here and it still only covers pushes
   from this machine.** That is by design — it is a pre-push gate, not a CI
   system — but it does mean "the build is green" is a claim about one laptop.
@@ -109,7 +105,9 @@ Either way, the registration assumes the path convention `~/.claude/hooks/<name>
 
 ## Requirements
 
-Every hook shells out to `python3` to parse the tool-call JSON on stdin (matching keys out of it in bash is not worth the pain). It has to be on `PATH` — no `python3`, no hook. `push-build-gate` also shells out to `node` to read `package.json`'s `scripts.build`.
+- **`jq`** — all four hooks read the tool-call JSON on stdin with it. It ships as `/usr/bin/jq` on macOS; elsewhere install it from your package manager. `secret-scan` does not guess without it: it prints a reason to stderr and exits 2, so every write is refused until `jq` is found on `PATH`.
+- **`node`** — `push-build-gate` reads `package.json`'s `scripts.build` with it.
+- **A uv-managed Python** — `push-build-gate` runs its env-prefix parser and `payload_gate.py` with an interpreter it resolves through `uv python find`, never a bare `python3`. Install uv, then `uv python install` to get a managed interpreter. On a machine without one the hook cannot resolve an interpreter, exits 1 (non-blocking, with the reason on stderr) and the push goes through ungated: it fails open on its own malfunction, and only blocks on the verdict of a build it could run.
 
 ## Verifying a hook actually fired
 

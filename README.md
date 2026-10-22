@@ -2,7 +2,7 @@
 name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
-about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, 2 blocking hooks included."
+about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, hooks included."
 facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks — dont 2 bloquants — et 4 mods."
 facts_en: "8 commands, 5 agents, 10 skills, 4 hooks — 2 of them blocking — and 4 mods."
 ---
@@ -171,12 +171,12 @@ Why skills instead of just writing longer agent prompts? Because skills are reus
 
 <br>
 
-- **secret-scan** (PreToolUse → Write|Edit): blocks writes containing API key patterns (`sk-`, `AKIA`, `ghp_`, etc.), excludes `.env.example` *(blocking)*
+- **secret-scan** (PreToolUse → Write|Edit|NotebookEdit|Bash): blocks a write, an edit, a notebook edit or a shell command containing API key patterns (`sk-`, `AKIA`, `ghp_`, etc.), excludes `.env.example` *(blocking)*. It needs `jq` and refuses the call, loudly, when `jq` is missing
 - **push-build-gate** (PreToolUse → Bash `git push`): runs the build **and then the test suite** before the push goes out, and blocks on a build failure, a compiler warning, or a red suite. A suite that never finishes is bounded and *non*-blocking — fail closed on the guard's verdict, open on the guard's own malfunction. Skip the test stage with `TEST_GATE_SKIP=1 git push`. Its dispatch logic has its own harness, `hooks/push-build-gate/test_hook.sh`. A third tier, `payload_gate.py`, reads the Next.js build's own route table: it **blocks** a render-mode flip (a route that used to be prerendered is now dynamic) and **warns** on payload growth against a per-repo baseline — 3x versus either the last push or the first reading, plus a 1 MiB backstop per prerendered file. Accept and re-record with `PAYLOAD_GATE_ACCEPT=1 git push`. It no-ops on anything that isn't a Next.js build *(blocking)*
 - **auto-format** (PostToolUse → Write|Edit): runs Ruff on an edited `.py` file when the repo configures ruff, rustfmt on an edited `.rs` file inside a Cargo project — silent if not *(advisory)*
 - **stale-readme-guard** (PreToolUse → Bash `git push`): checks unpushed commits for deploy/dep changes without a README.md update *(advisory)*
 
-Half the hooks are advisory — in a system where I don't review code, I need Claude Code to exercise judgment, not pass checklists. There are two blocking exceptions now: secret scanning, because accidentally committing an API key is irreversible, and the push build gate, because shipping a broken build is a different kind of irreversible — it's live the moment it deploys.
+Half the hooks are advisory — I need Claude Code to exercise judgment, not pass checklists. There are two blocking exceptions now: secret scanning, because accidentally committing an API key is irreversible, and the push build gate, because shipping a broken build is a different kind of irreversible — it's live the moment it deploys. On a machine without a uv-managed Python the build gate fails open, loudly; see [`hooks/README.md`](hooks/README.md#requirements).
 
 </details>
 
@@ -231,9 +231,29 @@ flowchart LR
 > [!NOTE]
 > **Docs in the same commit as code.** There's no per-repo manifest file — docs are `README.md` (including its YAML frontmatter: `name`/`tagline_fr`/`tagline_en`/`facts_fr`/`facts_en`) and `CLAUDE.md`, and both ship with the feature, not as an afterthought. If the commit changes behavior, it changes documentation.
 
-**The elegance check.** Before presenting non-trivial work, pause and ask: "Is there a more elegant way?" I don't review code — Claude Code is the entire quality bar.
+**The generalization check**, as it stands in the global `CLAUDE.md`:
 
-**The generalization check.** Before implementing a specific request, consider whether it's a special case of a more general pattern. If the general solution is roughly the same effort, implement the general version. If not, implement the specific case cleanly — it's easier to generalize clean code later than to simplify over-engineered code.
+> Before implementing a specific request, consider whether it's a special case of a pattern already in the portfolio. If the general solution is roughly the same effort, implement the general version with the specific case as the default. Skip when the general version materially increases complexity or when there's only one known use case. This is a judgment call, not a mandatory abstraction.
+
+**Quality**, as it stands in the global `CLAUDE.md`:
+
+<details>
+<summary><strong>Quality section</strong></summary>
+
+> - Zero build warnings. Exceptions → documented in the project CLAUDE.md with justification.
+> - Conventional Commits. One logical change per commit.
+> - **Tests are systematic**: unit for all logic, a regression test alongside every bug fix, property tests for pure transforms. **Load the `testing-conventions` skill** before writing tests, adding a regression test, or setting up property tests — it holds the comment format, the library choices and the financial-math arbitrary settings that were tuned by measurement.
+> - After plan-driven sub-agent work, re-check every plan requirement against the code before reporting done (skip for direct single-file fixes). Service worker cache is the #1 false positive for "my change isn't showing" — rule it out before deeper debugging.
+> - **A check that has never produced the opposite answer is not evidence.** Before trusting silence, a zero count, a "no match" or a green suite — and especially before writing it down as a finding — make the probe fail once. Grep for something you know is in that same artifact; fire the hook's real trigger and watch it warn; confirm a liveness marker is present in the local build *and* absent from the old one; check a known-good sibling URL resolves. **If you cannot make the check fail, it cannot pass.**
+> - **Before writing or changing a CI gate, adding a pr-gate caller, or setting or checking branch protection, load the `ci-and-branch-protection` skill.** Two rules that must not be violated without reading it: **in CI, a check that did not run must never look like a check that passed** — an aggregate gate must assert a **named list of expected checks computed up front** and refuse an empty list, because `jq 'all(.[]; …)'` over an empty set returns `true`; and **branch protection needs a public repo on this account**, so every gate on a private repo is advisory — never write docs claiming enforcement, and do not fix it by upgrading to Pro.
+> - **When a subagent reports a surprising finding, verify the reason, not just the conclusion.** A right conclusion resting on a false reason is what becomes doc drift or a wrong design decision — the conclusion gets accepted, and the reason gets written down.
+> - **Budget multiple review rounds after any money-path fix.** The first pass on a pricing or ledger change reliably surfaces a second defect in the same neighbourhood — measured repeatedly, never once fewer than three rounds. Treat one clean round as the start of the review, not the end of it. Log the round count and model id of each money-path review in auto-memory; re-derive the number from that log.
+> - **Never trust an empty review without checking the finders ran.** Zero findings and zero coverage are the same output — confirm the agents produced work before reading silence as a result. Same family as the falsifiable-control rule above.
+> - **A test can pin a defect.** When a check disagrees with what you expect, read the test's *intent* before assuming the code is wrong — or right.
+> - Before merging any nontrivial diff: run `/code-review` at **high** effort. Sub-agent-produced diffs are always reviewed before merge; when the change has a UI surface, **load the `design-critique` skill** and review the rendered page with it, reading the console too.
+> - **`ultra` is not the default, and "multi-file" is not the trigger.** A prompt that is always declined is worse than no prompt: it trains both of us to skip the question, so the one time it matters gets waived on reflex too. Reserve `ultra` for a diff that touches a **money path** (pricing, ledger, fills, billing), **auth or secrets**, a **data migration**, or a **public API contract** — or when a normal review has already found a real defect and you want the surrounding neighbourhood swept. Otherwise `high` is the ceiling. Do not offer `ultra` merely because a change spans files.
+
+</details>
 
 ## Key Decisions
 
@@ -259,13 +279,19 @@ These aren't arbitrary choices. Each one came from a specific failure. Read [the
 
 ```bash
 git clone https://github.com/w2ur/claude-code-setup.git
-cp -r claude-code-setup/commands/ ~/.claude/commands/
-cp -r claude-code-setup/agents/ ~/.claude/agents/
-cp -r claude-code-setup/skills/ ~/.claude/skills/
-cp -r claude-code-setup/hooks/ ~/.claude/hooks/
-cp -r claude-code-setup/mods/ ~/.claude/mods/
+mkdir -p ~/.claude/{commands,agents,skills,hooks,mods,scripts}
+cp -R claude-code-setup/commands/. ~/.claude/commands/
+cp -R claude-code-setup/agents/. ~/.claude/agents/
+cp -R claude-code-setup/skills/. ~/.claude/skills/
+cp -R claude-code-setup/hooks/. ~/.claude/hooks/
+cp -R claude-code-setup/mods/. ~/.claude/mods/
+cp -R claude-code-setup/claude-scripts/. ~/.claude/scripts/
+if [ -f ~/.claude/CLAUDE.md ]; then cp ~/.claude/CLAUDE.md ~/.claude/CLAUDE.md.bak; fi
 cp claude-code-setup/CLAUDE.md ~/.claude/CLAUDE.md
+if [ ! -f ~/.claude/settings.json ]; then echo '{}' > ~/.claude/settings.json; fi
 ```
+
+The helper scripts land in `~/.claude/scripts/` (published here as [`claude-scripts/`](claude-scripts/)); the commands and the global `CLAUDE.md` call them there. An existing `~/.claude/CLAUDE.md` is saved as `CLAUDE.md.bak` before it is overwritten, and an empty `settings.json` is created when you have none, so the merge below has a file to read.
 
 Copying the scripts is not enough — hooks don't run until they're registered in `~/.claude/settings.json`. Merge `hooks/settings.hooks.json` into your own settings file (`jq -s '.[0] * .[1]' ~/.claude/settings.json claude-code-setup/hooks/settings.hooks.json > /tmp/settings.merged.json && mv /tmp/settings.merged.json ~/.claude/settings.json` if you don't already have a `hooks` key — see [`hooks/README.md`](hooks/README.md) for the manual-merge path if you do, plus how to verify a hook actually fired).
 
