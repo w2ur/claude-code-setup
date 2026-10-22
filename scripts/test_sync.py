@@ -183,12 +183,21 @@ def test_audit_scans_json_output(tmp_path, monkeypatch):
     assert "settings.hooks.json" in warnings[0]
 
 
-@pytest.mark.parametrize("name", ["register.tsx", "guard.ts", "payload_gate.py"])
+@pytest.mark.parametrize("name", ["register.tsx", "guard.ts", "payload_gate.py", "capture.mjs", "loader.cjs", "tool.js"])
 def test_audit_scans_published_code(tmp_path, monkeypatch, name):
     (tmp_path / "mods" / "bar" / "hooks").mkdir(parents=True)
     (tmp_path / "mods" / "bar" / "hooks" / name).write_text("// w2ur", encoding="utf-8")
     warnings = _audit(tmp_path, monkeypatch, {f"mods/bar/hooks/{name}"})
     assert len(warnings) == 1
+
+
+def test_audit_scans_the_scripts_folder_except_the_named_fixture(tmp_path, monkeypatch):
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "new_tool.py").write_text("# w2ur", encoding="utf-8")
+    (tmp_path / "scripts" / "test_sync.py").write_text("# w2ur", encoding="utf-8")
+    warnings = _audit(tmp_path, monkeypatch, {"scripts/new_tool.py", "scripts/test_sync.py"})
+    assert len(warnings) == 1
+    assert "scripts/new_tool.py" in warnings[0]
 
 
 def test_audit_skips_gitignored_files(tmp_path, monkeypatch):

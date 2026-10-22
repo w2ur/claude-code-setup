@@ -386,6 +386,11 @@ def generate_hooks_settings(
 # A gate that has never once passed cannot signal anything.
 AUDIT_ALLOWLIST = frozenset({"README.md", "LICENSE"})
 
+# This repo's own tooling is published too, so it is audited like everything
+# else. Only the files that must name a pattern to test it are exempt, one by
+# one: a blanket skip of scripts/ let a leak in any new script pass unread.
+AUDIT_FIXTURE_ALLOWLIST = frozenset({"scripts/test_sync.py"})
+
 
 def git_visible_files() -> set[str] | None:
     """Repo-relative paths git does NOT ignore (tracked + untracked-not-ignored).
@@ -418,7 +423,11 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     # scripts/README.md advertises the audit as covering all output files. So do
     # .py (hooks and claude-scripts publish Python) and .ts/.tsx (every mod is
     # TypeScript): an extension missing here is a file the audit passes unread.
-    audit_extensions = ("*.md", "*.html", "*.yml", "*.yaml", "*.sh", "*.json", "*.py", "*.ts", "*.tsx")
+    # .mjs/.cjs/.js too: claude-scripts/design publishes .mjs files.
+    audit_extensions = (
+        "*.md", "*.html", "*.yml", "*.yaml", "*.sh", "*.json", "*.py", "*.ts", "*.tsx",
+        "*.mjs", "*.cjs", "*.js",
+    )
     all_files: list[Path] = []
     for ext in audit_extensions:
         all_files.extend(target_dir.rglob(ext))
@@ -426,9 +435,8 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     visible = git_visible_files()
 
     for audit_file in sorted(set(all_files)):
-        # Skip files not tracked (e.g., the scripts/ directory)
         rel = audit_file.relative_to(REPO_ROOT)
-        if str(rel).startswith("scripts/"):
+        if str(rel) in AUDIT_FIXTURE_ALLOWLIST:
             continue
         if str(rel) in AUDIT_ALLOWLIST:
             continue
