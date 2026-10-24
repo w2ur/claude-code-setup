@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Reports whether the OpenRouter models each repo has configured are still
-# listed and still free.
+# listed (and free, for a `:free` id), and whether any provider actually
+# serves them.
 #
 # This exists because the model chain hides its own degradation: OpenRouter
 # walks to the next entry on a runtime failure, so a failing primary produces a
@@ -30,10 +31,18 @@
 # (llama-3.3-70b-versatile) or the probe is treated as broken (exit 2) rather
 # than as everything being current.
 #
+# A listed model can still be unservable. Measured 2026-10-22: nemotron-3-super
+# :free stayed listed while its only provider (Nvidia) sat at 0% uptime for a
+# day, and every Elenchus analysis ended on its 404 while this script said
+# "ok". So each OpenRouter entry is also read from /models/<id>/endpoints: no
+# endpoint with at least MIN_UPTIME_1D percent uptime over the last day is
+# DEAD, a finding. An id without `:free` is a deliberate paid entry (drawn from
+# the prepaid balance) and only has to be listed, not free.
+#
 # Reports state; never edits config. Choosing a replacement needs an eval set,
 # which is what elenchus/scripts/bake-off.mjs is for.
 #
-# Exit: 0 all configured models present and free (OpenRouter) or not retired
+# Exit: 0 all configured models listed, free where :free, and served (OpenRouter) or not retired
 # (Groq); 1 at least one missing, priced or retired; 2 the check could not run
 # (no jq, no network, a probe page that no longer names a known-retired model).
 set -euo pipefail
@@ -49,6 +58,22 @@ catalogue=$(curl -sS --max-time 20 https://openrouter.ai/api/v1/models) \
 
 free_ids=$(printf '%s' "$catalogue" \
   | jq -r '.data[] | select(.pricing.prompt=="0" and .pricing.completion=="0") | .id' | sort)
+all_ids=$(printf '%s' "$catalogue" | jq -r '.data[].id' | sort)
+MIN_UPTIME_1D="${MIN_UPTIME_1D:-50}"
+OPENROUTER_API="${OPENROUTER_API:-https://openrouter.ai/api/v1}"
+unknown=0
+
+# ok | MISSING (not listed, or a :free id no longer free) | DEAD (no provider
+# up) | UNKNOWN (the endpoints read failed: never reported as ok).
+openrouter_state() {
+  local model="$1" listed="$free_ids" body best
+  case "$model" in *:free) ;; *) listed="$all_ids" ;; esac
+  grep -qxF "$model" <<< "$listed" || { echo MISSING; return; }
+  body=$(curl -fsS --max-time 20 "$OPENROUTER_API/models/$model/endpoints") || { echo UNKNOWN; return; }
+  best=$(jq -r 'if (.data.endpoints | type) == "array" then ([.data.endpoints[] | .uptime_last_1d // 0] | max // -1) else error("not an endpoints document") end' <<< "$body" 2>/dev/null) || { echo UNKNOWN; return; }
+  [ -n "$best" ] || { echo UNKNOWN; return; }
+  if awk -v b="$best" -v m="$MIN_UPTIME_1D" 'BEGIN { exit !(b >= m) }'; then echo ok; else echo DEAD; fi
+}
 
 if [ -z "$free_ids" ]; then
   echo "WARN: the models endpoint returned zero free models — treating as unreachable rather than as everything being delisted." >&2
@@ -68,12 +93,9 @@ while IFS= read -r toml; do
   while IFS= read -r model; do
     [ -n "$model" ] || continue
     rank=$((rank + 1))
-    if printf '%s\n' "$free_ids" | grep -qxF "$model"; then
-      findings="${findings}${repo}\t${rank}\t${model}\tok\topenrouter\n"
-    else
-      findings="${findings}${repo}\t${rank}\t${model}\tMISSING\topenrouter\n"
-      status=1
-    fi
+    state=$(openrouter_state "$model")
+    findings="${findings}${repo}\t${rank}\t${model}\t${state}\topenrouter\n"
+    case "$state" in ok) ;; UNKNOWN) unknown=1 ;; *) status=1 ;; esac
   done <<< "$(printf '%s' "$chain" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
 done < <(find "$DEV_DIR" -maxdepth 2 -name wrangler.toml -not -path '*/node_modules/*' 2>/dev/null)
 
@@ -95,12 +117,9 @@ while IFS= read -r fn; do
     rank=$((rank + 1))
     case "$host" in
       *openrouter.ai*)
-        if printf '%s\n' "$free_ids" | grep -qxF "$model"; then
-          findings="${findings}${repo}\t${rank}\t${model}\tok\topenrouter\n"
-        else
-          findings="${findings}${repo}\t${rank}\t${model}\tMISSING\topenrouter\n"
-          status=1
-        fi ;;
+        state=$(openrouter_state "$model")
+        findings="${findings}${repo}\t${rank}\t${model}\t${state}\topenrouter\n"
+        case "$state" in ok) ;; UNKNOWN) unknown=1 ;; *) status=1 ;; esac ;;
       *api.groq.com*)
         groq_pairs="${groq_pairs}${repo}\t${rank}\t${model}\n" ;;
     esac
@@ -149,11 +168,13 @@ else
   printf '%b' "$findings" | awk -F'\t' '{printf "  %-16s #%s  %-11s %-40s %s\n", $1, $2, $5, $3, $4}'
   echo
   if [ "$status" -eq 1 ]; then
-    echo "At least one configured model is no longer listed as free, or is retired."
+    echo "At least one configured model is unlisted, no longer free, served by no live provider, or retired."
     echo "Re-pick with: OPENROUTER_API_KEY=... node ~/Dev/elenchus/scripts/bake-off.mjs --max-tokens=8000"
   else
-    echo "All configured models present and free (OpenRouter) or not retired (Groq)."
+    echo "All configured models listed, free where marked :free, and served (OpenRouter) or not retired (Groq)."
   fi
 fi
 
+# A finding outranks an unknown; an unknown is never "healthy".
+[ "$status" -eq 0 ] && [ "$unknown" -eq 1 ] && exit 2
 exit "$status"

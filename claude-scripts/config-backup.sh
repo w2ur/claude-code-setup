@@ -12,7 +12,8 @@
 # own git repo, which the outer one ignores. ~/Dev/workflow-guide.html
 # is copied into ~/.claude first, since it lives outside every repo.
 #
-# Secret gate: before each commit, `gitleaks git --staged` runs on the index.
+# Secret gate: before each commit, `gitleaks git --staged` (with the
+# portfolio-gitleaks.toml config, which adds the shapes defaults miss) runs on the index.
 # A finding exits 2 with NOTHING committed or pushed, and the index is reset
 # (`git reset -q`) so the next run starts from the same state and stops again
 # until a human looks. The repos' own pre-commit hook runs the same scan a
@@ -73,7 +74,7 @@ for repo in "${repo_list[@]}"; do
 
   git -C "$repo" add -A || die "$repo: git add failed"
   if ! git -C "$repo" diff --cached --quiet; then
-    if ! (cd "$repo" && gitleaks git --staged --redact --no-banner >&2); then
+    if ! (cd "$repo" && gitleaks git --staged --config "$HOME/.claude/scripts/portfolio-gitleaks.toml" --redact --no-banner >&2); then
       git -C "$repo" reset -q
       die "$repo: gitleaks found a secret in the staged changes — nothing committed"
     fi

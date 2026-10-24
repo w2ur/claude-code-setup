@@ -93,6 +93,9 @@ corps_propre=$(REDACT_VALS="$literaux" awk '
     }
     print line
   }' "$CORPS" | sed -E \
+    -e 's/(^|[^A-Za-z0-9_])(napi|sbp|nfp)_[A-Za-z0-9]{20,}/\1[SECRET RETIRE]/g' \
+    -e 's/(^|[^A-Za-z0-9_])sb_secret_[A-Za-z0-9_-]{20,}/\1[SECRET RETIRE]/g' \
+    -e 's~([A-Za-z][A-Za-z0-9+.-]*://[^:/@[:space:]]*:)[^@/?#[:space:]]+@~\1[SECRET RETIRE]@~g' \
     -e 's/(^|[^A-Za-z0-9_])sk-[A-Za-z0-9_-]{16,}/\1[SECRET RETIRE]/g' \
     -e 's/(^|[^A-Za-z0-9_])sk_(live|test)_[A-Za-z0-9]{16,}/\1[SECRET RETIRE]/g' \
     -e 's/(^|[^A-Za-z0-9_])AKIA[0-9A-Z]{16}/\1[SECRET RETIRE]/g' \

@@ -123,6 +123,7 @@ contains `llama-3.3-70b-versatile`; otherwise exit 2. **Here-strings, not pipes,
 for the membership tests**: under `pipefail`, `grep -q` closing the pipe on its
 first match gives `printf` a SIGPIPE on a large string, and that "failed" pipeline
 reads as *not found* — a false negative, the silent kind.
+**Listed is not served.** On 2026-10-22 a chain entry stayed listed while its only provider sat at 0% uptime for a day, every Elenchus call ended on its 404, and this job said "ok". Each OpenRouter entry is now also read from `/models/<id>/endpoints`: no provider up is DEAD (a finding), an unreadable answer is UNKNOWN (exit 2). An id without `:free` is a deliberate paid fallback and only has to be listed. It still cannot see a saturated free pool (429s): only the proxy's `[upstream]` log can.
 
 **`devlog-collect`** — the plist executes `collect.py` directly so its `uv run
 --script` shebang selects the interpreter. See the FDA note above.
@@ -155,6 +156,10 @@ unauthenticated `gh search prs` returns zero rows, byte-identical to "no repo ha
 PRs", so it would report full coverage forever. It checks `gh auth status` explicitly
 rather than inferring from an empty result set. Monthly because a dormant repo
 starting to take PRs is a slow signal.
+
+**`db-backup`** — pg_dump of every database in `~/.claude/db-backup.json`, to iCloud outside dev-mirror. LaunchAgent because the connection strings are in the login keychain. The plist PATH carries `/opt/homebrew/opt/libpq/bin` because libpq is keg-only. **It needs the DIRECT Neon host**: a pooled (`-pooler`) string is rewritten, but store the direct one. A missing keychain item is exit 2 (unknown), and an empty or tiny dump is exit 1, never a success. Retention and the size floor live in the script.
+
+**`umami-retention`** — deletes Umami visit data older than 13 months (owner decision 2026-10-19), monthly on day 2. LaunchAgent because the DIRECT Neon URL (item `umami-retention`) is in the login keychain; plist PATH carries libpq like db-backup. One all-or-nothing transaction; sessions are removed only when no event, session_data or revenue row still references them. The script owns the number and the table list. A connected-but-not-Umami database is exit 2, never "nothing to delete". Take a Neon snapshot before the first real deletion.
 
 **`elenchus-watch`** — **the hour is the design, not a free slot.** The proxy's
 counters roll over at **00:00 UTC**, computed inside the Durable Object from its own

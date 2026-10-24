@@ -7,6 +7,21 @@
 
 INPUT=$(cat)
 
+# Fail CLOSED when jq is missing. Without it every field below parses to an
+# empty string, TOOL_NAME falls through to "exit 0", and the hook would wave
+# every write through while looking installed and healthy. A guard that cannot
+# read its input must say so and refuse, not stay silent. jq is /usr/bin/jq on
+# macOS; on a machine without it the hook's stderr is the only place to tell
+# the owner why every write is refused.
+if ! command -v jq >/dev/null 2>&1; then
+  {
+    echo "SECRET SCAN: Blocked, jq was not found on PATH."
+    echo "  This hook reads its input with jq and refuses to guess without it."
+    echo "  Install jq (macOS ships /usr/bin/jq) or add its folder to PATH."
+  } >&2
+  exit 2
+fi
+
 # Field extraction goes through `jq`, not `python3`.
 #
 # uv is the sole Python manager on this machine, so a bare `python3` here
@@ -65,7 +80,8 @@ fi
 check_regex() {
   local pattern="$1"
   local label="$2"
-  if echo "$CONTENT" | grep -qE "$pattern" 2>/dev/null; then
+  # -e: a pattern may start with a dash (the PEM header).
+  if echo "$CONTENT" | grep -qE -e "$pattern" 2>/dev/null; then
     {
       echo "SECRET SCAN: Blocked write to $FILE_PATH"
       echo "  Detected pattern: $label"
@@ -85,6 +101,9 @@ check_regex '(^|[^A-Za-z0-9_])gho_[A-Za-z0-9]{30,}'    "GitHub OAuth token (gho_
 check_regex '(^|[^A-Za-z0-9_])ghs_[A-Za-z0-9]{30,}'    "GitHub app token (ghs_...)"
 check_regex '(^|[^A-Za-z0-9_])glpat-[A-Za-z0-9_-]{20,}' "GitLab personal access token (glpat-...)"
 check_regex '(^|[^A-Za-z0-9_])github_pat_[A-Za-z0-9_]{20,}' "GitHub fine-grained PAT (github_pat_...)"
+check_regex '(^|[^A-Za-z0-9_])xox[abposr]-[A-Za-z0-9-]{10,}' "Slack token (xoxb-/xoxp-...)"
+check_regex '(^|[^A-Za-z0-9_])AIza[0-9A-Za-z_-]{35}'   "Google API key (AIza...)"
+check_regex '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----' "PEM private key"
 check_regex '(^|[^A-Za-z0-9_])npg_[A-Za-z0-9]{10,}'          "Neon API key/password (npg_...)"
 
 # Neon Postgres connection strings carry a real, database-scoped password —
@@ -125,6 +144,11 @@ is_placeholder_value() {
   if printf '%s' "$v" | grep -qiE '^(your|my)[-_a-z]*(key|token|secret)[-_a-z]*$'; then
     return 0
   fi
+  # "replace-with-64-hex-chars": an instruction, digits included. Needs the
+  # separator right after the word so a random key cannot slip in as one.
+  if printf '%s' "$v" | grep -qiE '^(replace|insert)[-_][-_a-z0-9]*$'; then
+    return 0
+  fi
   if printf '%s' "$v" | grep -qiE '^[-_a-z]*(here|example|placeholder|changeme)[-_a-z]*$'; then
     return 0
   fi
@@ -137,7 +161,7 @@ is_placeholder_value() {
 # credential rule and the API-key rule below, so a placeholder is exempted
 # consistently regardless of quoting or letter case.
 check_key_value() {
-  local pattern="$1" label="$2"
+  local pattern="$1" label="$2" need_digit="${3:-}" skip_path="${4:-}"
   local matches
   matches=$(printf '%s\n' "$CONTENT" | grep -oiE "$pattern" 2>/dev/null)
   [ -z "$matches" ] && return 0
@@ -148,6 +172,18 @@ check_key_value() {
     value="${value#\"}"; value="${value%\"}"
     value="${value#\'}"; value="${value%\'}"
     if is_placeholder_value "$value"; then
+      continue
+    fi
+    # Unquoted names like TOKEN_FILE=some-long-file-name are plain words; a
+    # generated secret of 16+ characters carries a digit, so the unquoted
+    # rule opts in to requiring one.
+    if [ -n "$need_digit" ] && ! printf '%s' "$value" | grep -q '[0-9]'; then
+      continue
+    fi
+    # A value with two slashes from its start (/etc/ssl/...) is a path. A single
+    # leading slash is not: / is a base64 character, so a generated secret can
+    # start with one.
+    if [ -n "$skip_path" ] && printf '%s' "$value" | grep -qE '^/[^/]*/'; then
       continue
     fi
     {
@@ -169,6 +205,15 @@ check_key_value "(token|password|secret|api[_-]?key)[[:space:]]*[:=][[:space:]]*
 # The unquoted branch's character class excludes the dollar sign, so a
 # variable reference on the right-hand side does not match.
 check_key_value '(^|[^A-Za-z0-9_])[A-Z][A-Z0-9_]*_API_KEY=(["'"'"'][A-Za-z0-9_-]{16,}["'"'"']|[A-Za-z0-9_-]{16,})' "*_API_KEY assignment"
+
+# Unquoted token/secret assignment at the start of a line (optionally after
+# `export`): the bare .env shape. The name must END in the secret word (so
+# SECRET_KEY_PATH, TOKEN_CACHE_DIR, TOKENIZER_MODEL do not match) and the value
+# is skipped when it reads as a path (two slashes from its start: see
+# check_key_value). SECRET_KEY_BASE (Rails) is named explicitly. The value class excludes <, $, { and quotes,
+# so TOKEN=<...>, TOKEN=${VAR} and an empty TOKEN= never match, and
+# is_placeholder_value plus the digit requirement drop prose-like values.
+check_key_value '^[[:space:]]*(export[[:space:]]+)?[A-Za-z0-9_]*(token|secret|secret_key|secret_key_base)=[A-Za-z0-9_+/.-]{16,}' "unquoted token/secret assignment" digit path
 
 exit 0
 

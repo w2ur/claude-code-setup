@@ -32,7 +32,8 @@
 # elenchus-proxy/test/token-budget.test.js guards.
 #
 # Exit: 0 headroom above the threshold; 1 a ceiling has bound today, a web
-# finding was raised, or headroom is below the threshold; 2 the check could
+# finding was raised, a paid provider tier reached (or lost) its daily cap, or
+# headroom is below the threshold; 2 the check could
 # not run — which must be read as UNKNOWN, never as healthy. A 405 is exit 2,
 # not exit 0: it means the route is not deployed or the secret is wrong, and
 # a watcher that cannot see the counters knows nothing about them.
@@ -43,6 +44,16 @@
 # Every exit-2 site below therefore goes through die2(), which notifies
 # before exiting, rather than a bare `exit 2` that would return before ever
 # reaching a notifier call.
+#
+# PROVIDER TIERS. The body's `tiers` block counts the day's provider calls per
+# tier (counts only). A PAID tier (primary = Mistral, openrouterPaid = the paid
+# OpenRouter entry) whose `used` reached its `ceiling` is a finding: not an
+# outage — the proxy skips to the next tier — but a day that spent a paid
+# tier's whole cap, which nothing else makes visible. A paid `ceiling` of
+# null means the cap var is not deployed and that tier is being skipped; also a
+# finding. A ceiling of 0 is the tier switched off on purpose: never a finding.
+# A body without `tiers` (a Worker predating it) prints n/a and raises nothing;
+# a `tiers` block of any other shape is exit 2 (unknown), never a guess.
 #
 # The web surface's own headroom hitting 0 is NOT a finding: a drained web
 # bucket is the intended steady state (the web gate is meant to be tight),
@@ -147,6 +158,48 @@ web_turnstile_missing=$(printf '%s' "$body" | jq -r 'if .surfaces.web.turnstileS
 # is meant to be tight) — this is display-only, never a status input.
 web_dry=$(printf '%s' "$body" | jq -r 'if (.surfaces.web.headroom // 1) == 0 then "yes" else "no" end')
 
+# Provider tiers, in ONE jq program whose failure is exit 2. Every field is
+# type-checked before use: a hand-edited or half-deployed body must never make
+# jq itself error (exit 5 under set -e, outside the exit convention), and a
+# string "used" must never read as a number at its cap. States:
+#   absent — no `tiers` key: a Worker that predates it. n/a, no finding.
+#   bad    — present but not the shape below (null, a string, an array, a paid
+#            entry that is not {used: number, ceiling: number|null}, a non-
+#            numeric free count): unreadable, so exit 2 = unknown.
+#   ok     — read; findings below.
+tier_program='
+def num: type == "number";
+def paid_ok: type == "object" and (.used | num) and has("ceiling")
+             and ((.ceiling | num) or .ceiling == null);
+def fmt: "\(.used)/\(if .ceiling == null then "unset" else .ceiling end)";
+def money: if num then "$\(. * 100 | round / 100)" else "?" end;
+if has("tiers") | not then ["absent", "n/a", "n/a", "n/a", "n/a", "", ""]
+elif (.tiers | type) != "object" then ["bad", "", "", "", "", "", ""]
+else .tiers as $t
+  | if ($t.primary | paid_ok) and ($t.openrouterPaid | paid_ok)
+       and ($t.openrouterFree == null
+            or (($t.openrouterFree | type) == "object" and ($t.openrouterFree.used | num)))
+    then ["ok",
+          ($t.primary | fmt),
+          ($t.openrouterPaid | fmt),
+          (if $t.openrouterFree == null then "n/a" else ($t.openrouterFree.used | tostring) end),
+          ($t.openrouterKey
+            | if type == "object"
+              then "key spent \(.usageDaily | money) today, \(.usage | money) all-time; limit left \(if (.limitRemaining | num) then (.limitRemaining | money) else "none set" end); free requests today \(if (.freeRequestsToday | num) then .freeRequestsToday else "?" end)"
+              else "n/a" end),
+          ([("primary", "openrouterPaid") as $n | $t[$n]
+             | select(.ceiling != null and .ceiling > 0 and .used >= .ceiling) | $n] | join(",")),
+          ([("primary", "openrouterPaid") as $n | $t[$n] | select(.ceiling == null) | $n] | join(","))]
+    else ["bad", "", "", "", "", "", ""] end
+end | join("\u001f")'
+tier_row=$(printf '%s' "$body" | jq -r "$tier_program" 2>/dev/null) \
+  || die2 "the status route's tiers block could not be read (jq failed)."
+IFS=$'\x1f' read -r tiers_state tier_primary tier_paid tier_free tier_key tier_capped tier_unset <<< "$tier_row"
+if [ "$tiers_state" = "bad" ]; then
+  die2 "the status route answered a tiers block this script cannot read."
+fi
+tiers_present=$([ "$tiers_state" = "ok" ] && echo yes || echo no)
+
 # "bound" and "low" both stay scoped to extension + tokens, same as the
 # top-level `headroom` the proxy publishes — the web surface is deliberately
 # excluded from both, for the reason in web_dry above.
@@ -168,6 +221,13 @@ elif [ "$web_ceil_missing" = "yes" ]; then
 elif [ "$web_turnstile_missing" = "yes" ]; then
   status=1
   verdict="The web gate's Turnstile secret is cleared or was never deployed — every web request is refused (\"Verification failed.\")."
+elif [ -n "$tier_capped" ]; then
+  status=1
+  verdict="Paid tier(s) reached their daily cap today: $tier_capped — the proxy is serving from the next tier until 00:00 UTC."
+  [ -n "$tier_unset" ] && verdict="$verdict Also, cap var missing: $tier_unset."
+elif [ -n "$tier_unset" ]; then
+  status=1
+  verdict="Paid tier cap var missing: $tier_unset — that tier is being skipped (PRIMARY_DAILY_CAP / PAID_UPSTREAM_DAILY_CAP in wrangler.toml)."
 elif [ "$low" = "yes" ]; then
   status=1
   verdict="Headroom is below $HEADROOM_MIN — the '$binding' ceiling is the one closing in."
@@ -183,13 +243,19 @@ fi
 
 if $JSON_OUTPUT; then
   printf '%s' "$body" | jq -c --arg verdict "$verdict" --argjson status "$status" \
-    '{day, binding, headroom, surfaces, tokens, verdict: $verdict, status: $status}'
+    '{day, binding, headroom, surfaces, tokens, tiers, verdict: $verdict, status: $status}'
 else
   echo "Elenchus free tier — UTC day $day"
   echo
   printf '  %-10s extension %s/%s · web %s/%s%s\n' "requests" "$req_used" "$req_ceil" "$web_req_used" "$web_req_ceil" "$web_suffix"
   printf '  %-10s %12s / %-12s\n' "tokens"   "$tok_used" "$tok_ceil"
   printf '  %-10s %11s%%   (binding ceiling: %s)\n' "headroom" "$headroom_pct" "$binding"
+  if [ "$tiers_present" = "yes" ]; then
+    printf '  %-10s primary %s · openrouter paid %s · openrouter free %s\n' "tiers" "$tier_primary" "$tier_paid" "$tier_free"
+    printf '  %-10s %s\n' "" "$tier_key"
+  else
+    printf '  %-10s n/a (the deployed Worker does not report them yet)\n' "tiers"
+  fi
   if [ "$web_turnstile_missing" = "yes" ]; then
     echo "  web turnstile secret: MISSING"
   fi
@@ -209,6 +275,7 @@ extension: $req_used / $req_ceil
 $web_line
 tokens:    $tok_used / $tok_ceil
 headroom:  ${headroom_pct}% (binding: $binding)
+tiers:     primary $tier_primary · paid $tier_paid · free $tier_free
 EOF
 )
   notify "Elenchus — free tier ceiling" "$notify_body"

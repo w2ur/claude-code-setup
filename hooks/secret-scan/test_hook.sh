@@ -27,6 +27,11 @@ rand_alnum() {
   LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$n"
 }
 
+rand_digits() {
+  local n="$1"
+  LC_ALL=C tr -dc '0-9' < /dev/urandom | head -c "$n"
+}
+
 # Build a Write/Edit-shaped payload: TOOL_NAME + file_path + content.
 run_write() {
   local tool="$1" path="$2" content="$3"
@@ -126,6 +131,45 @@ real_token_with_here="$(rand_alnum 14)${digit_c}here$(rand_alnum 5)"
 expect 2 "a quoted, real-shaped token containing 'here' still blocks" \
   run_write "Write" "config.sh" "token=\"$real_token_with_here\""
 
+# Depth round: PEM, Slack, Google and unquoted token/secret shapes. Each
+# fixture is assembled from fragments so no literal ever sits in this file.
+pem_header="-----BEGIN $(printf RSA) PRIV$(printf ATE) KEY-----"
+expect 2 "a PEM private key header is blocked" \
+  run_write "Write" "key.pem" "$pem_header
+$(rand_alnum 40)"
+
+slack_tok="xo$(printf xb)-$(rand_digits 12)-$(rand_alnum 24)"
+expect 2 "a Slack bot token is blocked" \
+  run_write "Write" "notes.md" "slack: $slack_tok"
+
+google_key="AI$(printf za)$(rand_alnum 35)"
+expect 2 "a Google API key is blocked" \
+  run_write "Write" "app.js" "const k = \"$google_key\""
+
+unq_tok="$(rand_alnum 16)$(( RANDOM % 10 ))"
+expect 2 "an unquoted TOKEN= assignment at line start is blocked" \
+  run_write "Write" ".env" "GITHUB_TOKEN=$unq_tok"
+
+expect 2 "an unquoted export SECRET= assignment is blocked" \
+  run_write "Write" "env.sh" "export APP_SECRET=$unq_tok"
+
+# Fail closed: with no jq on PATH the hook must refuse, not wave writes through.
+aws_key="AK$(printf IA)$(printf 'A1B2C3D4E5F6G7H8')"
+payload_aws="$(jq -n --arg c "key = $aws_key" '{tool_name:"Write", tool_input:{file_path:"x.txt", content:$c}}')"
+NOJQ_EXIT=$(printf '%s' "$payload_aws" | PATH=/var/empty /bin/bash "$HOOK" >/dev/null 2>&1; echo $?)
+if [ "$NOJQ_EXIT" = "2" ]; then
+  PASS=$((PASS + 1))
+  printf '  ok    with jq missing from PATH the hook refuses (exit 2)\n'
+else
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  with jq missing the hook exited %s, expected 2\n' "$NOJQ_EXIT"
+fi
+NOJQ_MSG=$(printf '%s' "$payload_aws" | PATH=/var/empty /bin/bash "$HOOK" 2>&1 >/dev/null)
+case "$NOJQ_MSG" in
+  *jq*) PASS=$((PASS + 1)); printf '  ok    the jq refusal prints a reason naming jq\n' ;;
+  *) FAIL=$((FAIL + 1)); printf '  FAIL  the jq refusal printed no reason\n' ;;
+esac
+
 # --- Pass cases ----------------------------------------------------------
 
 expect 0 "a generic placeholder postgresql:// URI passes" \
@@ -163,6 +207,42 @@ expect 0 "FOO_API_KEY=changeme passes" \
 placeholder_key2="$(rand_alnum 16)"
 expect 0 ".env.local.example content passes (placeholder value)" \
   run_write "Write" ".env.local.example" "FOO_API_KEY=your-$(printf api)-key-here"
+
+# Placeholders and references for the unquoted token/secret rule.
+expect 0 "TOKEN= (empty) passes" \
+  run_write "Write" "README.md" "TOKEN="
+expect 0 "TOKEN=<your-token> passes" \
+  run_write "Write" "README.md" "TOKEN=<your-token-here>"
+expect 0 "TOKEN=\${VAR} reference passes" \
+  run_write "Write" "README.md" 'API_TOKEN=${SOME_TOKEN_VALUE_HERE}'
+expect 0 "a prose-like TOKEN_FILE value without digits passes" \
+  run_write "Write" "README.md" "TOKEN_FILE=path-to-the-credential-store"
+expect 0 "a replace-with-N-hex-chars instruction value with digits passes" \
+  run_write "Write" "README.md" "GATE_SIGNING_SECRET=replace-with-$(printf 64)-hex-chars"
+expect 0 "a short TOKEN=abc123 example passes" \
+  run_write "Write" "README.md" "TOKEN=abc123"
+expect 0 "a TOKEN-word name with a digit-free prose value passes" \
+  run_write "Write" "README.md" "AUTH_TOKEN=path-to-the-credential-store"
+expect 0 "SECRET_KEY_PATH=/etc path passes" \
+  run_write "Write" "env.sh" "SECRET_KEY_PATH=/etc/ssl/private/server2048.pem"
+expect 2 "an unquoted Rails SECRET_KEY_BASE is blocked" \
+  run_write "Write" "env.sh" "SECRET_KEY_BASE=$(printf a8f3k2j9)$(printf d0s8f7g6h5j4k3l2)"
+expect 2 "an unquoted secret starting with one slash (base64) is blocked" \
+  run_write "Write" "env.sh" "SESSION_SECRET=/$(printf k3J9dLx8)$(printf Qm2Zp7Rt5Vw1Yb4)"
+expect 0 "a token-named path value (two slashes) passes" \
+  run_write "Write" "env.sh" "AUTH_TOKEN=/var/run/secrets/app-token2"
+expect 0 "TOKEN_FILE=/var path passes" \
+  run_write "Write" "env.sh" "TOKEN_FILE=/var/run/secrets/app-token-v2"
+expect 0 "TOKEN_CACHE_DIR=/var path passes" \
+  run_write "Write" "env.sh" "TOKEN_CACHE_DIR=/var/cache/app/tokens-v2"
+expect 0 "TOKENIZER_MODEL=bert-base-uncased-v2 passes" \
+  run_write "Write" "env.sh" "TOKENIZER_MODEL=bert-base-uncased-v2"
+expect 0 "NEXT_PUBLIC_SECRET_SCAN_VERSION=1.2.3.4... passes" \
+  run_write "Write" "env.sh" "NEXT_PUBLIC_SECRET_SCAN_VERSION=1.2.3.4.5.6.7.8.9"
+expect 0 "an env-prefixed Bash command with TOKEN_CACHE_DIR=/var passes" \
+  run_bash "TOKEN_CACHE_DIR=/var/cache/app/tokens-v2 node build.js"
+expect 0 "a PEM mention without a full header passes" \
+  run_write "Write" "README.md" "Paste the BEGIN ... PRIVATE KEY block here"
 
 # --- Dispatch: malformed input stays silent ------------------------------
 
