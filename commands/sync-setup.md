@@ -64,8 +64,7 @@ Read `~/Dev/claude-code-setup/README.md` and verify these match reality:
 4b. **README frontmatter** — `facts_fr` / `facts_en` at the top of README.md
    restate the same counts in prose ("7 commandes, 6 agents, 4 hooks…").
    They are not covered by the `<summary>` checks above and have rotted before.
-   Verify them against the counts above (mods included), and against the blocking-hook
-   count (hooks whose script can `exit 2`).
+   Verify them against the counts above (mods included).
 5. **Commands table** — verify each command in the table exists in `~/.claude/commands/`, and each command file has a row. Add missing rows, remove stale rows.
 6. **Agents table** — same check against `~/.claude/agents/`
 7. **Skills list** — same check against `~/.claude/skills/*/SKILL.md`, with the same `UPSTREAM.md` exclusion
