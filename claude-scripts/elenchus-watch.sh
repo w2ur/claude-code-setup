@@ -52,6 +52,10 @@
 # tier's whole cap, which nothing else makes visible. A paid `ceiling` of
 # null means the cap var is not deployed and that tier is being skipped; also a
 # finding. A ceiling of 0 is the tier switched off on purpose: never a finding.
+# Also a finding: paid OpenRouter slots charged today while the key's own
+# usageDaily reads exactly 0 — :free replies lacking usage.cost are being
+# charged to the paid cap (the Worker counts a missing cost as billed).
+# Tier findings are added to the headroom verdict, never in place of it.
 # A body without `tiers` (a Worker predating it) prints n/a and raises nothing;
 # a `tiers` block of any other shape is exit 2 (unknown), never a guess.
 #
@@ -173,8 +177,8 @@ def paid_ok: type == "object" and (.used | num) and has("ceiling")
              and ((.ceiling | num) or .ceiling == null);
 def fmt: "\(.used)/\(if .ceiling == null then "unset" else .ceiling end)";
 def money: if num then "$\(. * 100 | round / 100)" else "?" end;
-if has("tiers") | not then ["absent", "n/a", "n/a", "n/a", "n/a", "", ""]
-elif (.tiers | type) != "object" then ["bad", "", "", "", "", "", ""]
+if has("tiers") | not then ["absent", "n/a", "n/a", "n/a", "n/a", "", "", "no"]
+elif (.tiers | type) != "object" then ["bad", "", "", "", "", "", "", "no"]
 else .tiers as $t
   | if ($t.primary | paid_ok) and ($t.openrouterPaid | paid_ok)
        and ($t.openrouterFree == null
@@ -185,16 +189,23 @@ else .tiers as $t
           (if $t.openrouterFree == null then "n/a" else ($t.openrouterFree.used | tostring) end),
           ($t.openrouterKey
             | if type == "object"
-              then "key spent \(.usageDaily | money) today, \(.usage | money) all-time; limit left \(if (.limitRemaining | num) then (.limitRemaining | money) else "none set" end); free requests today \(if (.freeRequestsToday | num) then .freeRequestsToday else "?" end)"
+              then "key spent \(.usageDaily | money) today, \(.usage | money) all-time; limit left \(if (.limitRemaining | num) then (.limitRemaining | money) else "none set" end); free requests today \(if (.freeRequestsToday | num) then .freeRequestsToday else "?" end)\(if (.freeRequestsLimit | num) then "/\(.freeRequestsLimit)" else "" end) (account-wide)"
               else "n/a" end),
           ([("primary", "openrouterPaid") as $n | $t[$n]
              | select(.ceiling != null and .ceiling > 0 and .used >= .ceiling) | $n] | join(",")),
-          ([("primary", "openrouterPaid") as $n | $t[$n] | select(.ceiling == null) | $n] | join(","))]
-    else ["bad", "", "", "", "", "", ""] end
+          ([("primary", "openrouterPaid") as $n | $t[$n] | select(.ceiling == null) | $n] | join(",")),
+          # Paid slots burnt while OpenRouter says the key spent nothing today:
+          # :free replies that lacked usage.cost were charged to the paid cap.
+          (if $t.openrouterPaid.used > 0
+              and ($t.openrouterKey | type) == "object"
+              and ($t.openrouterKey.usageDaily | num)
+              and $t.openrouterKey.usageDaily == 0
+           then "yes" else "no" end)]
+    else ["bad", "", "", "", "", "", "", "no"] end
 end | join("\u001f")'
 tier_row=$(printf '%s' "$body" | jq -r "$tier_program" 2>/dev/null) \
   || die2 "the status route's tiers block could not be read (jq failed)."
-IFS=$'\x1f' read -r tiers_state tier_primary tier_paid tier_free tier_key tier_capped tier_unset <<< "$tier_row"
+IFS=$'\x1f' read -r tiers_state tier_primary tier_paid tier_free tier_key tier_capped tier_unset paid_unspent <<< "$tier_row"
 if [ "$tiers_state" = "bad" ]; then
   die2 "the status route answered a tiers block this script cannot read."
 fi
@@ -221,16 +232,30 @@ elif [ "$web_ceil_missing" = "yes" ]; then
 elif [ "$web_turnstile_missing" = "yes" ]; then
   status=1
   verdict="The web gate's Turnstile secret is cleared or was never deployed — every web request is refused (\"Verification failed.\")."
-elif [ -n "$tier_capped" ]; then
-  status=1
-  verdict="Paid tier(s) reached their daily cap today: $tier_capped — the proxy is serving from the next tier until 00:00 UTC."
-  [ -n "$tier_unset" ] && verdict="$verdict Also, cap var missing: $tier_unset."
-elif [ -n "$tier_unset" ]; then
-  status=1
-  verdict="Paid tier cap var missing: $tier_unset — that tier is being skipped (PRIMARY_DAILY_CAP / PAID_UPSTREAM_DAILY_CAP in wrangler.toml)."
 elif [ "$low" = "yes" ]; then
   status=1
   verdict="Headroom is below $HEADROOM_MIN — the '$binding' ceiling is the one closing in."
+fi
+
+# Provider-tier findings ADD to the verdict above rather than competing with
+# it: a capped paid tier on a low-headroom day must not hide the headroom.
+tier_findings=()
+if [ -n "$tier_capped" ]; then
+  tier_findings+=("Paid tier(s) reached their daily cap today: $tier_capped — the proxy is serving from the next tier until 00:00 UTC.")
+fi
+if [ -n "$tier_unset" ]; then
+  tier_findings+=("Paid tier cap var missing: $tier_unset — that tier is being skipped (PRIMARY_DAILY_CAP / PAID_UPSTREAM_DAILY_CAP in wrangler.toml).")
+fi
+if [ "$paid_unspent" = "yes" ]; then
+  tier_findings+=("Paid OpenRouter slots were charged today while OpenRouter reports \$0 spent by the key — :free replies are arriving without usage.cost and burning the paid cap.")
+fi
+if [ ${#tier_findings[@]} -gt 0 ]; then
+  if [ "$status" -eq 0 ]; then
+    verdict="${tier_findings[*]}"
+  else
+    verdict="$verdict ${tier_findings[*]}"
+  fi
+  status=1
 fi
 
 if [ "$web_dry" = "yes" ]; then
