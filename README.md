@@ -275,6 +275,13 @@ These aren't arbitrary choices. Each one came from a specific failure. Read [the
 > [!NOTE]
 > The setup is fully modular — you can copy everything, cherry-pick individual pieces, or just read and adapt the patterns to your own system.
 
+### Requirements
+
+- **`jq`**: the settings merge below and the hooks read JSON with it (macOS 15 and later ship it as `/usr/bin/jq`; otherwise `brew install jq`).
+- **`uv`**: `push-build-gate` resolves its Python through `uv python find`. Install uv, then run `uv python install` to get a managed interpreter; without one the hook fails open and says so (see [`hooks/README.md`](hooks/README.md#requirements)).
+- **`gh`** (GitHub CLI, authenticated): only for the helper scripts in `claude-scripts/` that query GitHub (`gate-watch.sh`, `dev-scanner.sh`, and others). The hooks do not need it.
+- **`git`** and **Node with `npm`**: the build gate runs your project's `npm run build` before a push.
+
 ### Option A: Copy the whole system
 
 ```bash
