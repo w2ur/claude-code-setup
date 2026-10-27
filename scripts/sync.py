@@ -131,7 +131,7 @@ def discover_files(source: Path, file_map: dict, skip_patterns: list[str]) -> li
 # A region between these two markers is DROPPED from the published copy,
 # markers included. It exists because the leak this repo has to prevent is no
 # longer only a name: whole paragraphs of ~/.claude/ describe the owner's
-# personal pipelines, a writing one among them, and those pipelines are out of
+# writing pipeline and other personal ones, and those are out of
 # scope for a repo about writing code. `skip` handles a file that is entirely
 # private; this handles the far commoner case of a file that is mostly public
 # with a private section inside it -- scheduled-jobs/SKILL.md is 60% launchd
@@ -412,6 +412,35 @@ def git_visible_files() -> set[str] | None:
     return {ln for ln in result.stdout.splitlines() if ln.strip()}
 
 
+# JSON belongs here: hooks/settings.hooks.json is a synced output too, and
+# scripts/README.md advertises the audit as covering all output files. So do
+# .py (hooks and claude-scripts publish Python) and .ts/.tsx (every mod is
+# TypeScript): an extension missing here is a file the audit passes unread.
+# .mjs/.cjs/.js too: claude-scripts/design publishes .mjs files.
+AUDIT_EXTENSIONS = (
+    "*.md", "*.html", "*.yml", "*.yaml", "*.sh", "*.json", "*.py", "*.ts", "*.tsx",
+    "*.mjs", "*.cjs", "*.js",
+)
+
+
+class AuditError(RuntimeError):
+    """The audit found a pattern that must not reach the public repo."""
+
+
+def audit_text(rel: str, content: str, audit_patterns: list[str]) -> list[str]:
+    """One warning per (line, pattern) hit in `content`, named by `rel`."""
+    warnings: list[str] = []
+    for i, line in enumerate(content.splitlines(), 1):
+        for pattern in audit_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                warnings.append(f"  {rel}:{i}  matches '{pattern}': {line.strip()[:120]}")
+    return warnings
+
+
+def _audit_exempt(rel: str) -> bool:
+    return rel in AUDIT_FIXTURE_ALLOWLIST or rel in AUDIT_ALLOWLIST
+
+
 def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     """Check all synced files for patterns that should not survive anonymization.
 
@@ -419,26 +448,15 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
     """
     warnings: list[str] = []
 
-    # JSON belongs here: hooks/settings.hooks.json is a synced output too, and
-    # scripts/README.md advertises the audit as covering all output files. So do
-    # .py (hooks and claude-scripts publish Python) and .ts/.tsx (every mod is
-    # TypeScript): an extension missing here is a file the audit passes unread.
-    # .mjs/.cjs/.js too: claude-scripts/design publishes .mjs files.
-    audit_extensions = (
-        "*.md", "*.html", "*.yml", "*.yaml", "*.sh", "*.json", "*.py", "*.ts", "*.tsx",
-        "*.mjs", "*.cjs", "*.js",
-    )
     all_files: list[Path] = []
-    for ext in audit_extensions:
+    for ext in AUDIT_EXTENSIONS:
         all_files.extend(target_dir.rglob(ext))
 
     visible = git_visible_files()
 
     for audit_file in sorted(set(all_files)):
         rel = audit_file.relative_to(REPO_ROOT)
-        if str(rel) in AUDIT_FIXTURE_ALLOWLIST:
-            continue
-        if str(rel) in AUDIT_ALLOWLIST:
+        if _audit_exempt(str(rel)):
             continue
         # Gitignored files (e.g. .claude/agent-memory/) can never be pushed,
         # so a match there is not a leak — only noise that reddens the gate.
@@ -450,12 +468,65 @@ def audit_files(target_dir: Path, audit_patterns: list[str]) -> list[str]:
         except (OSError, UnicodeDecodeError):
             continue
 
-        for i, line in enumerate(content.splitlines(), 1):
-            for pattern in audit_patterns:
-                if re.search(pattern, line, re.IGNORECASE):
-                    warnings.append(f"  {rel}:{i}  matches '{pattern}': {line.strip()[:120]}")
+        warnings.extend(audit_text(str(rel), content, audit_patterns))
 
     return warnings
+
+
+def git_ignored(rels: list[str]) -> set[str] | None:
+    """The subset of repo-relative paths git would ignore, existing or not.
+
+    `git check-ignore` answers for a path that does not exist yet, which is what
+    the would-be output of a sync is. A tracked file is never reported. None
+    when git cannot answer, in which case callers audit everything.
+    """
+    if not rels:
+        return set()
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            cwd=REPO_ROOT,
+            input="\n".join(rels) + "\n",
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    # 0: some ignored, 1: none ignored, anything else: could not answer.
+    if result.returncode not in (0, 1):
+        return None
+    return {ln for ln in result.stdout.splitlines() if ln.strip()}
+
+
+def audit_outputs(outputs: list[tuple[Path, str]], audit_patterns: list[str]) -> list[str]:
+    """Audit the anonymized content a sync WOULD write, before anything is written.
+
+    Same patterns, same extensions, same exemptions as `audit_files`, so a dry
+    run reports exactly the hits a real run would then find on disk — and a
+    real run can refuse before it has touched a single destination.
+    """
+    candidates: list[tuple[str, str]] = []
+    for dest, content in outputs:
+        rel = str(dest.relative_to(REPO_ROOT))
+        if _audit_exempt(rel):
+            continue
+        if not any(fnmatch.fnmatch(dest.name, ext) for ext in AUDIT_EXTENSIONS):
+            continue
+        candidates.append((rel, content))
+
+    ignored = git_ignored([rel for rel, _ in candidates]) or set()
+    warnings: list[str] = []
+    for rel, content in sorted(candidates):
+        if rel in ignored:
+            continue
+        warnings.extend(audit_text(rel, content, audit_patterns))
+    return warnings
+
+
+def report_audit(warnings: list[str], what: str) -> None:
+    log.warning("AUDIT HITS in %s (%d):", what, len(warnings))
+    for w in warnings:
+        log.warning(w)
 
 
 # ── Hand-edit guard ─────────────────────────────────────────────
@@ -627,8 +698,24 @@ def prune_orphans(produced_dests: set[Path], file_map: dict, dry_run: bool) -> i
 # ── Main operations ─────────────────────────────────────────────
 
 
-def run_sync(source: Path, config: dict, dry_run: bool = False, allow_dirty: bool = False) -> None:
-    """Copy files from source to repo, applying anonymization."""
+def run_sync(
+    source: Path,
+    config: dict,
+    dry_run: bool = False,
+    allow_dirty: bool = False,
+    allow_audit_warnings: bool = False,
+) -> None:
+    """Copy files from source to repo, applying anonymization.
+
+    The audit is a gate. The anonymized content of every mapped file is audited
+    in memory BEFORE anything is written: a real run with a hit writes nothing
+    and raises AuditError, and a dry run reports the same hits and raises too.
+    A real run then audits the whole repo again on disk (the generated guide and
+    hooks snippet are written by their own functions); a hit there raises after
+    the summary, so the caller exits non-zero and nothing gets committed.
+    `allow_audit_warnings` logs the hits and carries on, for a deliberate,
+    reviewed override only.
+    """
     replacements = build_replacements(config["replacements"])
     patterns = config.get("patterns")
     skip_patterns = config.get("skip", [])
@@ -673,6 +760,25 @@ def run_sync(source: Path, config: dict, dry_run: bool = False, allow_dirty: boo
     if not dry_run and not allow_dirty:
         check_no_hand_edits(pairs, replacements, patterns)
 
+    # Anonymize everything up front, so the would-be output can be audited
+    # before a single destination is touched.
+    outputs: list[tuple[Path, Path, str, int, int]] = []
+    for src, dest in pairs:
+        content = src.read_text(encoding="utf-8")
+        _, regions = redact(content, origin=str(src))
+        anonymized, count = anonymize(content, replacements, patterns, origin=str(src))
+        outputs.append((src, dest, anonymized, count, regions))
+
+    pending_warnings: list[str] = []
+    if audit_patterns:
+        pending_warnings = audit_outputs([(dest, text) for _, dest, text, _, _ in outputs], audit_patterns)
+        if pending_warnings:
+            report_audit(pending_warnings, "the would-be output")
+            if not dry_run and not allow_audit_warnings:
+                raise AuditError(f"{len(pending_warnings)} audit hit(s) in the would-be output; nothing was written")
+        else:
+            log.info("Audit of the would-be output: clean")
+
     total_replacements = 0
     total_regions = 0
     redacted_files: dict[str, int] = {}
@@ -689,7 +795,7 @@ def run_sync(source: Path, config: dict, dry_run: bool = False, allow_dirty: boo
     copied = 0
     stale = 0
 
-    for src, dest in pairs:
+    for src, dest, anonymized, count, regions in outputs:
         try:
             rel_src = src.relative_to(source)
         except ValueError:
@@ -697,12 +803,9 @@ def run_sync(source: Path, config: dict, dry_run: bool = False, allow_dirty: boo
             rel_src = src
         rel_dest = dest.relative_to(REPO_ROOT)
 
-        content = src.read_text(encoding="utf-8")
-        _, regions = redact(content, origin=str(src))
         if regions:
             redacted_files[str(rel_dest)] = regions
             total_regions += regions
-        anonymized, count = anonymize(content, replacements, patterns, origin=str(src))
         total_replacements += count
 
         if dry_run:
@@ -751,14 +854,13 @@ def run_sync(source: Path, config: dict, dry_run: bool = False, allow_dirty: boo
     orphan_count = prune_orphans(produced_dests, file_map, dry_run)
 
     # Audit
+    warnings: list[str] = []
     if not dry_run and audit_patterns:
         log.info("")
         log.info("Running post-sync audit...")
         warnings = audit_files(REPO_ROOT, audit_patterns)
         if warnings:
-            log.warning("AUDIT WARNINGS (%d):", len(warnings))
-            for w in warnings:
-                log.warning(w)
+            report_audit(warnings, "the repo")
         else:
             log.info("Audit clean")
 
@@ -786,9 +888,9 @@ def run_sync(source: Path, config: dict, dry_run: bool = False, allow_dirty: boo
         log.info("  Guide TODOs:  %d (entries need hand-written prose)", len(guide_todos))
         for t in guide_todos:
             log.info("    - %s", t)
-    if not dry_run and audit_patterns:
-        warning_count = len(warnings) if not dry_run else 0
-        log.info("  Audit warns:  %d", warning_count)
+    if audit_patterns:
+        log.info("  Audit hits:   %d %s", len(pending_warnings) if dry_run else len(warnings),
+                 "(would-be output)" if dry_run else "(repo)")
 
     if not dry_run:
         log.info("")
@@ -805,7 +907,12 @@ def run_sync(source: Path, config: dict, dry_run: bool = False, allow_dirty: boo
             log.info("  (no changes)")
 
         log.info("")
+        if warnings and not allow_audit_warnings:
+            raise AuditError(f"{len(warnings)} audit hit(s) in the repo after the sync: DO NOT COMMIT")
         log.info("Review changes, then commit manually.")
+
+    if dry_run and pending_warnings:
+        raise AuditError(f"{len(pending_warnings)} audit hit(s) in the would-be output")
 
 
 def run_audit_only(config: dict) -> None:
@@ -852,6 +959,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--allow-audit-warnings",
+        action="store_true",
+        help=(
+            "Log audit hits and sync anyway. Off by default: a hit means a "
+            "pattern that must not be published, so the sync refuses. Only "
+            "for a hit you have read and judged a false positive."
+        ),
+    )
+    parser.add_argument(
         "--source",
         type=Path,
         default=DEFAULT_SOURCE,
@@ -871,7 +987,23 @@ def main() -> None:
         run_audit_only(config)
     else:
         try:
-            run_sync(args.source, config, dry_run=args.dry_run, allow_dirty=args.allow_dirty)
+            run_sync(
+                args.source,
+                config,
+                dry_run=args.dry_run,
+                allow_dirty=args.allow_dirty,
+                allow_audit_warnings=args.allow_audit_warnings,
+            )
+        except AuditError as exc:
+            # Exit 1 in the portfolio convention: a finding. The hits are
+            # already printed above; the repo must not be committed.
+            log.error("Audit gate: %s", exc)
+            log.error(
+                "Fix the live source (a SYNC-PRIVATE region, a replacement or "
+                "a skip entry), then re-run. Override only after reading every "
+                "hit: --allow-audit-warnings"
+            )
+            sys.exit(1)
         except HandEditError as exc:
             # Exit 2: could not run. The edits are still on disk, which is the
             # whole point — the previous behaviour destroyed them and said

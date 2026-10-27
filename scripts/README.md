@@ -168,7 +168,16 @@ show them in full.
    `.sh`, `.json`, `.ts`, `.tsx`) for patterns that should not survive. Gitignored paths are
    skipped — they can never be pushed — and so are the owner-maintained
    `README.md` and `LICENSE`, whose real name and links are deliberate. Without
-   those two exclusions the gate is red on a clean tree, which makes it useless
+   those two exclusions the gate is red on a clean tree, which makes it useless.
+   **The audit is a gate, in two passes.** Before anything is written, the
+   anonymized content of every mapped file is audited in memory: one hit and
+   the run writes nothing and exits 1. After writing, the whole repo is
+   audited on disk (that catches the generated guide and hooks snippet, and
+   any leftover file): one hit and the run exits 1 with `DO NOT COMMIT`. A
+   `--dry-run` audits the same would-be output and exits 1 on a hit too, so a
+   preview tells you whether the real run would go through.
+   `--allow-audit-warnings` logs the hits and carries on — only for a hit you
+   have read and judged a false positive
 9. Prints a summary and `git diff --stat` — you review and commit manually
 
 ## Adapting to your setup
@@ -177,7 +186,7 @@ The `anonymization.yaml` has four sections:
 
 - **`replacements`**: Exact string replacements. Add your real app names, URLs, domains, and people here. Longer strings are applied first automatically.
 - **`patterns`**: Regex patterns for catch-all rules (e.g., home directory paths).
-- **`audit_patterns`**: Patterns to grep for after sync — anything matching is a potential leak.
+- **`audit_patterns`**: Patterns the audit gate refuses (case-insensitive) — anything matching stops the sync. Pick coined or unambiguous terms: a common word keeps the gate permanently red.
 - **`skip`**: Directories/files in `~/.claude/` to ignore entirely. Also the place to protect an owner-maintained repo file that happens to sit under a synced root (`hooks/README.md`), since a `file_map` glob would otherwise make it a sync destination and overwrite it.
 - **`file_map`**: What to copy and where to put it.
 

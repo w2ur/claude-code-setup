@@ -87,6 +87,9 @@ audit_patterns:
   # ignore it.
   - 'my-writing-pipeline'
   - 'my-other-pipeline'
+  # Identity details a path rule never sees: an employer, a school.
+  - 'my-employer'
+  - 'my-school'
 
 skip:
   # The repo's hooks/README.md is owner-maintained and exempt from orphan

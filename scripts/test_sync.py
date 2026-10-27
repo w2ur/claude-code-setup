@@ -444,6 +444,94 @@ def test_guard_is_skipped_on_a_dry_run(tmp_path, monkeypatch):
     _sync(source, repo, dry_run=True)  # a preview writes nothing, so it destroys nothing
 
 
+# ── Audit gate ──────────────────────────────────────────────────
+#
+# The audit used to print its hits and let the run finish: a leak was one
+# skimmed log line away from a commit. It is now a gate: a hit in the would-be
+# output stops a real run before it writes anything, and a dry run audits that
+# same would-be output instead of skipping the audit altogether.
+
+
+def _gated_sync(source, **kw):
+    sync.run_sync(
+        source,
+        {"replacements": {}, "file_map": {"commands/*.md": "commands/"}, "audit_patterns": ["planted-term"]},
+        **kw,
+    )
+
+
+def test_a_real_run_with_an_audit_hit_writes_nothing(tmp_path, monkeypatch):
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "clean.md").write_text("fine\n", encoding="utf-8")
+    (source / "commands" / "leak.md").write_text("a planted-term here\n", encoding="utf-8")
+    with pytest.raises(sync.AuditError):
+        _gated_sync(source)
+    assert not (repo / "commands" / "clean.md").exists()
+    assert not (repo / "commands" / "leak.md").exists()
+
+
+def test_a_dry_run_audits_the_would_be_output_and_names_the_file(tmp_path, monkeypatch, caplog):
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "leak.md").write_text("ok\na planted-term here\n", encoding="utf-8")
+    with pytest.raises(sync.AuditError):
+        _gated_sync(source, dry_run=True)
+    assert "commands/leak.md:2" in caplog.text
+    assert not (repo / "commands" / "leak.md").exists()
+
+
+def test_a_clean_run_passes_the_gate_in_both_modes(tmp_path, monkeypatch):
+    # Inverted control: without the planted term the same runs go through.
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "clean.md").write_text("fine\n", encoding="utf-8")
+    _gated_sync(source, dry_run=True)
+    _gated_sync(source)
+    assert (repo / "commands" / "clean.md").read_text(encoding="utf-8") == "fine\n"
+
+
+def test_allow_audit_warnings_overrides_the_gate(tmp_path, monkeypatch):
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "leak.md").write_text("a planted-term here\n", encoding="utf-8")
+    _gated_sync(source, allow_audit_warnings=True)
+    assert (repo / "commands" / "leak.md").exists()
+
+
+def test_a_hit_already_in_the_repo_fails_a_real_run_after_the_sync(tmp_path, monkeypatch):
+    # A file the sync does not write (owner-maintained or left over) is caught
+    # by the on-disk audit; the run still ends non-zero so nothing is committed.
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "clean.md").write_text("fine\n", encoding="utf-8")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "notes.md").write_text("planted-term\n", encoding="utf-8")
+    with pytest.raises(sync.AuditError, match="DO NOT COMMIT"):
+        _gated_sync(source)
+
+
+def test_the_would_be_audit_skips_a_gitignored_destination(tmp_path, monkeypatch):
+    source, repo = _repo(tmp_path, monkeypatch)
+    (repo / ".gitignore").write_text("commands/ignored.md\n", encoding="utf-8")
+    hits = sync.audit_outputs(
+        [(repo / "commands" / "ignored.md", "planted-term"), (repo / "commands" / "kept.md", "planted-term")],
+        ["planted-term"],
+    )
+    assert len(hits) == 1
+    assert "commands/kept.md" in hits[0]
+
+
+def test_main_exits_1_on_an_audit_hit(tmp_path, monkeypatch):
+    source, repo = _repo(tmp_path, monkeypatch)
+    (source / "commands" / "leak.md").write_text("a planted-term here\n", encoding="utf-8")
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "replacements: {}\nfile_map:\n  'commands/*.md': 'commands/'\naudit_patterns:\n  - 'planted-term'\n",
+        encoding="utf-8",
+    )
+    for extra in (["--dry-run"], []):
+        monkeypatch.setattr("sys.argv", ["sync.py", "--source", str(source), "--config", str(config), *extra])
+        with pytest.raises(SystemExit) as exc:
+            sync.main()
+        assert exc.value.code == 1
+
+
 # ── argument-hint drift ─────────────────────────────────────────
 #
 # args/args_en are translations of one `argument-hint`, so they cannot be

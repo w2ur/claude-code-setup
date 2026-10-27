@@ -7,7 +7,7 @@ work gets a script, not an agent. (The count used to be written here and drifted
 every time one was added; `ls` is the roster.)
 
 **Scope.** This directory is the code-facing half of `~/.claude/scripts/`. The
-owner also runs automation that has nothing to do with writing code — a
+owner also runs automation that has nothing to do with writing code —
 personal pipelines, a writing one among them — and none of it is
 published here, by rule: see `skip` in `scripts/anonymization.yaml`. So a
 script you find referenced in a commit message or a skill but not present in
