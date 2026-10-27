@@ -136,6 +136,8 @@ file_map:
   'hooks/*.md': 'hooks/'
   'scripts/*.sh': 'claude-scripts/'
   'scripts/*.py': 'claude-scripts/'
+  # A script that reads a prompt file (portrait-consolide.sh) is useless without it.
+  'scripts/prompts/*.md': 'claude-scripts/prompts/'
   # Function-hook mods (~/.claude/mods/<name>/). The manifest needs its own
   # literal line: glob.glob never enters a hidden directory such as
   # .claude-plugin/, and include_hidden needs Python 3.11 while these scripts
