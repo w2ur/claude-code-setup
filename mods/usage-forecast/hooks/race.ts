@@ -285,7 +285,7 @@ export function raceLines(input: RaceInput): Line[] {
       tone: 'error',
     })
   } else {
-    const on = kind === 'seven_day' ? ` on ${dateOf(resetsAt)}` : ''
+    const on = kind === 'seven_day' ? ` on ${dateOf(resetsAt)} at ${clock(resetsAt)}` : ''
     const lines =
       proj.landing <= pct
         ? [`Not rising now: you camp at ${Math.round(pct)}%`, `when the window resets${on}.`]

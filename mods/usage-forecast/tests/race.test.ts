@@ -236,12 +236,12 @@ describe('the plain-language lines', () => {
     ])
   })
 
-  test('7-day, landing under the limit names the reset date', () => {
+  test('7-day, landing under the limit names the reset date and time', () => {
     expect(rows(raceLines({ ...WEEK_FINISH, width: 80 })).slice(NOTES)).toEqual([
       "o  You've used 50%.",
       '◌  An even pace would be at 64% now.',
       '⌂  At your average pace, you camp at 78%',
-      '   when the window resets on Sat 31 Oct.',
+      '   when the window resets on Sat 31 Oct at 02:35.',
       '   ✓ You have room.',
     ])
   })
