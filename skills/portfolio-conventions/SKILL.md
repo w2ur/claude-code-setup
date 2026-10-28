@@ -1,6 +1,6 @@
 ---
 name: portfolio-conventions
-description: Portfolio three-layer data system (inventory, README pitch frontmatter, editorial.ts) and coherence rules. Load before changing how any project is described, listed, ordered or given a hub tile.
+description: Portfolio three-layer data system (inventory, README pitch block, editorial.ts) and coherence rules. Load before changing how any project is described, listed, ordered or given a hub tile.
 user-invocable: false
 ---
 
@@ -23,7 +23,7 @@ These are the active portfolio-wide rules.
 
 ## Documentation
 
-- README: description, stack, local dev, deployment, plus the Layer 2 frontmatter block (below). Created at project init, never boilerplate.
+- README: description, stack, local dev, deployment, plus the Layer 2 pitch block (below). Created at project init, never boilerplate.
 - CLAUDE.md: project-specific only, never duplicates global rules. Written in English.
 - No per-repo manifest file. Project metadata lives in the three layers below (decision M12).
 
@@ -38,26 +38,28 @@ These are the active portfolio-wide rules.
 | `visibility`, `archived`, `description`, `homepage`, `license`, `pushed_at`, `stars` | `GET /repos/{github-username}/<repo>` |
 | `stack` | presence of `package.json` / `pyproject.toml` / `Cargo.toml` / `requirements.txt` in the root tree |
 | `deploy` | presence of `vercel.json` / `netlify.toml` / `wrangler.toml` |
-| `pitch` | Layer 2 frontmatter parsed out of the repo's `README.md` |
+| `pitch` | Layer 2 pitch block parsed out of the repo's `README.md` |
 
 Plus URL liveness for every `liveUrl` declared in Layer 3. On any network/auth failure the build falls back to the committed `inventory.json` snapshot rather than failing — the snapshot is a cache, not a source of truth.
 
-### Layer 2 — The pitch. Lives in each repo's README.md frontmatter.
+### Layer 2 — The pitch. Lives at the very top of each repo's README.md, as an HTML comment (invisible on GitHub).
 
-```yaml
----
-name: My Bias App
+```html
+<!-- portfolio
+name: "My Bias App"
 tagline_fr: "Parce que votre cerveau vous ment, et qu'il vaut mieux le savoir."
 tagline_en: "Because your brain lies to you, and it's better to know."
 facts_fr: "51 biais, 510 stratégies de prévention, 131 références vérifiées via Crossref."
 facts_en: "51 biases, 510 prevention strategies, 131 references checked against Crossref."
----
+-->
 ```
+
+- The block must open the file (line 1 is exactly `<!-- portfolio`) and close with a line that is exactly `-->`. A block anywhere else is ignored. The legacy `---` YAML frontmatter form is still parsed (build-inventory.mjs, sync-repo-about.sh, mac-setup tests) but is no longer emitted: it renders as a table on GitHub.
 
 - `name`, `tagline_fr`, `tagline_en` are required for any repo `editorial.ts` tiles. `facts_*` are required there too — every tile carries a facts line.
 - For repos the hub does not render, a single `tagline` in whichever language it was written is enough; skip translating a tagline nobody will render.
 - Taglines and descriptions are creative content — never auto-generated, never batch-translated without review.
-- `name` is the deliberately chosen display name (source of truth: the README frontmatter — never overwrite it with a different README heading/title).
+- `name` is the deliberately chosen display name (source of truth: the README pitch block — never overwrite it with a different README heading/title).
 
 ### Layer 3 — Editorial. One file in the hub.
 

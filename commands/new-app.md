@@ -63,15 +63,15 @@ Write a real README (not boilerplate) with:
 - Tech stack
 - How to run locally
 - Deployment setup
-- **Layer 2 frontmatter** (per `portfolio-conventions`) at the very top of the file:
-  ```yaml
-  ---
-  name: [Display Name]
+- **Layer 2 pitch block** (per `portfolio-conventions`) at the very top of the file, as an HTML comment so GitHub renders nothing above the H1:
+  ```html
+  <!-- portfolio
+  name: "[Display Name]"
   tagline_fr: "[one-line FR tagline]"
   tagline_en: "[one-line EN tagline]"
   facts_fr: "[facts line, only if the app will get a hub tile]"
   facts_en: "[facts line, only if the app will get a hub tile]"
-  ---
+  -->
   ```
   If the owner only gave one language's tagline (question 6), write only that `tagline_*` key — do not invent a translation nobody asked for. Omit `facts_*` entirely for apps that won't get a hub tile.
 
@@ -130,7 +130,7 @@ After scaffolding:
 - GitHub: https://github.com/{github-username}/$0 (private)
 - Stack: [chosen stack]
 - Deploy: [not deployed yet / configured for X]
-- Portfolio: README frontmatter added (name/tagline_fr/tagline_en[/facts_fr/facts_en]); editorial.ts entry [added / skipped — no hub tile requested]
+- Portfolio: README pitch block added (name/tagline_fr/tagline_en[/facts_fr/facts_en]); editorial.ts entry [added / skipped — no hub tile requested]
 
 ### Next steps:
 1. Deploy when the app has enough content

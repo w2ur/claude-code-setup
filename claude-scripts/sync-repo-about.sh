@@ -73,12 +73,21 @@ fi
 #               as clutter at the top of the profile. Its About is hand-set.
 EXCLUDED="analytics {github-username}"
 
-# Extract a scalar from the README's YAML frontmatter (first --- block only).
+# Extract a scalar from the README's pitch block. Two forms, both only when
+# they open the file (line 1), as in build-inventory.mjs parsePitch:
+#   ---  ...  ---                 frontmatter
+#   <!-- portfolio  ...  -->       HTML comment (invisible on GitHub)
 # Strips surrounding single or double quotes. Empty output means absent.
 read_frontmatter() {
   awk -v key="$2" '
-    /^---[[:space:]]*$/ { n++; next }
-    n == 1 && index($0, key ":") == 1 {
+    { sub(/\r$/, "") }
+    NR == 1 {
+      if ($0 ~ /^---[[:space:]]*$/) { close_re = "^---[[:space:]]*$"; inblock = 1; next }
+      if ($0 ~ /^<!-- portfolio[[:space:]]*$/) { close_re = "^-->[[:space:]]*$"; inblock = 1; next }
+      exit
+    }
+    inblock && $0 ~ close_re { exit }
+    inblock && index($0, key ":") == 1 {
       sub(/^[^:]*:[[:space:]]*/, "")
       sub(/[[:space:]]+$/, "")
       # strip matching outer quotes
@@ -88,7 +97,6 @@ read_frontmatter() {
       print
       exit
     }
-    n >= 2 { exit }
   ' "$1"
 }
 

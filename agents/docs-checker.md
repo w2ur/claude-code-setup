@@ -53,11 +53,19 @@ Compare the README.md against the actual project state:
 - **Tech stack listed** vs **dependencies in package.json / requirements.txt / pyproject.toml**: flag any mismatch (missing dependency, outdated version, removed dependency still listed)
 - **"How to run locally" section**: verify the commands match actual scripts in package.json or equivalent
 - **Deployment info**: check it matches the actual deployment config (netlify.toml, vercel.json, wrangler.toml). If a live/demo URL is declared, fetch it and confirm it resolves (2xx/3xx) — a declared URL that 404s or times out is a discrepancy, not just a config-file mismatch
-- **Features listed**: flag any feature described in README that doesn't exist in code, or any significant feature in code not mentioned in README
+- **Features listed**: flag any feature described in README that doesn't exist in code. Do NOT add features missing from the README — it is a landing page, not an inventory
 - **Scripts listed**: compare against actual scripts in package.json or Makefile
 - **Author signature**: verify footer "Made with care by {author-first-name}" with link to https://{portfolio-site-url} is present
 
-For each discrepancy found, fix the README directly. Commit: `docs: update README to match current project state`
+Landing-page shape (the rules live in the `portfolio-conventions` skill — load it; this list only checks them):
+
+- **Nothing renders above the H1.** The pitch block must be the `<!-- portfolio … -->` comment, never a `---` YAML block (GitHub renders that as a table above the title)
+- **A `**Status:**` line** sits on the first screen
+- **Public repo over the length budget** stated in the skill → report, do not cut on your own
+- **Hand-typed counts, versions or file inventories in prose** → replace with a derived source or delete
+- **Placeholders** (`<repo-url>`, `TODO`, `TBD`) → fix from the tree. Leave `<!-- why: owner to write -->` alone and list it in the report
+
+For each discrepancy found, fix what became false. Never append the history of a change, an incident narrative or a rationale to the README: that belongs in `docs/` or git log. Commit: `docs: update README to match current project state`
 
 ## 4. CLAUDE.md accuracy check
 
