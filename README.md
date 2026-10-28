@@ -2,7 +2,7 @@
 name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
-about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, 2 blocking hooks included."
+about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, hooks included."
 facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks et 6 mods."
 facts_en: "8 commands, 5 agents, 10 skills, 4 hooks and 6 mods."
 -->
@@ -157,3 +157,7 @@ Local change: I removed the canned greeting block from `apple-design`; the other
 ## License
 
 [MIT](LICENSE), by [William Revah](https://william.revah.paris) — copy, adapt, share. Attribution appreciated but not required.
+
+---
+
+Made with care by [William](https://william.revah.paris)
