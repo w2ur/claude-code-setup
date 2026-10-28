@@ -2,7 +2,7 @@
 
 ## Can I use this with a team?
 
-Yes. The setup is designed for a solo developer managing multiple apps, but the underlying patterns — agents, commands, skills — work for teams too. See the Adapting section in the README. The main thing to adjust is `anonymization.yaml`: extend it to cover team members' names, emails, and any shared infrastructure details you want to keep out of the public repo.
+Yes. The setup is designed for a solo developer managing multiple apps, but the underlying patterns — agents, commands, skills — work for teams too. See [Adapting to your setup](install.md#adapting-to-your-setup). The main thing to adjust is `anonymization.yaml`: extend it to cover team members' names, emails, and any shared infrastructure details you want to keep out of the public repo.
 
 ## Do I need all the agents?
 
