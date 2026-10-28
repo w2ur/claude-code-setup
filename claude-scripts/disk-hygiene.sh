@@ -71,17 +71,17 @@ PLANS_HOLD_PATTERNS=(
   # deadlines run past the 21-day cutoff, so archiving one would file away
   # instructions while they are still due.
   #
-  # This was a single pattern ("*actions-william.md") until two siblings
-  # serving the same role -- owner-actions-guide.md and WILLIAM-TODO.md --
+  # This was a single pattern ("*actions-owner.md") until two siblings
+  # serving the same role -- owner-actions-guide.md and OWNER-TODO.md --
   # were found unprotected and 21-day-archivable. Deliberately narrow rather
   # than a blanket "*actions*", which would also hold an unrelated plan such
   # as "github-actions-migration.md" forever.
   #
   # CONVENTION: to be held, an owner-action document must be named to match
   # one of these. Adding a new such document means adding a pattern here.
-  "*actions-william.md"
+  "*actions-owner.md"
   "*owner-actions*"
-  "*WILLIAM-TODO.md"
+  "*OWNER-TODO.md"
 )
 
 MODE="plan"

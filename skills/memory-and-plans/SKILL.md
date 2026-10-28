@@ -83,3 +83,21 @@ and a `$CMEM` injection at every session start.
 
 **Do not reinstall it.** And do not compensate by writing session narrative into the
 two systems above — that narrative already lives in the transcripts.
+
+## The portrait is a third place, and why it is not claude-mem
+
+`~/.claude/portrait.md` is a stable portrait of the owner: who he is, how he works,
+what he likes. The global `CLAUDE.md` imports it into every session with
+`@portrait.md`, inside a SYNC-PRIVATE region.
+
+It is retrieved by **import, not by search** — the opposite of claude-mem, which
+stored session narrative and was never retrieved. Same rule as above: session
+narrative still never goes there; it lives in the transcripts.
+
+The import is a tax on every session, and `claude-md-weight.sh` does not follow
+imported files. So `~/.claude/scripts/portrait-check.sh` bounds it, and owns the
+threshold: read the number there, never restate it here.
+
+The weekly consolidation (`portrait-consolide.sh`) only **proposes** changes drawn
+from the week's auto-memories; it never writes the portrait. The owner applies or
+dismisses each proposal from `/portrait`, where the size check runs after the write.

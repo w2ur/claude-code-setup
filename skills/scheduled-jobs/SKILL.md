@@ -128,8 +128,32 @@ reads as *not found* — a false negative, the silent kind.
 **`devlog-collect`** — the plist executes `collect.py` directly so its `uv run
 --script` shebang selects the interpreter. See the FDA note above.
 
-**`vigie-refresh`** — the only scheduled job whose script lives in a project repo,
-so `/sync-setup` does not cover it. It collects the snapshot and then **pushes
+**`graphe`** — weekly build of the writings graph (`my-editor-app/tools/graphe`), via
+`graphe.sh`. **Sunday 08:47, not 08:37**: 08:37 is held every day by another agent, Sunday included, and 08:47 is clear of the other jobs (checked against `jobs-inventory.sh` on 2026-10-27). LaunchAgent because the tool calls
+`claude -p` (OAuth in the login keychain) and reads the Google Drive File Provider
+mount, which exists only in the GUI session. **The per-run extraction cap lives in
+the script, not the plist**: an unattended run must be cost-bounded, and a backlog
+shows up as `differes` in the journal and drains over weeks. Notifies through
+`notifier.sh` **only on exit 1 or 2**, with journal counts as the body, never a path
+or a citation (the topic is public). Every run, success included, ends with one
+timestamped summary line so the log's age stays a liveness signal. The script owns
+the number and the paths.
+
+**`portrait`** — weekly consolidation of the owner portrait (`~/.claude/portrait.md`)
+from the week's auto-memories, via `portrait-consolide.sh`. **It proposes and never
+writes the portrait**: the portrait is imported into every session, so one wrong
+fact misleads all of them at once, and an unattended model must not be the one to
+put it there. It leaves a proposition file; the owner applies or dismisses it from
+`/portrait`, which runs `portrait-check.sh` after the write and restores the old text
+when the check refuses. **Sunday, after `graphe`**: the week's memories are closed,
+and the two model calls do not start in the same minute. LaunchAgent for the same
+keychain reason as every `claude -p` job. The window, the pinned model and the call
+timeout live in the script; nothing calls the model when no memory is recent.
+Notifies through `notifier.sh` only on 1 or 2, counts only, never a proposed text.
+
+**`vigie-refresh`** — its script lives in a project repo, like `devlog-collect`'s
+and the tool `graphe.sh` launches, so `/sync-setup` covers none of them and each
+runs whatever branch that checkout has. It collects the snapshot and then **pushes
 what changed**: since 2026-09-13 vigie has no panel, so this agent is the whole
 of it. Guards on **`node`/`npm`/`git` only, fatal exit 2**: without those no
 snapshot exists at all.
@@ -231,6 +255,21 @@ exit code, counts — never a path). The liveness line cannot carry a failure
 on its own: vigie drops exit 1 on the assumption that the
 job already reported its finding, and the `FAILED` line keeps the log fresh,
 so a mirror refusing every night read as healthy everywhere.
+**An evicted mirror copy is unlinked, not read.** With the disk near full,
+iCloud evicts mirror files to dataless placeholders; when the source copy then
+changes, rsync mmaps the placeholder as its delta basis, a LaunchAgent may not
+fault it back in, and the whole transfer dies on `mmap: Resource deadlock
+avoided` (EDEADLK) — every night from 2026-10-16. `--whole-file` does not
+help under openrsync. The script unlinks the dataless copies the pre-flight
+says it will overwrite; any other read error still fails the run. To
+reproduce outside launchd, run rsync with the process's dataless
+materialisation policy set to off (`setiopolicy_np`) — from a terminal the
+file is silently downloaded and the bug hides.
+**Its push has a cooldown per cause**: the same failure re-pushes only after
+the script's cooldown, a new cause pushes at once, and the first clean run
+after a failure pushes one "recovered". A `--dry-run` stays outside it: it
+never pushes "recovered" and never reads or writes the cooldown state. The log
+keeps a line every night.
 
 **`config-backup`** (`~/Library/LaunchAgents/com.example.config-backup.plist`,
 03:47) — commits and pushes the two private config repos, `~/.claude` and
@@ -290,6 +329,14 @@ change. `gate-watch.sh` distinguishes `pending` (a fix already open in a PR) fro
 against `secrets.json` literals first and generic token patterns second, because a
 failing run can quote its own `curl` command. **That redaction covers secrets, not
 personal data** — never route personal content through it. Counts only.
+**A transport failure is retried, then spooled — never dropped.** A DNS hiccup
+used to lose the push outright (one attempt, exit 1). The notifier now retries
+transient failures only (transport, HTTP 5xx, 429; any other 4xx is an
+answer), then writes the message to
+a bounded spool that the next call reaching ntfy sends first, flagged with its
+queue time; overflow is counted and pushed, not discarded. Exit 1 is unchanged.
+A deferred (`--a`) message is never spooled: its caller re-arms it itself,
+so a spooled copy would arrive twice. The script owns the delays and the bound.
 
 **Anything that rotates or rewrites a job log must preserve its mtime.** The log's
 age is the only signal that an agent has stopped, and `jobs-inventory.sh` reads it

@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Fleet } from '../types'
 
@@ -16,10 +16,14 @@ import {
   unlistedRunning,
 } from './fleet'
 import type { FleetEvent } from './fleet'
+import { PANE_COLUMNS } from './gfx'
 import { paneLines } from './pane'
 import type { Seg } from './pane'
 
 const PANE = 'fleet'
+// The panel mod's two answers to /panel (mods/panel/hooks/register.tsx).
+const PANEL_OPENED = 'Panel opened.'
+const PANEL_CLOSED = 'Panel closed.'
 const TICK_MS = 1000
 // A silent workflow is told by 30 minutes of silence, so a minute is fine grain enough.
 const IDLE_CHECK_MS = 60_000
@@ -27,6 +31,14 @@ const fleet = atom({ plugin: 'agent-fleet', key: 'fleet' } as const, emptyFleet(
 // Bumped once a second while anything runs, so elapsed times on the band and
 // in the pane keep moving between events.
 const tick = atom({ plugin: 'agent-fleet', key: 'tick' } as const, 0)
+// The animation frame (spinners, the progress shimmer), apart from `tick` so
+// that the upkeep keeps its 1 Hz: bumped eight times a second, and only while
+// the pane is shown and something runs. An idle or hidden pane does not redraw.
+const FRAME_MS = 125
+const frame = atom({ plugin: 'agent-fleet', key: 'frame' } as const, 0)
+// Remembered in the store when the person opens the pane with /fleet or /panel,
+// so the next session opens it unasked; their own close forgets it.
+const PANE_OPEN = 'paneOpen'
 
 // Bookkeeping must never disturb the session: this mod only observes, so a
 // failure while recording is dropped and the hook still answers what the chain
@@ -100,10 +112,33 @@ async function upkeep($: EngineInterface, f: Fleet): Promise<void> {
   if (isLive) await update($, tick, n => n + 1)
 }
 
-// The 1 Hz tick: nothing live, nothing to do.
-async function tickOnce($: EngineInterface): Promise<void> {
+// Starts or stops the 8 Hz animation: one interval at most, running only while
+// the pane is shown and something runs. Its own timer rather than a standing
+// one, so an idle session schedules nothing eight times a second; the 1 Hz
+// tick decides, so it starts or stops within a second of either changing.
+type Animation = (isRunning: boolean) => Promise<void>
+
+function animation($: EngineInterface): Animation {
+  let timer: Timer | undefined
+  return async isRunning => {
+    const isShown = isRunning && (await $.ui.panes()).some(pane => pane.id === PANE && pane.isShown)
+    if (isShown && timer === undefined) {
+      timer = $.clock.every(FRAME_MS, () => {
+        void update($, frame, n => n + 1).catch(swallow)
+      })
+    } else if (!isShown && timer !== undefined) {
+      timer.cancel()
+      timer = undefined
+    }
+  }
+}
+
+// The 1 Hz tick: nothing live, nothing to do (and no animation).
+async function tickOnce($: EngineInterface, animate: Animation): Promise<void> {
   const f = await read($, fleet)
-  if (isAnyRunning(f)) await upkeep($, f)
+  const isRunning = isAnyRunning(f)
+  await animate(isRunning).catch(swallow)
+  if (isRunning) await upkeep($, f)
 }
 
 // A workflow run that went silent with nothing running (or never had an agent)
@@ -114,8 +149,8 @@ async function watchIdle($: EngineInterface): Promise<void> {
   await expireIfDue($, f, await $.clock.now())
 }
 
-const segProps =(seg: Seg) => ({
-  color: seg.tone,
+const segProps = (seg: Seg) => ({
+  color: seg.color ?? seg.tone,
   dimColor: seg.dim === true,
   bold: seg.bold === true,
 })
@@ -124,10 +159,11 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'fleet',
-      description: 'Toggle the fleet pane (subagents and workflow runs); "clear" drops finished runs',
+      description: 'Bring the Fleet tab of /panel (subagents and workflow runs); "clear" drops finished runs',
     })
+    const animate = animation($)
     $.clock.every(TICK_MS, () => {
-      void tickOnce($).catch(swallow)
+      void tickOnce($, animate).catch(swallow)
     })
     $.clock.every(IDLE_CHECK_MS, () => {
       void watchIdle($).catch(swallow)
@@ -135,6 +171,9 @@ export const register: Register = on => {
     // What a previous load of the mod left: one read catches up.
     const left = await read($, fleet).catch(swallow)
     if (left !== undefined) await upkeep($, left).catch(swallow)
+    // The pane the person kept open last time comes back with the session.
+    const wasOpen = (await $.store.get(PANE_OPEN).catch(swallow)) === true
+    if (wasOpen) await $.ui.open({ id: PANE, title: 'Fleet', columns: PANE_COLUMNS }).catch(swallow)
 
     return next(e)
   })
@@ -148,17 +187,41 @@ export const register: Register = on => {
 
       return { text: dropped === 0 ? 'No finished runs to clear.' : `Cleared ${dropped} finished run${dropped === 1 ? '' : 's'}.` }
     }
-    if (arg !== '') return { text: 'Usage: /fleet to toggle the pane, /fleet clear to drop finished runs.' }
+    if (arg !== '') return { text: 'Usage: /fleet to open the Fleet tab, /fleet clear to drop finished runs.' }
 
-    const shown = (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
-    if (shown) {
-      await $.ui.close({ id: PANE })
+    // Never closes: the panel mod owns the switch, /panel.
+    const shown = (await $.ui.panes()).some(pane => pane.id === PANE && pane.isShown)
+    if (shown) return { text: 'Fleet tab already open; /panel toggles the panel.' }
+    const opened = await $.ui.open({ id: PANE, title: 'Fleet', columns: PANE_COLUMNS })
+    await $.store.set(PANE_OPEN, true).catch(swallow)
 
-      return { text: 'Fleet pane closed.' }
+    return { text: opened.isPlaced ? 'Fleet tab opened.' : `Fleet tab waiting: ${opened.reason}` }
+  })
+
+  on('command.run', { command: 'panel' }, async ($, e, next) => {
+    const answer = await next(e)
+    try {
+      if (answer.text === PANEL_OPENED) {
+        await $.ui.open({ id: PANE, title: 'Fleet', columns: PANE_COLUMNS })
+        await $.store.set(PANE_OPEN, true).catch(swallow)
+      } else if (answer.text === PANEL_CLOSED) {
+        await $.ui.close({ id: PANE })
+        await $.store.set(PANE_OPEN, false).catch(swallow)
+      }
+    } catch {
+      // The tab is this mod's affair; the panel's answer stands.
     }
-    const opened = await $.ui.open({ id: PANE, title: 'Fleet' })
 
-    return { text: opened.isPlaced ? 'Fleet pane opened.' : `Fleet pane waiting: ${opened.reason}` }
+    return answer
+  })
+
+  // The person closing the pane (its mark or close key) means they no longer
+  // want it back; a plugin's close or an unload says nothing of the kind.
+  on('ui.close', async ($, e, next) => {
+    const closed = await next(e)
+    if (e.id === PANE && e.origin.kind === 'person') await $.store.delete(PANE_OPEN).catch(swallow)
+
+    return closed
   })
 
   on('turn.start', async ($, e, next) => {
@@ -185,7 +248,7 @@ export const register: Register = on => {
           return reduce(f, { kind: 'auto-opened' })
         })
         // Unasked: the engine seats it from 144 columns and otherwise leaves it waiting.
-        if (isFirst) await $.ui.open({ id: PANE, title: 'Fleet' })
+        if (isFirst) await $.ui.open({ id: PANE, title: 'Fleet', columns: PANE_COLUMNS })
       }
     } catch {
       // observe only, see `swallow`
@@ -297,7 +360,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     // The pane shows the same runs in full; the band would only repeat them.
-    const isPaneUp = await $.ui.panes().then(panes => panes.some(pane => pane.id === PANE && pane.isPlaced), () => false)
+    const isPaneUp = await $.ui.panes().then(panes => panes.some(pane => pane.id === PANE && pane.isShown), () => false)
     if (isPaneUp) return next(e)
     const state = await read($, fleet)
     await read($, tick)
@@ -332,8 +395,9 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     const state = await read($, fleet)
     await read($, tick)
+    const at = await read($, frame)
     const now = await $.clock.now()
-    const lines = paneLines(state, now, e.props.bodyColumns)
+    const lines = paneLines(state, now, e.props.bodyColumns, at)
 
     return (
       <Box flexDirection="column">

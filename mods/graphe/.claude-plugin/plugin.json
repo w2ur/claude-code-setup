@@ -1,0 +1,9 @@
+{
+  "name": "graphe",
+  "version": "0.2.0",
+  "description": "The Graphe tab of /panel, also opened by /graphe [recherche]: the pane draws the writings graph in ASCII: a force-directed layout of the strongest nodes, or of one node and its neighbours",
+  "userConfig": {
+    "coffre": { "type": "string", "title": "Vault folder", "description": "Folder holding graphe.json", "default": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/écrits" },
+    "journal": { "type": "string", "title": "Build journal", "description": "JSON-lines file whose last line describes the last build", "default": "~/.claude/state/graphe/journal.jsonl" }
+  }
+}

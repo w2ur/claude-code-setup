@@ -26,6 +26,11 @@
 #   0 — envoyé, OU aucun canal configuré (l'absence de canal n'est pas une panne
 #       du travail qu'on rapporte ; le script appelant ne doit pas échouer pour ça)
 #   1 — appelé de travers, ou l'envoi a échoué. Une CONSTATATION.
+#       An undelivered message is still 1 even when it was spooled for the
+#       next call (see "Transport: retry, then spool" below).
+#
+# Test overrides: NOTIFIER_CONF, NOTIFIER_RETRY_DELAYS, NOTIFIER_SPOOL_DIR,
+# NOTIFIER_SPOOL_MAX (scripts/tests/notifier/transport.sh).
 set -uo pipefail
 
 CONF="${NOTIFIER_CONF:-$HOME/.claude/scripts/.notifier.conf}"
@@ -120,15 +125,144 @@ NTFY_SERVER="${NTFY_SERVER:-https://ntfy.sh}"
 
 command -v curl >/dev/null 2>&1 || die "curl introuvable (PATH=$PATH)"
 
-args=(-s -S --max-time 20 -o /dev/null -w '%{http_code}'
-      -H "Title: $TITRE" -H "Priority: $PRIORITE" -H "Markdown: yes")
-[ -n "$LIEN" ] && args+=(-H "Click: $LIEN")
-[ -n "$QUAND" ] && args+=(-H "X-At: $QUAND")
+# --- Transport: retry, then spool -------------------------------------------
+# Measured in the logs of three scheduled jobs, vigie among them: a push
+# that met a DNS failure (curl exit 6) was simply lost — one attempt, a line
+# on stderr nobody reads, and the finding it carried never reached the phone.
+# Two defences, each owned by the numbers below:
+#   1. a bounded retry with backoff, on TRANSIENT failures only: transport
+#      errors, HTTP 5xx (an ntfy outage) and 429 (rate limited). Any other
+#      4xx from ntfy is an answer, and asking again would get the same one;
+#   2. if every attempt failed transiently, the message is written
+#      to a spool, and the next call that reaches ntfy sends the spool FIRST,
+#      oldest first, its title prefixed with the time it was queued.
+# The exit code does not change: a spooled message is still exit 1, because
+# it was not delivered by this call, and callers already read 1 that way.
+#
+# NOT spooled: a deferred message (--a). Its caller records
+# nothing on exit 1 and re-arms it on its next pass, so a spooled copy would
+# be delivered twice. Nor a --dry run, which never sends.
+#
+# Numbers this script owns:
+#   RETRY_DELAYS "5 20 60" — seconds slept before each retry, so 4 attempts
+#     over ~85 s plus curl's own 20 s ceiling per attempt. Long enough to ride
+#     out a Wi-Fi wake-up or a resolver hiccup, short enough that a nightly
+#     job is not held for minutes.
+#   SPOOL_MAX 20 — messages kept. Beyond it the OLDEST is dropped and counted;
+#     the count is pushed as one line on the next flush, never silently lost.
+#     Twenty is about two weeks of the usual failure traffic: past that, the
+#     old ones describe a state that has long changed.
+#   LOCK_STALE 600 — seconds after which a flush lock is reclaimed, so a call
+#     killed mid-flush cannot freeze the spool forever.
+RETRY_DELAYS="${NOTIFIER_RETRY_DELAYS:-5 20 60}"
+SPOOL_DIR="${NOTIFIER_SPOOL_DIR:-$HOME/.claude/notifier-spool}"
+SPOOL_MAX="${NOTIFIER_SPOOL_MAX:-20}"
+LOCK_STALE=600
 
-code=$(printf '%s' "$corps_propre" | curl "${args[@]}" --data-binary @- "$NTFY_SERVER/$NTFY_TOPIC" 2>&1) || {
-  printf 'notifier: envoi echoue (%s)\n' "$code" >&2; exit 1; }
+TMPW=$(mktemp -d) || die "mktemp impossible"
+trap 'rm -rf "$TMPW"' EXIT
 
-case "$code" in
-  2*) exit 0 ;;
-  *)  printf 'notifier: ntfy a repondu %s\n' "$code" >&2; exit 1 ;;
-esac
+# curl exit codes that mean "never got an answer": could not resolve host (6),
+# could not connect (7), timeout (28), TLS handshake (35), empty reply (52),
+# receive failure (56).
+is_transport() { case "$1" in 6|7|28|35|52|56) return 0 ;; *) return 1 ;; esac; }
+
+# send_once <title> <priority> <link> <at> <body-file>
+# Sets SEND_CURL (curl exit) and SEND_HTTP. Returns 0 delivered, 1 answered
+# with a final refusal, 2 transient (transport failure, HTTP 5xx or 429).
+send_once() {
+  local a=(-s -S --max-time 20 -o /dev/null -w '%{http_code}'
+           -H "Title: $1" -H "Priority: $2" -H "Markdown: yes")
+  [ -n "$3" ] && a+=(-H "Click: $3")
+  [ -n "$4" ] && a+=(-H "X-At: $4")
+  SEND_HTTP=$(curl "${a[@]}" --data-binary @"$5" "$NTFY_SERVER/$NTFY_TOPIC" 2>"$TMPW/curl.err")
+  SEND_CURL=$?
+  if [ "$SEND_CURL" -ne 0 ]; then
+    is_transport "$SEND_CURL" && return 2
+    return 1
+  fi
+  # 5xx (ntfy down or overloaded) and 429 (rate limited) say "not now", not
+  # "never": they are retried and spooled like a transport failure.
+  case "$SEND_HTTP" in 2*) return 0 ;; 5*|429) return 2 ;; *) return 1 ;; esac
+}
+
+spool_count() { find "$SPOOL_DIR" -maxdepth 1 -name '*.msg' 2>/dev/null | wc -l | tr -d ' '; }
+
+spool_add() {  # spool_add <title> <priority> <link> <body-file>
+  mkdir -p "$SPOOL_DIR" && chmod 700 "$SPOOL_DIR" || return 1
+  local f; f="$SPOOL_DIR/$(date +%s)-$$-$RANDOM.msg"
+  { printf '%s\n%s\n%s\n%s\n' "$1" "$2" "$3" "$(date +%s)"; cat "$4"; } > "$f" || return 1
+  local dropped=0
+  while [ "$(spool_count)" -gt "$SPOOL_MAX" ]; do
+    rm -f "$(find "$SPOOL_DIR" -maxdepth 1 -name '*.msg' | sort | head -1)"
+    dropped=$((dropped + 1))
+  done
+  if [ "$dropped" -gt 0 ]; then
+    local prev; prev=$(cat "$SPOOL_DIR/dropped" 2>/dev/null); prev=${prev:-0}
+    printf '%s\n' "$((prev + dropped))" > "$SPOOL_DIR/dropped"
+  fi
+}
+
+# Sends what the spool holds, oldest first. Stops at the first transient
+# failure (network or ntfy still down; the rest waits for the next call). A
+# message ntfy ANSWERS with a final refusal is dropped and counted — it would
+# be refused again forever. Returns 2 when it stopped on a transient failure.
+flush_spool() {
+  [ -d "$SPOOL_DIR" ] || return 0
+  local lock="$SPOOL_DIR/.lock"
+  if ! mkdir "$lock" 2>/dev/null; then
+    local age=$(( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || date +%s) ))
+    [ "$age" -gt "$LOCK_STALE" ] || return 0   # another call is flushing
+    rmdir "$lock" 2>/dev/null; mkdir "$lock" 2>/dev/null || return 0
+  fi
+  local f rc=0 refused=0 t p l q
+  for f in $(find "$SPOOL_DIR" -maxdepth 1 -name '*.msg' | sort); do
+    t=$(sed -n 1p "$f"); p=$(sed -n 2p "$f"); l=$(sed -n 3p "$f"); q=$(sed -n 4p "$f")
+    tail -n +5 "$f" > "$TMPW/spooled.txt"
+    send_once "[en attente depuis $(date -r "${q:-0}" '+%d/%m %H:%M')] $t" "$p" "$l" "" "$TMPW/spooled.txt"
+    case $? in
+      0) rm -f "$f" ;;
+      2) rc=2; break ;;
+      *) rm -f "$f"; refused=$((refused + 1)) ;;
+    esac
+  done
+  local dropped; dropped=$(cat "$SPOOL_DIR/dropped" 2>/dev/null); dropped=${dropped:-0}
+  dropped=$((dropped + refused))
+  if [ "$rc" -eq 0 ] && [ "$dropped" -gt 0 ]; then
+    printf '%s notification(s) en attente perdue(s) : spool plein ou refus de ntfy. Voir les logs des jobs.\n' \
+      "$dropped" > "$TMPW/dropped.txt"
+    if send_once "notifier — $dropped notification(s) perdue(s)" "high" "" "" "$TMPW/dropped.txt"; then
+      rm -f "$SPOOL_DIR/dropped"
+    else
+      printf '%s\n' "$dropped" > "$SPOOL_DIR/dropped"
+    fi
+  elif [ "$refused" -gt 0 ]; then
+    printf '%s\n' "$dropped" > "$SPOOL_DIR/dropped"
+  fi
+  rmdir "$lock" 2>/dev/null
+  return "$rc"
+}
+
+printf '%s' "$corps_propre" > "$TMPW/corps.txt"
+
+flush_spool
+attempt=0
+for delay in "" $RETRY_DELAYS; do
+  if [ -n "$delay" ]; then sleep "$delay"; fi
+  attempt=$((attempt + 1))
+  send_once "$TITRE" "$PRIORITE" "$LIEN" "$QUAND" "$TMPW/corps.txt"
+  case $? in
+    0) exit 0 ;;
+    1) printf 'notifier: ntfy a repondu %s (curl %s) %s\n' "$SEND_HTTP" "$SEND_CURL" "$(head -1 "$TMPW/curl.err")" >&2
+       exit 1 ;;
+  esac
+  printf 'notifier: essai %s, echec transitoire (curl %s, http %s)\n' "$attempt" "$SEND_CURL" "$SEND_HTTP" >&2
+done
+
+if [ -z "$QUAND" ] && spool_add "$TITRE" "$PRIORITE" "$LIEN" "$TMPW/corps.txt"; then
+  printf 'notifier: envoi echoue apres %s essai(s), message mis en attente (%s en attente)\n' \
+    "$attempt" "$(spool_count)" >&2
+else
+  printf 'notifier: envoi echoue apres %s essai(s), message NON mis en attente\n' "$attempt" >&2
+fi
+exit 1

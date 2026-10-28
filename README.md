@@ -3,8 +3,8 @@ name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
 about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, hooks included."
-facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks et 4 mods."
-facts_en: "8 commands, 5 agents, 10 skills, 4 hooks and 4 mods."
+facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks et 6 mods."
+facts_en: "8 commands, 5 agents, 10 skills, 4 hooks and 6 mods."
 ---
 
 <div align="center">
@@ -93,10 +93,12 @@ Everything here is about writing code. I run other Claude Code automation that i
 ┌───────────────────────────────────────────────────────────┐
 │               Mods (inside Claude Code itself)            │
 │                                                           │
-│  context-bar ──── /context-bar  context window, by kind   │
-│  usage-forecast ─ /usage-bar    5h / 7d burn and reset    │
-│  fanout-guard ─── asks before a fan-out near the limit    │
-│  agent-fleet ──── /fleet        subagents and workflows   │
+│  panel ────────── /panel     the right panel, one tab each│
+│  context-bar ──── context window as a grid of squares     │
+│  usage-forecast ─ 5h / 7d as a race; fan-out guard        │
+│  agent-fleet ──── /fleet     subagents as ASCII personas  │
+│  portrait ─────── /portrait  the owner portrait as a bust │
+│  graphe ───────── /graphe    a writings graph in ASCII    │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -181,16 +183,18 @@ Half the hooks are advisory — I need Claude Code to exercise judgment, not pas
 </details>
 
 <details>
-<summary><strong>Mods (4)</strong> — TypeScript hooks into Claude Code itself</summary>
+<summary><strong>Mods (6)</strong> — TypeScript hooks into Claude Code itself</summary>
 
 <br>
 
 A mod is a plugin of function hooks: a small TypeScript module that hooks into Claude Code itself — it can draw UI above the prompt, register a slash command, or hold a tool call. Each one lives in `mods/<name>/` and loads through `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`'s `env`, read straight from disk and reloaded on every edit (a marketplace install is a copy that needs reinstalling after each change).
 
-- **context-bar** (`/context-bar`): the context window as a stacked bar above the prompt, one colour per `/context` category, with a token legend
-- **usage-forecast** (`/usage-bar`): one line per rate-limit window — gauge, reset countdown, burn rate, and the time it fills if that comes before the reset; toasts at 80% and 95%
-- **fanout-guard** (no command): past 85% of the 5-hour window or 90% of the 7-day one, asks before any Workflow and before the second Agent of a turn; a held or unanswered question refuses the call
-- **agent-fleet** (`/fleet`): follows subagents and Workflow runs — a band above the prompt while a run is live, and a pane with one row per agent (model tier, effort, current tool, tokens, elapsed) plus the workflow's phases and Done / Failed / Denied / Lost sections. Known limits are listed at the top of `hooks/fleet.ts`
+- **panel** (`/panel`): toggles the right panel; every other mod below joins it as a tab, and all tabs open at one shared width so switching never resizes the dock. List it last in `CLAUDE_CODE_PLUGIN_DIRS`
+- **context-bar** (Context tab): the context window as a 20x20 grid of squares, one colour per `/context` category, with the autocompact threshold and buffer marked; MCP tools, skills, memory files and agents open under their legend row on click; a labelled history that marks compactions. A one-line band above the prompt while the tab is closed
+- **usage-forecast** (Limits tab): each rate-limit window drawn as a race — your usage as a runner against an even-pace ghost, a camp where you land at reset or a crash into the limit, the fan-out threshold as a hurdle, then the same in plain sentences (the 7-day window names the date it fills). Toasts at 80% and 95%. Its fan-out guard asks before any Workflow and before the second Agent of a turn past 85% of the 5-hour window or 90% of the 7-day one, or when the 5-hour window is projected full before reset
+- **agent-fleet** (`/fleet`, Fleet tab): follows subagents and Workflow runs — a band above the prompt while a run is live, and a pane where each running agent is a small ASCII persona (body by model tier, prop by agent type; it talks, blinks and dozes), one square per agent for progress, the heaviest agent by tokens, and Done / Failed / Denied / Lost sections. Known limits are listed at the top of `hooks/fleet.ts`
+- **portrait** (`/portrait`, Portrait tab): the owner portrait drawn as a bust filled with its own text (the bust is the size gauge; pending propositions show as ghost letters), every memory as a coloured square in date order, 30 days of activity, and pending propositions
+- **graphe** (`/graphe [search]`, Graphe tab): a writings graph drawn in ASCII by a force-directed layout — the most connected nodes, or one node and its neighbours
 
 Each mod carries its own tests (`claude plugin test mods/<name>`).
 
@@ -302,7 +306,7 @@ The helper scripts land in `~/.claude/scripts/` (published here as [`claude-scri
 
 Copying the scripts is not enough — hooks don't run until they're registered in `~/.claude/settings.json`. Merge `hooks/settings.hooks.json` into your own settings file (`jq -s '.[0] * .[1]' ~/.claude/settings.json claude-code-setup/hooks/settings.hooks.json > /tmp/settings.merged.json && mv /tmp/settings.merged.json ~/.claude/settings.json` if you don't already have a `hooks` key — see [`hooks/README.md`](hooks/README.md) for the manual-merge path if you do, plus how to verify a hook actually fired).
 
-Mods are the same: copying `mods/` loads nothing. List each mod folder in `CLAUDE_CODE_PLUGIN_DIRS`, colon-separated, in the `env` block of `~/.claude/settings.json` (for example `"CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/context-bar:~/.claude/mods/usage-forecast:~/.claude/mods/fanout-guard:~/.claude/mods/agent-fleet"`), then start a new session.
+Mods are the same: copying `mods/` loads nothing. List each mod folder in `CLAUDE_CODE_PLUGIN_DIRS`, colon-separated, in the `env` block of `~/.claude/settings.json` (for example `"CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/context-bar:~/.claude/mods/usage-forecast:~/.claude/mods/agent-fleet:~/.claude/mods/portrait:~/.claude/mods/graphe:~/.claude/mods/panel"`), then start a new session.
 
 Then edit `CLAUDE.md` and the agent files to replace `w2ur`, `{portfolio-site}`, and other placeholders with your own values.
 

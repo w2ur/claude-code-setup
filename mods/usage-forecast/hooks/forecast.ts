@@ -75,3 +75,70 @@ export function label(kind: string): string {
   if (kind === 'seven_day') return '7d'
   return kind
 }
+
+// ---------------------------------------------------------------------------
+// The fan-out guard (was the fanout-guard mod): asks before a Workflow or a
+// second Agent in one turn while a window runs high.
+// ---------------------------------------------------------------------------
+
+export const THRESHOLDS: Record<string, number> = { five_hour: 85, seven_day: 90 }
+
+// The windows a projection may arm, and the share below which it is noise:
+// early on, a few whole-point moves over a short span read as a sprint. The
+// 7-day window is left out: its pace comes from active hours and is
+// extrapolated over nights and days off, so it would arm on any busy stretch.
+export const PROJECTION_FLOOR: Record<string, number> = { five_hour: 60 }
+
+export type Armed = { kind: string; why: string }
+
+// The windows that arm the guard, each with its reason. A raw threshold arms
+// as before; a 5-hour window projected to fill before it resets arms too, so
+// the guard speaks while the limit can still be avoided, not once it nearly
+// is. A window whose reset has passed arms nothing: its reading is stale.
+// Time to reset as a duration, never a bare clock time: "resets 14:00" on a
+// 7-day window reads as today and invites "Run it" four days early.
+export function armedBy(
+  views: readonly { kind: string; percent: number; resetsAt?: number; fullAt?: number }[],
+  now: number,
+): Armed[] {
+  const out: Armed[] = []
+  for (const v of views) {
+    const threshold = THRESHOLDS[v.kind]
+    if (threshold === undefined) continue
+    if (v.resetsAt !== undefined && v.resetsAt <= now) continue
+    const reset = v.resetsAt === undefined ? '' : ` (resets in ${duration(v.resetsAt - now)})`
+    const floor = PROJECTION_FLOOR[v.kind]
+    if (v.percent >= threshold) out.push({ kind: v.kind, why: `${label(v.kind)} at ${v.percent}%${reset}` })
+    else if (v.fullAt !== undefined && floor !== undefined && v.percent >= floor) {
+      out.push({ kind: v.kind, why: `${label(v.kind)} at ${v.percent}%, full in ${duration(v.fullAt - now)} at this pace${reset}` })
+    }
+  }
+  return out
+}
+
+// A Workflow is always a fan-out; one Agent is a delegation, the second in a
+// turn is a fan-out.
+export function isFanOut(tool: string, agentsThisTurn: number): boolean {
+  return tool === 'Workflow' || (tool === 'Agent' && agentsThisTurn >= 2)
+}
+
+// Where the window will stand at its reset at this pace, capped at 100: the
+// ghost drawn ahead of the gauge.
+export function projectedAtReset(
+  pct: number,
+  ratePerHour: number | undefined,
+  now: number,
+  resetsAt: number | undefined,
+): number | undefined {
+  if (ratePerHour === undefined || ratePerHour <= 0 || resetsAt === undefined) return undefined
+  return Math.min(100, pct + ((resetsAt - now) / HOUR) * ratePerHour)
+}
+
+// When the percentage last moved up between two kept samples; the race scene
+// keeps its runner moving for a few minutes after.
+export function lastRise(samples: readonly Sample[]): number | undefined {
+  for (let i = samples.length - 1; i > 0; i--) {
+    if ((samples[i]?.pct ?? 0) > (samples[i - 1]?.pct ?? 0)) return samples[i]?.t
+  }
+  return undefined
+}

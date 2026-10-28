@@ -1,3 +1,6 @@
+import type { ContextBarView } from '../types'
+import { ease } from './gfx'
+
 // Splits `width` cells among `weights` by largest remainder, so the cells
 // always sum to `width` and no weight gets more than its share plus one.
 export function segmentWidths(weights: number[], width: number): number[] {
@@ -24,4 +27,33 @@ export function formatTokens(tokens: number): string {
   if (tokens >= 10_000) return `${Math.round(tokens / 1000)}k`
   if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`
   return String(tokens)
+}
+
+// Each category's share of the whole window, by name: what the drawn bar
+// glides toward.
+export function fractionsOf(rows: readonly { name: string; tokens: number }[], maxTokens: number): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const row of rows) out[row.name] = maxTokens > 0 ? row.tokens / maxTokens : 0
+  return out
+}
+
+// One frame of the glide: every drawn value moves toward its target; a
+// category that left the target shrinks to nothing and is dropped.
+export function glide(from: ContextBarView, to: ContextBarView): ContextBarView {
+  const fractions: Record<string, number> = {}
+  for (const name of new Set([...Object.keys(from.fractions), ...Object.keys(to.fractions)])) {
+    const goal = to.fractions[name]
+    const value = ease(from.fractions[name] ?? 0, goal ?? 0)
+    if (goal !== undefined || value > 0) fractions[name] = value
+  }
+  return { percent: ease(from.percent, to.percent), fractions }
+}
+
+export function isSettled(from: ContextBarView, to: ContextBarView): boolean {
+  const next = glide(from, to)
+  return (
+    next.percent === from.percent &&
+    Object.keys(next.fractions).length === Object.keys(from.fractions).length &&
+    Object.entries(next.fractions).every(([name, v]) => v === from.fractions[name])
+  )
 }

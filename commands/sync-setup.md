@@ -40,6 +40,13 @@ If it exits 2 refusing to overwrite hand edits, do not reach for
 `--allow-dirty` first. Read the named files: the change they carry is usually
 one that belongs in `~/.claude/`, and porting it there is the fix.
 
+If it exits 1, the audit gate found a pattern that must not be published, and
+nothing gets committed. A hit in the would-be output means nothing was
+written; a hit after writing prints `DO NOT COMMIT`. Fix the live source (a
+private region, a replacement or a `skip` entry in the gitignored config) and
+re-run. `--dry-run` runs the same audit, so it exits 1 on a hit too. Never
+reach for `--allow-audit-warnings` without reading every hit with the owner.
+
 ## Step 2: Verify stale-file cleanup
 
 `sync.py` prunes orphans: any file under a synced root

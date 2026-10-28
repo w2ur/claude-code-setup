@@ -44,9 +44,11 @@ const PANE = {
 
 // Set by world(): puts the surface beneath back to "no pane placed".
 let hidePane: () => void = () => undefined
+// Puts the open pane behind another tab: still listed, no longer shown.
+let coverPane: () => void = () => undefined
 
 // What the surface beneath the plugin was asked to do, in order.
-type Shell = { opens: string[]; closes: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
+type Shell = { panel: { text: string }; opens: string[]; closes: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
 
 // What sits beneath the plugin in a real session: a clock, a cost ledger, a
 // surface that places panes and shows toasts, the engine's own (empty) drawing.
@@ -56,17 +58,23 @@ function world(on: On, options: { isPlaced?: boolean } = {}): Shell {
   on('command.register', () => ({ value: { command: 'fleet' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const clock = mock.clock(on, { now: 1_000_000 })
-  const shell: Shell = { opens: [], closes: [], toasts: [], clock }
+  const shell: Shell = { panel: { text: 'Panel opened.' }, opens: [], closes: [], toasts: [], clock }
+  on('command.run', { command: 'panel' }, () => ({ text: shell.panel.text }))
   let isUp = false
+  let isCovered = false
   hidePane = () => {
     isUp = false
   }
+  coverPane = () => {
+    isCovered = true
+  }
   on('ui.panes', () => ({
-    value: isUp ? [{ id: 'fleet', title: 'Fleet', isShown: true, isFocused: false, isPlaced: true }] : [],
+    value: isUp ? [{ id: 'fleet', title: 'Fleet', isShown: !isCovered, isFocused: false, isPlaced: true }] : [],
   }))
   on('ui.open', (_, e) => {
     shell.opens.push(e.id)
     isUp = true
+    isCovered = false
 
     return options.isPlaced === false
       ? { value: { isPlaced: false as const, reason: 'terminal too narrow' } }
@@ -164,6 +172,13 @@ const complete = ($: Engine, agentId: string, answer: string, isAborted = false)
 const pastGrace = (shell: Shell) => shell.clock.advance(RUN_END_GRACE_MS)
 
 const startSession = ($: Engine) => $.session.start({ cwd: '/tmp', surface: null, isInteractive: true })
+
+// While the pane shows a running agent the animation fires eight times a second,
+// more waits than the mock clock resolves in one advance: a long stretch goes a
+// minute at a time, the same waits at the same times.
+async function advanceInSteps(shell: Shell, ms: number): Promise<void> {
+  for (let left = ms; left > 0; left -= 60_000) await shell.clock.advance(Math.min(60_000, left))
+}
 
 test('the band draws nothing before anything ran', async ($, on) => {
   world(on)
@@ -355,7 +370,7 @@ test('the pane draws the run it was opened on, through the Pane hook', async ($,
   const text = await paneText($)
   expect(text).toContain('Subagents')
   expect(text).toContain('Running · 1')
-  expect(text).toContain('▲')
+  expect(text).toContain('{•')
   expect(text).toContain('opus')
 })
 
@@ -372,19 +387,44 @@ test('a 60-column pane never draws a text wider than the pane', async ($, on) =>
   expect(texts.some(t => t.endsWith('…'))).toBe(true)
 })
 
-test('/fleet opens the pane, asked, and a second /fleet closes it', async ($, on) => {
+test('/fleet opens the tab, asked, and a second /fleet never closes it', async ($, on) => {
   const shell = world(on)
 
   const opened = await $.command.run(commandRun('fleet'))
-  expect(opened.text).toBe('Fleet pane opened.')
+  expect(opened.text).toBe('Fleet tab opened.')
   expect(shell.opens).toEqual(['fleet'])
 
-  const closed = await $.command.run(commandRun('fleet'))
-  expect(closed.text).toBe('Fleet pane closed.')
-  expect(shell.closes).toEqual(['fleet'])
+  const again = await $.command.run(commandRun('fleet'))
+  expect(again.text).toBe('Fleet tab already open; /panel toggles the panel.')
+  expect(shell.opens).toEqual(['fleet'])
+  expect(shell.closes).toEqual([])
+})
+
+// Regression: review fix — an open pane behind another tab is brought forward
+// by /fleet, not answered as already open.
+test('/fleet brings a covered tab forward and says "already open" only when it is shown', async ($, on) => {
+  const shell = world(on)
 
   await $.command.run(commandRun('fleet'))
+  coverPane()
+  const brought = await $.command.run(commandRun('fleet'))
+  expect(brought.text).toBe('Fleet tab opened.')
   expect(shell.opens).toEqual(['fleet', 'fleet'])
+
+  const again = await $.command.run(commandRun('fleet'))
+  expect(again.text).toBe('Fleet tab already open; /panel toggles the panel.')
+  expect(shell.opens).toEqual(['fleet', 'fleet'])
+})
+test('the panel answer opens, then closes, this tab', async ($, on) => {
+  const shell = world(on)
+  mock.store(on)
+
+  await $.command.run(commandRun('panel'))
+  shell.panel.text = 'Panel closed.'
+  const closed = await $.command.run(commandRun('panel'))
+  expect(closed.text).toBe('Panel closed.')
+  expect(shell.opens).toEqual(['fleet'])
+  expect(shell.closes).toEqual(['fleet'])
 })
 
 test('/fleet on a terminal too narrow says the pane is waiting instead of claiming it opened', async ($, on) => {
@@ -454,7 +494,8 @@ test('a pane the person closed stays closed: later spawns do not reopen it', asy
   on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'abc' }))
   await $.turn.start({ text: 'go', turnId: 't1' })
   await $.agent.spawn(spawnInput({ tool_use_id: 'toolu_1' }))
-  await $.command.run(commandRun('fleet'))
+  shell.panel.text = 'Panel closed.'
+  await $.command.run(commandRun('panel'))
   expect(shell.closes).toEqual(['fleet'])
 
   await $.agent.spawn(spawnInput({ tool_use_id: 'toolu_2' }))
@@ -847,10 +888,10 @@ test('a workflow whose running agent went silent is lost after 30 min, found by 
   const spawnPhase = await twoPhaseWorkflow($, on)
 
   await spawnPhase(1)
-  await shell.clock.advance(30 * 60_000 - 1_000)
+  await advanceInSteps(shell, 30 * 60_000 - 1_000)
   expect(await bandText($)).toContain('1 running')
 
-  await shell.clock.advance(61_000)
+  await advanceInSteps(shell, 61_000)
   expect(await bandText($)).toContain('1 lost')
 })
 
@@ -973,4 +1014,104 @@ test('a step or a tool call of an agent says nothing aloud: a due run end waits 
   await complete($, 'old', 'ok')
   expect(shell.toasts).toHaveLength(1)
   expect(shell.toasts[0]).toMatch(/finished · 1\/1 done/)
+})
+
+// The spinner frame the pane draws for its first running agent.
+// The running agent's face, which the frame animates (talking, blinking).
+async function frameOf($: Engine): Promise<string | undefined> {
+  return /[({\[♔][^ ]{3}[)}\]♔]/.exec(await paneText($))?.[0]
+}
+
+test('a running agent animates the shown pane: the frame moves between two 1 Hz ticks', async ($, on) => {
+  const shell = world(on)
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'abc' }))
+  on('agent.list', () => ({ value: [listed('abc', 'running')] }))
+  await startSession($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.agent.spawn(spawnInput())
+
+  await shell.clock.advance(1_000)
+  const faces = [await frameOf($)]
+  for (let i = 0; i < 3; i++) {
+    await shell.clock.advance(125)
+    faces.push(await frameOf($))
+  }
+  expect(faces.every(face => face !== undefined)).toBe(true)
+  expect(new Set(faces).size).toBeGreaterThan(1)
+})
+
+test('the animation stops once the pane is hidden, within one tick', async ($, on) => {
+  const shell = world(on)
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'abc' }))
+  on('agent.list', () => ({ value: [listed('abc', 'running')] }))
+  await startSession($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.agent.spawn(spawnInput())
+  await shell.clock.advance(1_000)
+
+  hidePane()
+  await shell.clock.advance(1_000)
+  const still = await frameOf($)
+  await shell.clock.advance(500)
+  expect(await frameOf($)).toBe(still)
+})
+
+test('a pane opened with /fleet comes back with the next session; one opened by a spawn does not', async ($, on) => {
+  const shell = world(on)
+  mock.store(on)
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'abc' }))
+  await startSession($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.agent.spawn(spawnInput())
+  expect(shell.opens).toEqual(['fleet'])
+
+  hidePane()
+  await startSession($)
+  expect(shell.opens).toEqual(['fleet'])
+
+  await $.command.run(commandRun('fleet'))
+  expect(shell.opens).toEqual(['fleet', 'fleet'])
+  hidePane()
+  await startSession($)
+  expect(shell.opens).toEqual(['fleet', 'fleet', 'fleet'])
+})
+
+test('a pane closed with /panel stays closed in the next session', async ($, on) => {
+  const shell = world(on)
+  mock.store(on)
+  await startSession($)
+  await $.command.run(commandRun('panel'))
+  shell.panel.text = 'Panel closed.'
+  await $.command.run(commandRun('panel'))
+  expect(shell.closes).toEqual(['fleet'])
+
+  await startSession($)
+  expect(shell.opens).toEqual(['fleet'])
+})
+
+test('a shown pane with nothing running does not animate; a running agent starts it', async ($, on) => {
+  const shell = world(on)
+  let frame = 0
+  let version = 1
+  let frameWrites = 0
+  on('state.get', { plugin: 'agent-fleet', key: 'frame' }, () => ({ value: { value: frame, version } }))
+  on('state.set', { plugin: 'agent-fleet', key: 'frame' }, (_, e) => {
+    frame = e.value as number
+    version += 1
+    frameWrites += 1
+
+    return { value: { isSet: true as const, version } }
+  })
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'abc' }))
+  on('agent.list', () => ({ value: [listed('abc', 'running')] }))
+  await startSession($)
+  await $.command.run(commandRun('fleet'))
+
+  await shell.clock.advance(3_000)
+  expect(frameWrites).toBe(0)
+
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.agent.spawn(spawnInput())
+  await shell.clock.advance(2_000)
+  expect(frameWrites).toBeGreaterThan(0)
 })

@@ -120,6 +120,6 @@ export type Fleet = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'agent-fleet': { fleet: Shaped<Fleet>; tick: number }
+    'agent-fleet': { fleet: Shaped<Fleet>; tick: number; frame: number }
   }
 }

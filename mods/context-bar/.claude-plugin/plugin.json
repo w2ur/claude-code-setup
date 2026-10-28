@@ -1,1 +1,6 @@
-{ "name": "context-bar", "version": "0.1.0", "description": "Context window as a stacked bar above the prompt, one color per /context category; toggled with /context-bar", "types": "./types/index.d.ts" }
+{
+  "name": "context-bar",
+  "version": "0.2.0",
+  "description": "Context window as a grid of squares, one colour per /context category, with autocompact marked and per-category detail on click: the Context tab of /panel, and a one-line band above the prompt while that tab is not open",
+  "types": "./types/index.d.ts"
+}

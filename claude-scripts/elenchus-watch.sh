@@ -65,7 +65,7 @@
 # for the same reason. It is printed, never paged on.
 set -euo pipefail
 
-STATUS_URL="${ELENCHUS_STATUS_URL:-https://elenchus-proxy.william-445.workers.dev/status}"
+STATUS_URL="${ELENCHUS_STATUS_URL:-https://elenchus-proxy.{workers-subdomain}.workers.dev/status}"
 KEYCHAIN_SERVICE="${ELENCHUS_KEYCHAIN_SERVICE:-elenchus-status}"
 HEADROOM_MIN="${ELENCHUS_HEADROOM_MIN:-0.20}"
 NOTIFIER="${NOTIFIER_BIN:-$HOME/.claude/scripts/notifier.sh}"

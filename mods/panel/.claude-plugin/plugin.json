@@ -1,0 +1,1 @@
+{ "name": "panel", "version": "0.1.0", "description": "/panel toggles the right panel: every mod that joins it opens or closes its own tab on the answer. List it last in CLAUDE_CODE_PLUGIN_DIRS" }

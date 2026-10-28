@@ -90,6 +90,35 @@
 #         as UNKNOWN, never as "nothing to mirror" — or the iCloud
 #         destination is missing).
 #
+# Evicted mirror copies (2026-10-16 → 10-26, every night FAILED): with the
+# disk near full, iCloud's "Optimise Mac Storage" evicts mirror files, leaving
+# DATALESS placeholders (SF_DATALESS in st_flags). When the source copy of
+# such a file changes, rsync opens the old mirror copy as its delta BASIS and
+# mmaps it. A LaunchAgent may not fault an evicted file back in, so the mmap
+# fails with EDEADLK ("mmap: Resource deadlock avoided"), rsync aborts the
+# whole transfer, and every later file is left stale. --whole-file does not
+# help: openrsync still maps the basis (measured on a forced-dataless file).
+# Remedy: before the real transfer, every file the pre-flight will UPDATE
+# whose mirror copy is dataless is unlinked from the mirror, so rsync writes
+# it fresh. That copy was about to be replaced anyway and its content lives
+# in iCloud's own history; unlinking never downloads it. This is not a skip:
+# any other read error still fails the run, as does a basis evicted between
+# the pre-flight and the transfer (the next night handles it).
+#
+# Notification cooldown: a failure that repeats every night used to push every
+# night — 10+ identical pushes in October. Each push records its CAUSE (a
+# category, plus the rsync error class with the path stripped for a transfer
+# error) in NOTIFY_STATE. The SAME cause pushes again only after COOLDOWN_DAYS;
+# a DIFFERENT cause pushes at once; the first clean run after any recorded
+# failure pushes one "recovered" line and clears the state. The log still
+# carries a FAILED line every night, so the log stays a full record.
+# --dry-run stays outside the cooldown: it never updates the mirror, so its
+# clean exit pushes no "recovered" and keeps the state, and its failure
+# pushes without reading or writing the state.
+#   COOLDOWN_DAYS (7) — a persistent failure still reminds once a week, so it
+#                      cannot fall silent for good, without training the
+#                      owner to swipe the nightly push away.
+#
 # Usage: dev-snapshot.sh [--dry-run]
 #   --dry-run runs only the pre-flight (with --stats added, for the O10
 #   numbers) and never the real, deleting rsync. Its exit code reflects the
@@ -101,6 +130,8 @@
 #   ICLOUD_DIR              default $HOME/Library/Mobile Documents/com~apple~CloudDocs/dev-mirror
 #   DEV_SNAPSHOT_GIT_FLOOR  default 10  (see GIT_FLOOR above)
 #   DEV_SNAPSHOT_MAX_DELETE default 1000 (see MAX_DELETE above)
+#   DEV_SNAPSHOT_NOTIFY_STATE   default $HOME/.claude/dev-snapshot.notify-state
+#   DEV_SNAPSHOT_COOLDOWN_DAYS  default 7 (see COOLDOWN_DAYS above)
 #
 # Liveness line: every exit — success included — ends with one timestamped
 # summary line (`<ISO8601> dev-snapshot ok|FAILED: ...`). This is not
@@ -128,29 +159,76 @@ SUMMARY_FILES="?"
 SUMMARY_DELETED="?"
 # Why the run stopped, for the notification. Counts only, never a path.
 FAIL_REASON="unexpected exit"
+# Stable key for the cooldown: what failed, never a count or a path.
+FAIL_CAUSE="unexpected"
+EVICTED_REPLACED=0
 NOTIFIER="${NOTIFIER_BIN:-${HOME:-}/.claude/scripts/notifier.sh}"
+NOTIFY_STATE="${DEV_SNAPSHOT_NOTIFY_STATE:-${HOME:-}/.claude/dev-snapshot.notify-state}"
+COOLDOWN_DAYS="${DEV_SNAPSHOT_COOLDOWN_DAYS:-7}"
+# Set before the trap can fire; the argument parser below may raise it.
+DRY_RUN=0
 
-notify_failure() {
-  local rc="$1" body
+# push <title> <body text> [priority]
+# shellcheck disable=SC2329  # reached only from the EXIT trap
+push() {
+  local body
   [ -x "$NOTIFIER" ] || return 0
   body="$(mktemp)" || return 0
-  printf 'dev-snapshot exited %s: %s.\nThe iCloud mirror of the Dev folder was not updated. See the job log.\n' \
-    "$rc" "$FAIL_REASON" > "$body"
-  "$NOTIFIER" "dev-snapshot FAILED (exit $rc)" "$body" --priorite high >/dev/null 2>&1 || true
+  printf '%s\n' "$2" > "$body"
+  "$NOTIFIER" "$1" "$body" --priorite "${3:-high}" >/dev/null 2>&1 || true
   rm -f "$body"
+}
+
+# The state file holds one line: <cause><TAB><epoch of the last push>.
+# shellcheck disable=SC2329  # reached only from the EXIT trap
+notify_failure() {
+  local rc="$1" key="exit $1: $FAIL_CAUSE" prev_key="" prev_at=0 now
+  now="$(date +%s)"
+  # A dry run is a manual check: it reports its failure, but it is not the
+  # nightly job, so it neither consults nor rewrites the nightly cooldown.
+  if [ "$DRY_RUN" -eq 1 ]; then
+    push "dev-snapshot --dry-run FAILED (exit $rc)" \
+      "$(printf 'dev-snapshot --dry-run exited %s: %s.\nNothing was changed. See the output.' "$rc" "$FAIL_REASON")"
+    return 0
+  fi
+  if [ -f "$NOTIFY_STATE" ]; then
+    IFS=$'\t' read -r prev_key prev_at < "$NOTIFY_STATE" || true
+  fi
+  case "$prev_at" in ''|*[!0-9]*) prev_at=0 ;; esac
+  if [ "$prev_key" = "$key" ] && [ $(( now - prev_at )) -lt $(( COOLDOWN_DAYS * 86400 )) ]; then
+    echo "notification skipped: same cause as $(date -r "$prev_at" '+%Y-%m-%d'), cooldown ${COOLDOWN_DAYS}d" >&2
+    return 0
+  fi
+  push "dev-snapshot FAILED (exit $rc)" \
+    "$(printf 'dev-snapshot exited %s: %s.\nThe iCloud mirror of the Dev folder was not updated. See the job log.\nThe same cause will not push again for %s days.' \
+      "$rc" "$FAIL_REASON" "$COOLDOWN_DAYS")"
+  printf '%s\t%s\n' "$key" "$now" > "$NOTIFY_STATE" 2>/dev/null || true
+}
+
+# shellcheck disable=SC2329  # reached only from the EXIT trap
+notify_recovery() {
+  [ -f "$NOTIFY_STATE" ] || return 0
+  local prev_key=""
+  IFS=$'\t' read -r prev_key _ < "$NOTIFY_STATE" || true
+  push "dev-snapshot recovered" \
+    "dev-snapshot ran clean: $SUMMARY_FILES files, $SUMMARY_DELETED deleted. Previous failure: ${prev_key:-unknown}." default
+  rm -f "$NOTIFY_STATE"
 }
 
 # Runs on every exit path, including early guard failures — `local rc=$?`
 # must be the very first statement, before anything else in this function
 # can overwrite $?. --help disables this trap before exiting (see below):
 # it's a documentation path, not a job run, and has nothing to report.
+# shellcheck disable=SC2329  # reached only from the EXIT trap
 finish() {
   local rc=$?
   local ts dur
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   dur=$(( $(date +%s) - SUMMARY_START ))
   if [ "$rc" -eq 0 ]; then
-    echo "$ts dev-snapshot ok: $SUMMARY_FILES files, $SUMMARY_DELETED deleted, ${dur}s, exit 0"
+    echo "$ts dev-snapshot ok: $SUMMARY_FILES files, $SUMMARY_DELETED deleted, $EVICTED_REPLACED evicted replaced, ${dur}s, exit 0"
+    # A dry run never updates the mirror, so it cannot have healed it.
+    [ "$DRY_RUN" -eq 1 ] || notify_recovery
   else
     echo "$ts dev-snapshot FAILED: exit $rc, ${dur}s" >&2
     notify_failure "$rc"
@@ -160,7 +238,7 @@ trap finish EXIT
 
 if [ -z "${HOME:-}" ]; then
   echo "FATAL: HOME is not set — could not resolve defaults" >&2
-  FAIL_REASON="HOME is not set"
+  FAIL_REASON="HOME is not set"; FAIL_CAUSE="home-unset"
   exit 2
 fi
 
@@ -171,7 +249,6 @@ MIRROR_DEST="$ICLOUD_DIR/Dev"
 GIT_FLOOR="${DEV_SNAPSHOT_GIT_FLOOR:-10}"
 MAX_DELETE="${DEV_SNAPSHOT_MAX_DELETE:-1000}"
 
-DRY_RUN=0
 case "${1:-}" in
   --dry-run) DRY_RUN=1 ;;
   --help|-h)
@@ -180,27 +257,27 @@ case "${1:-}" in
     exit 0
     ;;
   "") ;;
-  *) echo "unknown argument: $1" >&2; FAIL_REASON="unknown argument"; exit 2 ;;
+  *) echo "unknown argument: $1" >&2; FAIL_REASON="unknown argument"; FAIL_CAUSE="bad-argument"; exit 2 ;;
 esac
 
-command -v rsync >/dev/null 2>&1 || { echo "FATAL: rsync not found" >&2; FAIL_REASON="rsync not found"; exit 2; }
+command -v rsync >/dev/null 2>&1 || { echo "FATAL: rsync not found" >&2; FAIL_REASON="rsync not found"; FAIL_CAUSE="rsync-missing"; exit 2; }
 
 if [ ! -d "$DEV_DIR" ]; then
   echo "FATAL: $DEV_DIR is not a directory — nothing to mirror is UNKNOWN, not empty" >&2
-  FAIL_REASON="source folder missing"
+  FAIL_REASON="source folder missing"; FAIL_CAUSE="source-missing"
   exit 2
 fi
 
 GIT_COUNT="$(find "$DEV_DIR" -maxdepth 2 -name .git -type d 2>/dev/null | wc -l | tr -d ' ')"
 if [ "$GIT_COUNT" -lt "$GIT_FLOOR" ]; then
   echo "FATAL: $DEV_DIR holds $GIT_COUNT */.git dirs, below the floor of $GIT_FLOOR — refusing, this looks empty or partially wiped" >&2
-  FAIL_REASON="$GIT_COUNT git repos found, below the floor of $GIT_FLOOR"
+  FAIL_REASON="$GIT_COUNT git repos found, below the floor of $GIT_FLOOR"; FAIL_CAUSE="git-floor"
   exit 2
 fi
 
 if [ ! -d "$ICLOUD_DIR" ]; then
   echo "FATAL: $ICLOUD_DIR is not a directory — iCloud destination missing" >&2
-  FAIL_REASON="iCloud destination missing"
+  FAIL_REASON="iCloud destination missing"; FAIL_CAUSE="destination-missing"
   exit 2
 fi
 
@@ -214,17 +291,35 @@ MIRROR_DEST_REAL="$(realpath "$ICLOUD_DIR")/Dev"
 case "$MIRROR_DEST_REAL/" in
   "$DEV_REAL/"*)
     echo "FATAL: iCloud destination $MIRROR_DEST_REAL is inside $DEV_REAL — refusing, would mirror into itself" >&2
-    FAIL_REASON="source and destination overlap"
+    FAIL_REASON="source and destination overlap"; FAIL_CAUSE="overlap"
     exit 2
     ;;
 esac
 case "$DEV_REAL/" in
   "$MIRROR_DEST_REAL/"*)
     echo "FATAL: $DEV_REAL is inside iCloud destination $MIRROR_DEST_REAL — refusing, would mirror into itself" >&2
-    FAIL_REASON="source and destination overlap"
+    FAIL_REASON="source and destination overlap"; FAIL_CAUSE="overlap"
     exit 2
     ;;
 esac
+
+# error_class <rsync output>: the first rsync error with its pid and path
+# stripped ("mmap: Resource deadlock avoided"), so the cooldown key stays the
+# same when the same fault hits a different file. Never contains a path.
+error_class() {
+  local line
+  line="$(printf '%s\n' "$1" | grep -m1 -E '^rsync(\([0-9]+\))?: error: ' | sed -E 's/^rsync(\([0-9]+\))?: error: //')"
+  # "<path>: <class>" -> "<class>"; a line with a single colon-free class stays.
+  case "$line" in *": "*) line="${line#*: }" ;; esac
+  printf '%s' "${line:-unclassified}" | tr '\t/' '  ' | cut -c1-80
+}
+
+# is_dataless <path>: SF_DATALESS (0x40000000) set, i.e. evicted by iCloud.
+is_dataless() {
+  local f
+  f="$(stat -f %f "$1" 2>/dev/null)" || return 1
+  [ $(( f & 0x40000000 )) -ne 0 ]
+}
 
 # Filter order matters: includes for the *.example templates must precede
 # the secret excludes below, or the broader .env.* exclude would also catch
@@ -263,7 +358,7 @@ fi
 
 if [ "$PREFLIGHT_RC" -ne 0 ]; then
   echo "FATAL: rsync pre-flight exited $PREFLIGHT_RC — refusing, nothing deleted" >&2
-  FAIL_REASON="rsync pre-flight exited $PREFLIGHT_RC, nothing deleted"
+  FAIL_REASON="rsync pre-flight exited $PREFLIGHT_RC, nothing deleted"; FAIL_CAUSE="preflight: $(error_class "$PREFLIGHT_OUT")"
   exit 1
 fi
 
@@ -272,7 +367,7 @@ DELETE_TOTAL="$(printf '%s\n' "$PREFLIGHT_OUT" | grep -c '^\*deleting')"
 DELETE_COUNT="$(printf '%s\n' "$PREFLIGHT_OUT" | grep '^\*deleting' | grep -vc '/\.git/')"
 if [ "$DELETE_COUNT" -ge "$MAX_DELETE" ]; then
   echo "FATAL: pre-flight would delete $DELETE_COUNT files (>= MAX_DELETE=$MAX_DELETE) — refusing the whole run, nothing deleted" >&2
-  FAIL_REASON="pre-flight would delete $DELETE_COUNT files (limit $MAX_DELETE), nothing deleted"
+  FAIL_REASON="pre-flight would delete $DELETE_COUNT files (limit $MAX_DELETE), nothing deleted"; FAIL_CAUSE="delete-guard"
   exit 1
 fi
 
@@ -286,6 +381,21 @@ fi
 # --stats is added here (never printed on success — only the one summary
 # line above is) purely so the liveness line can report a file count
 # without a second rsync invocation.
+# Evicted basis files (see the header): unlink every mirror copy the transfer
+# is about to UPDATE (`>f` without `+`, so the copy exists) when it is
+# dataless, so rsync writes it fresh instead of mmapping a placeholder.
+while IFS= read -r line; do
+  case "$line" in
+    '>f+'*) continue ;;
+    '>f'*) rel="${line#* }" ;;
+    *) continue ;;
+  esac
+  dest="$MIRROR_DEST/$rel"
+  if [ -f "$dest" ] && is_dataless "$dest"; then
+    rm -f "$dest" && EVICTED_REPLACED=$((EVICTED_REPLACED + 1))
+  fi
+done <<< "$PREFLIGHT_OUT"
+
 REAL_MAX_DELETE=$((DELETE_TOTAL + MAX_DELETE))
 REAL_OUT="$(rsync -a --delete --max-delete="$REAL_MAX_DELETE" --stats "${RSYNC_FILTERS[@]}" "$DEV_DIR/" "$MIRROR_DEST/" 2>&1)"
 RC=$?
@@ -293,7 +403,7 @@ RC=$?
 if [ "$RC" -ne 0 ]; then
   echo "FATAL: rsync exited $RC (--max-delete=$REAL_MAX_DELETE hit, or a transfer error)" >&2
   printf '%s\n' "$REAL_OUT" >&2
-  FAIL_REASON="rsync exited $RC (delete limit hit, or a transfer error)"
+  FAIL_REASON="rsync exited $RC (delete limit hit, or a transfer error)"; FAIL_CAUSE="transfer: $(error_class "$REAL_OUT")"
   exit 1
 fi
 

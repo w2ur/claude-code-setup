@@ -1,1 +1,6 @@
-{ "name": "usage-forecast", "version": "0.1.0", "description": "Rate-limit band above the prompt, toggled with /usage-bar: usage per window, reset countdown, burn rate, projected full time; toasts at 80/95%", "types": "./types/index.d.ts" }
+{
+  "name": "usage-forecast",
+  "version": "0.2.0",
+  "description": "Limits pane and band: each window drawn as a race (your usage against an even pace, a camp where you land at reset or a crash into the limit), reset countdown, burn rate, toasts at 80/95%; a fan-out guard that asks before a Workflow or a second Agent while a window runs high or is projected full before reset. its tab joins /panel (the panel mod); the band shows while the panel is closed, the armed guard always",
+  "types": "./types/index.d.ts"
+}
