@@ -60,7 +60,7 @@ Compare the README.md against the actual project state:
 Landing-page shape (the rules live in the `portfolio-conventions` skill — load it; this list only checks them):
 
 - **Nothing renders above the H1.** The pitch block must be the `<!-- portfolio … -->` comment, never a `---` YAML block (GitHub renders that as a table above the title)
-- **A `**Status:**` line** sits on the first screen
+- **A `**Status:**` line** (`**Statut :**` in a French README) sits on the first screen
 - **Public repo over the length budget** stated in the skill → report, do not cut on your own
 - **Hand-typed counts, versions or file inventories in prose** → replace with a derived source or delete
 - **Placeholders** (`<repo-url>`, `TODO`, `TBD`) → fix from the tree. Leave `<!-- why: owner to write -->` alone and list it in the report

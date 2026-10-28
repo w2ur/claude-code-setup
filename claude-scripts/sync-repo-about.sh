@@ -73,29 +73,55 @@ fi
 #               as clutter at the top of the profile. Its About is hand-set.
 EXCLUDED="analytics {github-username}"
 
-# Extract a scalar from the README's pitch block. Two forms, both only when
-# they open the file (line 1), as in build-inventory.mjs parsePitch:
-#   ---  ...  ---                 frontmatter
-#   <!-- portfolio  ...  -->       HTML comment (invisible on GitHub)
-# Strips surrounding single or double quotes. Empty output means absent.
+# Extract a scalar from the README's pitch block. Strips surrounding single or
+# double quotes. Empty output means absent.
+#
+# THE PITCH-BLOCK RULE (the same rule lives in {portfolio-site}
+# build-inventory.mjs parsePitch, mac-setup tests/run.sh and my-budget-app
+# publish-public.sh strip_pitch; change one, change all four):
+#   - "Normalised" means: a trailing \r stripped, then surrounding spaces and
+#     tabs trimmed. A leading UTF-8 byte-order mark on line 1 is ignored.
+#   - Line 1, normalised, is exactly `<!-- portfolio` (comment form, invisible
+#     on GitHub) or `---` (legacy frontmatter form). Otherwise: no pitch.
+#   - The block closes on the first later line that, normalised, is exactly
+#     `-->` (comment) or `---` (legacy).
+#   - Every non-blank line inside must match `^[A-Za-z_][A-Za-z0-9_]*:`. In the
+#     comment form, any inner line containing `-->` makes the block malformed.
+#   - No closing line is malformed too. A malformed block yields no pitch and
+#     a warning on stderr naming the file.
 read_frontmatter() {
-  awk -v key="$2" '
-    { sub(/\r$/, "") }
+  LC_ALL=C awk -v key="$2" -v file="$1" '
+    function norm(s) { sub(/\r$/, "", s); sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
     NR == 1 {
-      if ($0 ~ /^---[[:space:]]*$/) { close_re = "^---[[:space:]]*$"; inblock = 1; next }
-      if ($0 ~ /^<!-- portfolio[[:space:]]*$/) { close_re = "^-->[[:space:]]*$"; inblock = 1; next }
-      exit
+      if (substr($0, 1, 3) == "\357\273\277") $0 = substr($0, 4)
+      first = norm($0)
+      if (first == "---") closer = "---"
+      else if (first == "<!-- portfolio") closer = "-->"
+      else exit
+      inblock = 1
+      next
     }
-    inblock && $0 ~ close_re { exit }
-    inblock && index($0, key ":") == 1 {
-      sub(/^[^:]*:[[:space:]]*/, "")
-      sub(/[[:space:]]+$/, "")
-      # strip matching outer quotes
-      if ((substr($0,1,1) == "\"" && substr($0,length($0),1) == "\"") ||
-          (substr($0,1,1) == "'"'"'" && substr($0,length($0),1) == "'"'"'"))
-        $0 = substr($0, 2, length($0) - 2)
-      print
-      exit
+    {
+      line = $0; sub(/\r$/, "", line)
+      if (norm(line) == closer) { closed = 1; exit }
+      if (closer == "-->" && index(line, "-->") > 0) { bad = "`-->` inside the block"; exit }
+      if (norm(line) == "") next
+      if (line !~ /^[A-Za-z_][A-Za-z0-9_]*:/) { bad = "line is not a key: " line; exit }
+      if (!found && index(line, key ":") == 1) {
+        sub(/^[^:]*:[[:space:]]*/, "", line)
+        sub(/[[:space:]]+$/, "", line)
+        # strip matching outer quotes
+        if ((substr(line,1,1) == "\"" && substr(line,length(line),1) == "\"") ||
+            (substr(line,1,1) == "'"'"'" && substr(line,length(line),1) == "'"'"'"))
+          line = substr(line, 2, length(line) - 2)
+        value = line; found = 1
+      }
+    }
+    END {
+      if (!inblock) exit
+      if (!closed && bad == "") bad = "no closing line"
+      if (bad != "") { print "WARN: " file ": malformed pitch block (" bad ") - ignored" > "/dev/stderr"; exit }
+      if (found) print value
     }
   ' "$1"
 }

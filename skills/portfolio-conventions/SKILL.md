@@ -23,7 +23,22 @@ These are the active portfolio-wide rules.
 
 ## Documentation
 
-- README: description, stack, local dev, deployment, plus the Layer 2 pitch block (below). Created at project init, never boilerplate.
+- README: plus the Layer 2 pitch block (below). Created at project init, never boilerplate. It is a **landing page, not the manual** — the shape below is checked by `docs-checker`.
+
+### README landing-page shape
+
+GitHub readers decide in the first screen; private READMEs are re-entry docs for the owner and agents. Same shape for both, lighter for private.
+
+1. **Nothing renders above the H1.** Only the pitch comment may precede it.
+2. **First screen (about 25 rendered lines):** H1 = the pitch `name`; one-line promise; `**Status:**` line — one of *in use · maintained · frozen · prototype · archived*, plus public/private; the live link; then one picture for a public app.
+3. **Why**, 1–3 sentences, taken from the owner's own material (hub stories in `{portfolio-site}/src/content/stories-*`, infolettre and devlog texts — `post.md`/`source.md`, never `*.proposed.md`). Load the owner's voice skill first (named in the global CLAUDE.md). Never invent a reason: without a source, write `<!-- why: owner to write -->`.
+4. **Keep:** what, why, status, run locally (commands that work today, env via `.env.example`), deploy in one paragraph, a short Documentation link list, the signature footer. **Move out:** history, incident narratives, rationale, specification rules, structure trees and long env tables go to `docs/*.md`. Only rules an agent must obey go to CLAUDE.md, which is billed every session.
+5. **Length:** a public README stays under about 150 lines. Private: no cap, but history still moves out.
+6. **No hand-typed counts, versions or file inventories in prose.** Derive them (a badge, a link to the data) or omit them.
+7. **Badges only when they report something that changes:** CI, npm version, license, live-site status, store version. No static or vanity badges (last commit, "made with").
+8. **Pictures** live in `docs/media/` (never a deployed or bundled path), each with alt text saying what it shows. Use `<picture>` dark/light sources when the UI has both themes, and a GIF for an interactive app (≤ 5 MB, about 10 s, ffmpeg palette). Capture with a standalone headless Playwright process, not the shared MCP browser.
+9. **Language:** public README in English. A bilingual public app adds `README.fr.md` with only the landing part (promise, why, status, links) and a switch line atop both. French-native projects stay in French.
+10. **On every change, fix what became false; never append the story of the change.**
 - CLAUDE.md: project-specific only, never duplicates global rules. Written in English.
 - No per-repo manifest file. Project metadata lives in the three layers below (decision M12).
 
