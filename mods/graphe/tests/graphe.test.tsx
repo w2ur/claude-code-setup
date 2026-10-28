@@ -2,8 +2,10 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { buildIndex, rank } from '../hooks/closest'
 import { dessiner } from '../hooks/draw'
 import { placer, seedOf, sousGraphe } from '../hooks/layout'
+import type { Graphe } from '../hooks/layout'
 import { register } from '../hooks/register'
 import { GRAPHE, JOURNAL } from './fixture'
 
@@ -27,10 +29,14 @@ type Disk = {
   isShown: boolean
   panesAsked: number
   store: Map<string, unknown>
+  // The model calls asked, and what answers them: a string is the reply, undefined an API error.
+  models: { model: string; system?: string; prompt: string }[]
+  reply: () => Promise<string | undefined>
+  writes: string[]
 }
 
 function world(on: On, options: { isGraphe?: boolean; isJournal?: boolean; store?: Record<string, unknown> } = {}): Disk {
-  const disk: Disk = { files: new Map(), unreadable: new Set(), reads: 0, opens: [], closes: [], panel: { text: 'Panel opened.' }, clock: mock.clock(on), isShown: true, panesAsked: 0, store: new Map(Object.entries(options.store ?? {})) }
+  const disk: Disk = { files: new Map(), unreadable: new Set(), reads: 0, opens: [], closes: [], panel: { text: 'Panel opened.' }, clock: mock.clock(on), isShown: true, panesAsked: 0, store: new Map(Object.entries(options.store ?? {})), models: [], reply: async () => 'NONE', writes: [] }
   on('store.get', (_, e) => ({ value: disk.store.get(e.key) }))
   on('store.set', (_, e) => {
     disk.store.set(e.key, e.value)
@@ -39,6 +45,21 @@ function world(on: On, options: { isGraphe?: boolean; isJournal?: boolean; store
   })
   on('store.delete', (_, e) => {
     disk.store.delete(e.key)
+
+    return { value: undefined }
+  })
+  const usage = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('model.complete', async (_, e) => {
+    disk.models.push({ model: e.model, system: e.system, prompt: e.prompt })
+    const text = await disk.reply()
+
+    return {
+      value: text === undefined ? { isAnswered: false as const, reason: 'api-error' as const, status: 500, error: 'server_error' as const, usage } : { isAnswered: true as const, text, usage },
+    }
+  })
+  on('fs.write', (_, e) => {
+    disk.writes.push(e.path)
 
     return { value: undefined }
   })
@@ -485,4 +506,326 @@ test('once settled, the timer is cancelled and asks for nothing', { options: OPT
   await open($, 'borges')
   await disk.clock.advance(SETTLE_MS)
   expect(disk.panesAsked).toBeGreaterThan(asked)
+})
+
+// The live centre. A prompt as the engine raises it for what the person typed.
+const typed = (text: string, kind: 'composer' | 'bridge' | 'peer' = 'composer') => ({ text, wait: false, origin: { kind } }) as Parameters<Engine['prompt']['submit']>[0]
+
+// What a prompt did, once the fire-and-forget model step has run as far as it can.
+async function say($: Engine, disk: Disk, text: string, kind: 'composer' | 'bridge' | 'peer' = 'composer'): Promise<void> {
+  await $.prompt.submit(typed(text, kind))
+  await disk.clock.settle()
+}
+
+const header = async ($: Engine) => (await rows($, 120))[0]!
+const centreOf = async ($: Engine, label: string): Promise<boolean> => {
+  const ui = await $.ui.mount(pane(80))
+  // The leaves carry the colour; the row that holds them matches the same words.
+  const lit = (await ui.findAll({ type: 'Text', text: new RegExp(label.slice(0, 6)) })).some(t => t.props.color === 'claude')
+  await ui.unmount()
+
+  return lit
+}
+const LEXICAL = { ...OPTIONS, centrage: 'lexical' }
+const AUTO_HEAD = (id: string, terms: string) => `centré sur « ${id} » : le plus proche de cette conversation (${terms})`
+
+test('a prompt naming a node re-centres the open pane, and the header names the matched terms', { options: LEXICAL }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  const before = await header($)
+  expect(before).toContain('2026-01-02')
+  expect(await centreOf($, 'la bibliothèque')).toBe(false)
+  const reads = disk.reads
+  await say($, disk, 'Parlons de la bibliothèque, tard dans la nuit')
+  expect(await header($)).toBe(AUTO_HEAD('la bibliothèque', 'bibliothèque, nuit').replace('bibliothèque, nuit', 'bibliothèque'))
+  expect(await centreOf($, 'la bibliothèque')).toBe(true)
+  // The index is cached with the graph: no file is read again.
+  expect(disk.reads).toBe(reads)
+})
+
+test('the header lists up to three matched terms, strongest first', { options: LEXICAL }, async ($, on) => {
+  world(on)
+  await open($)
+  // "écrire court" holds two of the words; the third comes from its id too.
+  await $.prompt.submit(typed('écrire court'))
+  expect(await header($)).toBe(AUTO_HEAD('écrire court', 'court, écrire'))
+})
+
+test('no match: the pane keeps today\'s most-connected view and journal header', { options: LEXICAL }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  const start = await rows($)
+  await say($, disk, 'rien de connu ici')
+  expect(await rows($)).toEqual(start)
+  expect((await rows($))[0]).toContain('2026-01-02')
+})
+
+// Five invented nodes with words of their own: "aaaa bbbb" and "aaaa cccc" share "aaaa".
+const WORDS: Graphe = {
+  nodes: ['aaaa bbbb', 'aaaa cccc', 'dddd', 'eeee', 'gggg', 'hhhh'].map(id => ({ id, type: 'idee', genre: 'article', premiere_date: '2026-01-02', mentions: [] })),
+  edges: [],
+}
+
+test('hysteresis: a challenger that is better, but not by 20 %, does not take the centre', { options: LEXICAL }, async ($, on) => {
+  const disk = world(on)
+  disk.files.set(`${COFFRE}/graphe.json`, JSON.stringify(WORDS))
+  await open($)
+  await say($, disk, 'aaaa bbbb')
+  expect(await header($)).toContain('« aaaa bbbb »')
+  // The control that can fail: after "cccc", the challenger leads, by less than 20 %.
+  const index = buildIndex(WORDS)
+  const scores = new Map(rank(index, ['aaaa bbbb', 'cccc']).map(r => [r.id, r.score]))
+  const held = scores.get('aaaa bbbb')!
+  const challenger = scores.get('aaaa cccc')!
+  expect(challenger).toBeGreaterThan(held)
+  expect(challenger).toBeLessThan(held * 1.2)
+  await say($, disk, 'cccc')
+  expect(await header($)).toContain('« aaaa bbbb »')
+  // A third prompt widens the gap past 20 %: now it moves.
+  await say($, disk, 'cccc')
+  expect(await header($)).toContain('« aaaa cccc »')
+})
+
+test('/graphe <search> pins the centre; later prompts do not move it until /graphe', { options: LEXICAL }, async ($, on) => {
+  const disk = world(on)
+  await open($, 'borges')
+  await say($, disk, 'la bibliothèque')
+  await say($, disk, 'le miroir')
+  // Pinned: still borges, with the journal header, not the conversation's.
+  expect(await centreOf($, 'borges')).toBe(true)
+  expect(await header($)).toContain('2026-01-02')
+  expect(await header($)).not.toContain('centré sur')
+  // /graphe alone hands the centre back to the conversation, prompts typed meanwhile counted.
+  await $.command.run(commandRun(''))
+  expect(await header($)).toBe(AUTO_HEAD('le miroir', 'miroir'))
+  await say($, disk, 'la nuit')
+  expect(await header($)).toContain('« la nuit »')
+})
+
+test('a search typed in the pane pins too, and an empty one unpins', { options: LEXICAL }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  const ui = await $.ui.mount(pane(80))
+  await ui.input({ key: 'recherche', text: 'borges' })
+  await $.prompt.submit(typed('le miroir'))
+  expect((await ui.find({ type: 'Text', text: /^☉ borges/ }))?.props.color).toBe('claude')
+  await ui.input({ key: 'recherche', text: '' })
+  expect((await ui.findAll({ type: 'Text' }))[0]!.text).toBe(AUTO_HEAD('le miroir', 'miroir'))
+  await ui.unmount()
+  expect(disk.models).toEqual([])
+})
+
+test('the prompts of a plugin, a peer or a command are not the conversation', { options: LEXICAL }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  await say($, disk, 'la bibliothèque', 'peer')
+  await $.prompt.submit({ text: 'la bibliothèque', wait: false, origin: { kind: 'plugin', name: 'autre' } } as Parameters<Engine['prompt']['submit']>[0])
+  await $.prompt.submit({ ...typed('la bibliothèque'), command: { name: 'review', args: '' } } as Parameters<Engine['prompt']['submit']>[0])
+  expect(await header($)).toContain('2026-01-02')
+  // A message from the phone is the person's own.
+  await say($, disk, 'la bibliothèque', 'bridge')
+  expect(await header($)).toContain('« la bibliothèque »')
+})
+
+test('the model is not asked when the lexical step is decided', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  await say($, disk, 'la bibliothèque')
+  expect(await header($)).toContain('« la bibliothèque »')
+  expect(disk.models).toEqual([])
+})
+
+test('no match: the model is asked once with the ids and the prompts, and a listed id centres, "choisi par Haiku"', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  disk.reply = async () => 'le carnet'
+  await open($)
+  await say($, disk, 'rien de connu ici')
+  expect(disk.models).toHaveLength(1)
+  const call = disk.models[0]!
+  expect(call.model).toBe('claude-haiku-5-5')
+  expect(call.system).toContain('NONE')
+  // The visible nodes only, by degree; the conversation as typed.
+  for (const id of ['borges', 'le carnet', 'la promenade']) expect(call.prompt).toContain(id)
+  expect(call.prompt).not.toContain('le brouillon')
+  expect(call.prompt).not.toContain('la tempête')
+  expect(call.prompt).toContain('rien de connu ici')
+  expect(await header($)).toBe(AUTO_HEAD('le carnet', 'choisi par Haiku'))
+  expect(await centreOf($, 'le carnet')).toBe(true)
+})
+
+test('two nodes within 10 % of each other send the model to decide', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  disk.reply = async () => 'le labyrinthe'
+  await open($)
+  await say($, disk, 'borges labyrinthe')
+  expect(disk.models).toHaveLength(1)
+  expect(await header($)).toBe(AUTO_HEAD('le labyrinthe', 'choisi par Haiku'))
+})
+
+test('an answer that is not exactly a listed id is ignored, silently', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  await disk.clock.advance(3 * 60_000)
+  const start = await rows($)
+  const replies = ['NONE', 'borges.', 'Borges', 'je pense à borges', 'le brouillon', '']
+  for (const reply of replies) {
+    disk.reply = async () => reply
+    await disk.clock.advance(3 * 60_000)
+    // One ask per three prompts, on the first of them.
+    for (const text of ['rien de connu', 'toujours rien', 'encore rien']) await say($, disk, text)
+    expect(await rows($)).toEqual(start)
+  }
+  expect(disk.models).toHaveLength(replies.length)
+})
+
+test('an API error leaves the view as it was', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  disk.reply = async () => undefined
+  await open($)
+  const start = await rows($)
+  await say($, disk, 'rien de connu ici')
+  expect(disk.models).toHaveLength(1)
+  expect(await rows($)).toEqual(start)
+})
+
+test('the model is asked at most once per 3 prompts', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  await say($, disk, 'un rien')
+  expect(disk.models).toHaveLength(1)
+  // Plenty of time, too few prompts.
+  await disk.clock.advance(10 * 60_000)
+  await say($, disk, 'deux rien')
+  await say($, disk, 'trois rien')
+  expect(disk.models).toHaveLength(1)
+  await say($, disk, 'quatre rien')
+  expect(disk.models).toHaveLength(2)
+})
+
+test('the model is asked at most once per 2 minutes', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  await say($, disk, 'un rien')
+  // Enough prompts, too little time.
+  for (const text of ['deux rien', 'trois rien', 'quatre rien']) await say($, disk, text)
+  await disk.clock.advance(2 * 60_000 - 1)
+  await say($, disk, 'cinq rien')
+  expect(disk.models).toHaveLength(1)
+  await disk.clock.advance(1)
+  await say($, disk, 'six rien')
+  expect(disk.models).toHaveLength(2)
+})
+
+test('the model sees the last 5 prompts, 2000 characters at most, the newest kept', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  await say($, disk, 'premier rien')
+  for (const text of ['deux rien', 'trois rien']) {
+    await disk.clock.advance(3 * 60_000)
+    await say($, disk, text)
+  }
+  expect(disk.models).toHaveLength(1)
+  for (const text of ['quatre rien', 'cinq rien', 'six rien']) {
+    await disk.clock.advance(3 * 60_000)
+    await say($, disk, text)
+  }
+  await disk.clock.advance(3 * 60_000)
+  await say($, disk, 'sept rien')
+  expect(disk.models).toHaveLength(3)
+  const talk = (n: number) => disk.models[n]!.prompt.split('Conversation (oldest first):\n')[1]!
+  // Five prompts: the first two are out.
+  expect(talk(2)).not.toContain('premier')
+  expect(talk(2)).not.toContain('deux rien')
+  expect(talk(2).split('\n---\n')).toEqual(['trois rien', 'quatre rien', 'cinq rien', 'six rien', 'sept rien'])
+  // Past 2000 characters the oldest goes first.
+  await disk.clock.advance(3 * 60_000)
+  await say($, disk, `${'x'.repeat(2500)} huit rien`)
+  await say($, disk, 'neuf rien')
+  await say($, disk, 'dix rien')
+  const long = talk(3)
+  expect(disk.models).toHaveLength(4)
+  expect(long.length).toBeLessThanOrEqual(2000)
+  expect(long.endsWith('dix rien')).toBe(true)
+  expect(long).not.toContain('trois')
+})
+
+test('the prompt is never blocked on the model', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  disk.reply = async () => {
+    await disk.clock.sleep(60_000)
+
+    return 'le carnet'
+  }
+  await open($)
+  await $.prompt.submit(typed('rien de connu ici'))
+  await disk.clock.settle()
+  expect(disk.models).toHaveLength(1)
+  expect(await header($)).toContain('2026-01-02')
+  await disk.clock.advance(60_000)
+  expect(await header($)).toBe(AUTO_HEAD('le carnet', 'choisi par Haiku'))
+})
+
+test('an answer that arrives after the person pinned a search is dropped', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  disk.reply = async () => {
+    await disk.clock.sleep(60_000)
+
+    return 'le carnet'
+  }
+  await open($)
+  await $.prompt.submit(typed('rien de connu ici'))
+  await disk.clock.settle()
+  await $.command.run(commandRun('borges'))
+  await disk.clock.advance(60_000)
+  expect(await centreOf($, 'borges')).toBe(true)
+  expect(await header($)).not.toContain('Haiku')
+  expect(await centreOf($, 'le carnet')).toBe(false)
+})
+
+test('the lexical setting never asks the model', { options: LEXICAL }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  await say($, disk, 'rien de connu ici')
+  await say($, disk, 'borges labyrinthe')
+  expect(disk.models).toEqual([])
+})
+
+test('the off setting changes nothing: no centre, no header, no model, no memory', { options: { ...OPTIONS, centrage: 'off' } }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  const start = await rows($)
+  await say($, disk, 'la bibliothèque')
+  await say($, disk, 'rien de connu ici')
+  expect(await rows($)).toEqual(start)
+  expect(disk.models).toEqual([])
+  await $.command.run(commandRun(''))
+  expect(await rows($)).toEqual(start)
+})
+
+test('prompts are never written to the store or the disk', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  await open($)
+  const secret = 'confidentiel-xyzzy la bibliothèque'
+  await say($, disk, secret)
+  await say($, disk, 'rien de connu ici')
+  expect(disk.writes).toEqual([])
+  expect(JSON.stringify([...disk.store])).not.toContain('xyzzy')
+  expect([...disk.store.keys()]).toEqual(['paneOpen'])
+})
+
+test('an answer to a question asked before a pin and an unpin is dropped too', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  disk.reply = async () => {
+    await disk.clock.sleep(60_000)
+
+    return 'le carnet'
+  }
+  await open($)
+  await $.prompt.submit(typed('rien de connu ici'))
+  await disk.clock.settle()
+  await $.command.run(commandRun('borges'))
+  await $.command.run(commandRun(''))
+  await disk.clock.advance(60_000)
+  expect(await centreOf($, 'le carnet')).toBe(false)
+  expect(await header($)).not.toContain('Haiku')
 })
