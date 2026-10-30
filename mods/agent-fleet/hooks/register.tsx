@@ -190,9 +190,11 @@ export const register: Register = on => {
     if (arg !== '') return { text: 'Usage: /fleet to open the Fleet tab, /fleet clear to drop finished runs.' }
 
     // Never closes: the panel mod owns the switch, /panel.
-    const shown = (await $.ui.panes()).some(pane => pane.id === PANE && pane.isShown)
-    if (shown) return { text: 'Fleet tab already open; /panel toggles the panel.' }
-    const opened = await $.ui.open({ id: PANE, title: 'Fleet', columns: PANE_COLUMNS })
+    const pane = (await $.ui.panes()).find(p => p.id === PANE)
+    if (pane?.isShown === true) return { text: 'Fleet tab already open; /panel toggles the panel.' }
+    // Opening an open id only retitles it: a tab behind another is raised by
+    // `focus` alone, which also hands it the keys until Escape.
+    const opened = await $.ui.open({ id: PANE, title: 'Fleet', columns: PANE_COLUMNS, ...(pane !== undefined && { focus: true as const }) })
     await $.store.set(PANE_OPEN, true).catch(swallow)
 
     return { text: opened.isPlaced ? 'Fleet tab opened.' : `Fleet tab waiting: ${opened.reason}` }

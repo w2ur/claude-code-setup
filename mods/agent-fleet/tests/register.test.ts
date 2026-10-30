@@ -48,7 +48,7 @@ let hidePane: () => void = () => undefined
 let coverPane: () => void = () => undefined
 
 // What the surface beneath the plugin was asked to do, in order.
-type Shell = { panel: { text: string }; opens: string[]; closes: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
+type Shell = { panel: { text: string }; opens: string[]; raised: boolean[]; closes: string[]; toasts: string[]; clock: ReturnType<typeof mock.clock> }
 
 // What sits beneath the plugin in a real session: a clock, a cost ledger, a
 // surface that places panes and shows toasts, the engine's own (empty) drawing.
@@ -58,7 +58,7 @@ function world(on: On, options: { isPlaced?: boolean } = {}): Shell {
   on('command.register', () => ({ value: { command: 'fleet' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const clock = mock.clock(on, { now: 1_000_000 })
-  const shell: Shell = { panel: { text: 'Panel opened.' }, opens: [], closes: [], toasts: [], clock }
+  const shell: Shell = { panel: { text: 'Panel opened.' }, opens: [], raised: [], closes: [], toasts: [], clock }
   on('command.run', { command: 'panel' }, () => ({ text: shell.panel.text }))
   let isUp = false
   let isCovered = false
@@ -71,10 +71,13 @@ function world(on: On, options: { isPlaced?: boolean } = {}): Shell {
   on('ui.panes', () => ({
     value: isUp ? [{ id: 'fleet', title: 'Fleet', isShown: !isCovered, isFocused: false, isPlaced: true }] : [],
   }))
+  // As the engine: opening an open id only retitles it; `focus` alone raises a
+  // pane that sits behind another tab.
   on('ui.open', (_, e) => {
     shell.opens.push(e.id)
+    if (isUp && isCovered) shell.raised.push(e.focus === true)
+    if (!isUp || e.focus === true) isCovered = false
     isUp = true
-    isCovered = false
 
     return options.isPlaced === false
       ? { value: { isPlaced: false as const, reason: 'terminal too narrow' } }
@@ -402,6 +405,8 @@ test('/fleet opens the tab, asked, and a second /fleet never closes it', async (
 
 // Regression: review fix — an open pane behind another tab is brought forward
 // by /fleet, not answered as already open.
+// Regression: a re-open without `focus` only retitled the tab and left it behind
+// the shown one, while /fleet answered "opened".
 test('/fleet brings a covered tab forward and says "already open" only when it is shown', async ($, on) => {
   const shell = world(on)
 
@@ -410,6 +415,7 @@ test('/fleet brings a covered tab forward and says "already open" only when it i
   const brought = await $.command.run(commandRun('fleet'))
   expect(brought.text).toBe('Fleet tab opened.')
   expect(shell.opens).toEqual(['fleet', 'fleet'])
+  expect(shell.raised).toEqual([true])
 
   const again = await $.command.run(commandRun('fleet'))
   expect(again.text).toBe('Fleet tab already open; /panel toggles the panel.')
