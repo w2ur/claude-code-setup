@@ -16,7 +16,7 @@ My Claude Code workflow, anonymized and documented: the commands, agents, skills
 **Status:** maintained · public. Kept in step with my live `~/.claude/` by [`/sync-setup`](commands/sync-setup.md).<br>
 **Live:** [the workflow guide](https://w2ur.github.io/claude-code-setup/workflow-guide.html), interactive and bilingual (it opens in your browser's language, French or English, and remembers your choice).
 
-[![A tour of the workflow guide: the bug-fix scenario, then the agents and skills, hooks and mods tabs, then the switch to French](docs/media/workflow-guide-tour.gif)](https://w2ur.github.io/claude-code-setup/workflow-guide.html)
+![In Claude Code, a prompt asks to export an AWS-shaped key and run the build; the secret-scan hook refuses the command before it runs, and Claude explains why and how to run it safely](docs/media/secret-scan.gif)
 
 ## Why
 
@@ -35,6 +35,8 @@ Everything here is about writing code. I run other Claude Code automation that i
 ## What's inside
 
 You type a command; it dispatches agents; agents load skills; hooks guard the writes and the pushes; mods draw inside Claude Code itself. The diagram, the full descriptions and the reasons are in [docs/architecture.md](docs/architecture.md).
+
+[![A tour of the workflow guide: the bug-fix scenario, then the agents and skills, hooks and mods tabs, then the switch to French](docs/media/workflow-guide-tour.gif)](https://w2ur.github.io/claude-code-setup/workflow-guide.html)
 
 <details>
 <summary><strong>Commands (8)</strong> — entry points that orchestrate everything</summary>
@@ -102,6 +104,10 @@ You type a command; it dispatches agents; agents load skills; hooks guard the wr
 - **graphe** (`/graphe`): a writings graph drawn in ASCII
 
 </details>
+
+![The Fleet tab of the panel during one turn: six subagents of different types, each drawn as a persona carrying its type's prop, with a body shape per model tier from Haiku to Fable, working and finishing as the run goes](docs/media/mods.gif)
+
+![The Portrait tab on an invented persona: the bust drawn from the portrait's own text, the key points, the memory colours, the 30-day activity, recent memories and pending proposals; then the Graph tab, whole and centred on one node](docs/media/portrait-graphe.gif)
 
 ## Quick start
 
