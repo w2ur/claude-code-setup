@@ -3,10 +3,14 @@ import { calligram, gauge } from './calligram'
 import type { Line as Drawn, Projection } from './calligram'
 import { TYPES, activity, farben } from './farben'
 import type { MemoryType, Stamp } from './farben'
+import { STRINGS, langOf } from './strings'
+import type { Strings } from './strings'
 import { PANE_COLUMNS, cut, ease, rule } from './gfx'
 
 const PANE = 'portrait'
-const PANE_ARGS = { id: PANE, title: 'Portrait', columns: PANE_COLUMNS }
+// The strings of the `lang` option, set once by register.
+let t: Strings = STRINGS.fr
+const paneArgs = () => ({ id: PANE, title: t.paneTitle, columns: PANE_COLUMNS })
 // The command always registered; `alias` (userConfig) adds a second name.
 const COMMAND = 'portrait'
 const RECENT = 8
@@ -80,10 +84,14 @@ function wrap(text: string, width: number): string[] {
   return out
 }
 
-// The lines of the "Points clés" section, without its heading.
+// The key points heading, in either language: a portrait written in one is read
+// whatever the `lang` option says.
+const KEY_POINTS = /^##\s+(?:Points clés|Key points)\s*$/i
+
+// The lines of the key points section, without its heading.
 function keyPoints(text: string): string[] {
   const lines = text.split('\n')
-  const start = lines.findIndex(l => /^##\s+Points clés\s*$/.test(l))
+  const start = lines.findIndex(l => KEY_POINTS.test(l))
   if (start < 0) return []
   const rest = lines.slice(start + 1)
   const end = rest.findIndex(l => /^##\s/.test(l))
@@ -107,7 +115,7 @@ const dateOf = (ms: number): string => {
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`
 }
 
-const typeOf = (raw: string): MemoryType => TYPES.find(t => t === raw) ?? 'autre'
+const typeOf = (raw: string): MemoryType => TYPES.find(known => known === raw) ?? 'autre'
 
 const midnight = (ms: number): number => new Date(ms).setHours(0, 0, 0, 0)
 
@@ -175,7 +183,7 @@ async function verdict($: EngineInterface, portrait: string, check: string): Pro
     r => ({ code: r.exitCode, said: (r.stdout.trim() || r.stderr.trim()).split('\n')[0] ?? '' }),
     () => undefined,
   )
-  if (ran === undefined) return { said: 'contrôle indisponible', tone: 'error' }
+  if (ran === undefined) return { said: t.checkUnavailable, tone: 'error' }
 
   return { said: ran.said.replace(`${portrait} `, ''), tone: EXIT_TONE[ran.code] ?? 'error', size: sizeOf(ran.said) }
 }
@@ -183,8 +191,13 @@ async function verdict($: EngineInterface, portrait: string, check: string): Pro
 const PROPOSAL_NAME = /^proposition-(\d{4}-\d{2}-\d{2})\.md$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 // Where an applied `+` line goes: the script cannot know which section a new
-// fact belongs to, so the owner files it by hand.
-const TO_FILE = '## À ranger'
+// fact belongs to, so the owner files it by hand. Either language's heading is
+// found; a portrait with neither gets the `lang` option's.
+const TO_FILE = [STRINGS.fr.toFileHeading, STRINGS.en.toFileHeading]
+// The first line a retired proposition gets under `traitees/`. Data, not
+// display: the pane never shows it, so it stays the same in every language.
+const RETIRED_DISCARDED = 'écartée'
+const RETIRED_APPLIED = 'appliquées: '
 
 // Pending propositions, oldest first. Treated ones sit under `traitees/`, a
 // directory, so a listing of files leaves them out. A date already copied
@@ -254,8 +267,8 @@ function applyItems(portrait: string, items: Item[]): Applied {
   if (added.length === 0) return { text }
 
   const lines = text.replace(/\n+$/, '').split('\n')
-  const heading = lines.findIndex(l => l.trim() === TO_FILE)
-  if (heading < 0) return { text: [...lines, '', TO_FILE, '', ...added, ''].join('\n') }
+  const heading = lines.findIndex(l => TO_FILE.includes(l.trim()))
+  if (heading < 0) return { text: [...lines, '', t.toFileHeading, '', ...added, ''].join('\n') }
   const next = lines.findIndex((l, i) => i > heading && /^##\s/.test(l))
   let end = next < 0 ? lines.length : next
   while (end > heading + 1 && lines[end - 1]!.trim() === '') end -= 1
@@ -302,33 +315,45 @@ async function retire($: EngineInterface, dir: string, date: string, text: strin
   )
 }
 
-// `/portrait applique <date> <n…>` and `/portrait ecarte <date>`; the reply text.
-async function act($: EngineInterface, options: PluginOptions, words: string[]): Promise<string> {
-  const [verb, date, ...numbers] = words
-  const usage = verb === 'applique' ? `usage : /${typed} applique <AAAA-MM-JJ> <n> [<n>…]` : `usage : /${typed} ecarte <AAAA-MM-JJ>`
+type Verb = 'whole' | 'apply' | 'discard'
+
+// The verb a word names, in either language: `tout`/`all`, `applique`/`apply`,
+// `ecarte`/`discard`.
+function verbOf(word: string | undefined): Verb | undefined {
+  for (const s of [STRINGS.fr, STRINGS.en]) {
+    if (word === s.verbWhole) return 'whole'
+    if (word === s.verbApply) return 'apply'
+    if (word === s.verbDiscard) return 'discard'
+  }
+
+  return undefined
+}
+
+// `/portrait applique <date> <n…>` and `/portrait ecarte <date>` (or `apply`,
+// `discard`); the reply text.
+async function act($: EngineInterface, options: PluginOptions, verb: 'apply' | 'discard', words: string[]): Promise<string> {
+  const [, date, ...numbers] = words
+  const usage = verb === 'apply' ? t.usageApply(typed) : t.usageDiscard(typed)
   if (date === undefined || !DATE.test(date)) return usage
   const p = await locate($, options)
   const path = `${p.propositions}/proposition-${date}.md`
-  if (!(await $.fs.exists(path))) return `pas de proposition du ${date}`
-  if (await $.fs.exists(`${p.propositions}/traitees/proposition-${date}.md`)) {
-    return `proposition du ${date} déjà traitée : retirer proposition-${date}.md à la main`
-  }
+  if (!(await $.fs.exists(path))) return t.noProposal(date)
+  if (await $.fs.exists(`${p.propositions}/traitees/proposition-${date}.md`)) return t.alreadyTreated(date)
   const proposal = String(await $.fs.read(path))
-  const stuck = 'proposition non déplacée : à retirer à la main'
 
-  if (verb === 'ecarte') return (await retire($, p.propositions, date, proposal, 'écartée')) ? `proposition du ${date} écartée` : stuck
+  if (verb === 'discard') return (await retire($, p.propositions, date, proposal, RETIRED_DISCARDED)) ? t.discarded(date) : t.stuck
 
   const chosen = [...new Set(numbers.map(Number))]
   if (chosen.length === 0 || chosen.some(n => !Number.isInteger(n) || n <= 0)) return usage
   const items = proposal.split('\n').map(parseItem).filter((i): i is Item => i !== undefined)
   const unknown = chosen.filter(n => !items.some(i => i.n === n))
-  if (unknown.length > 0) return `numéro absent de la proposition : ${unknown.join(', ')}`
-  if (!(await $.fs.exists(p.portrait))) return 'pas de portrait : rien appliqué'
+  if (unknown.length > 0) return t.unknownNumbers(unknown.join(', '))
+  if (!(await $.fs.exists(p.portrait))) return t.noPortraitApplied
 
   const before = String(await $.fs.read(p.portrait))
   const result = applyItems(before, chosen.map(n => items.find(i => i.n === n)!))
-  if ('missing' in result) return `refusé : ligne ${result.missing} introuvable dans le portrait`
-  if ('ambiguous' in result) return `refusé : ligne ${result.ambiguous} ambiguë`
+  if ('missing' in result) return t.refusedMissing(result.missing)
+  if ('ambiguous' in result) return t.refusedAmbiguous(result.ambiguous)
 
   // The check reads the file, so the new text is written first and the old one
   // kept here to put back.
@@ -342,14 +367,14 @@ async function act($: EngineInterface, options: PluginOptions, words: string[]):
       () => true,
       () => false,
     )
-    if (!isRestored) return code === 1 ? 'restauration impossible : portrait au-dessus du seuil' : 'restauration impossible : contrôle impossible'
+    if (!isRestored) return code === 1 ? t.restoreFailedThreshold : t.restoreFailedCheck
 
-    return code === 1 ? 'refusé : portrait au-dessus du seuil' : 'refusé : contrôle impossible, portrait restauré'
+    return code === 1 ? t.refusedThreshold : t.refusedCheck
   }
 
   const list = chosen.join(', ')
 
-  return (await retire($, p.propositions, date, proposal, `appliquées: ${list}`)) ? `appliquées : ${list}` : `appliquées : ${list} ; ${stuck}`
+  return (await retire($, p.propositions, date, proposal, `${RETIRED_APPLIED}${list}`)) ? t.applied(list) : t.appliedStuck(list, t.stuck)
 }
 
 async function locate($: EngineInterface, options: PluginOptions) {
@@ -427,31 +452,33 @@ let settings: PluginOptions = {}
 const answer: HookOf<'command.run'> = async ($, e) => {
   typed = e.command
   const words = e.args.trim().split(/\s+/).filter(w => w !== '')
-  const isAct = words[0] === 'applique' || words[0] === 'ecarte'
+  const verb = verbOf(words[0])
   // An application changes the disk, so it runs before the snapshot is read.
-  const said = isAct ? await act($, settings, words) : undefined
-  if (!isAct) isWhole = words[0] === 'tout'
+  const isAct = verb === 'apply' || verb === 'discard'
+  const said = isAct ? await act($, settings, verb, words) : undefined
+  if (!isAct) isWhole = verb === 'whole'
   snapshot = await load($, settings)
   replay($)
   const isUp = (await $.ui.panes()).some(pane => pane.id === PANE)
   // A second run redraws the pane it opened; it never opens another.
   if (isUp) $.ui.invalidate('ui.render')
   else {
-    await $.ui.open(PANE_ARGS)
+    await $.ui.open(paneArgs())
     await $.store.set(REMEMBER, true).catch(() => undefined)
   }
 
-  return { text: said ?? (isWhole ? 'Portrait entier.' : 'Points clés.') }
+  return { text: said ?? (isWhole ? t.replyWhole : t.replyKeyPoints) }
 }
 
 export const register: Register = (on, options) => {
   settings = options
+  t = STRINGS[langOf(options.lang)]
   const alias = aliasOf(options.alias)
   const names = alias === undefined ? [COMMAND] : [COMMAND, alias]
 
   on('session.start', async ($, e, next) => {
     for (const name of names) {
-      await $.command.register({ name, description: 'Show the owner portrait key points, recent memories and the portrait check' })
+      await $.command.register({ name, description: t.commandDescription })
     }
 
     // A pane the owner opened comes back unasked; the snapshot is read first so
@@ -461,7 +488,7 @@ export const register: Register = (on, options) => {
       if ((await $.store.get(REMEMBER).catch(() => undefined)) !== true) return
       snapshot = await load($, options)
       replay($)
-      await $.ui.open(PANE_ARGS)
+      await $.ui.open(paneArgs())
     })().catch(() => undefined)
 
     return next(e)
@@ -473,7 +500,7 @@ export const register: Register = (on, options) => {
       if (answer.text === PANEL_OPENED) {
         snapshot = await load($, options)
         replay($)
-        await $.ui.open(PANE_ARGS)
+        await $.ui.open(paneArgs())
         await $.store.set(REMEMBER, true).catch(() => undefined)
       } else if (answer.text === PANEL_CLOSED) {
         await $.ui.close({ id: PANE })
@@ -512,7 +539,7 @@ export const register: Register = (on, options) => {
         for (const piece of wrap(raw, width)) lines.push({ text: piece, isHeading: isWhole && /^#/.test(raw) })
       }
     } else {
-      lines.push({ text: cut('Pas de portrait : plan A, tâche A2', width), dim: true })
+      lines.push({ text: cut(t.noPortrait, width), dim: true })
     }
 
     // The bust stands for the size; a pane too narrow for it keeps the gauge line,
@@ -522,8 +549,8 @@ export const register: Register = (on, options) => {
     const bust =
       size === undefined
         ? undefined
-        : (calligram({ portrait: text, n: size.n, limit: size.limit, fill, width, projection: project(text, size.n, items) }) ?? [
-            gauge(size.n, size.limit, fill, width),
+        : (calligram({ portrait: text, n: size.n, limit: size.limit, fill, width, projection: project(text, size.n, items), strings: t }) ?? [
+            gauge(size.n, size.limit, fill, width, t),
           ])
     // A line of styled segments as one Text; an empty line keeps its row.
     const draw = (line: Drawn) => (
@@ -548,11 +575,11 @@ export const register: Register = (on, options) => {
           </Text>
         ))}
         <Text> </Text>
-        {farben(memories.all, items.length, width).map(draw)}
+        {farben(memories.all, items.length, width, t).map(draw)}
         <Text> </Text>
-        {activity(memories.days, width).map(draw)}
+        {activity(memories.days, width, t).map(draw)}
         <Text> </Text>
-        <Text weight="semibold">{rule('Derniers souvenirs', width)}</Text>
+        <Text weight="semibold">{rule(t.recentHeading, width)}</Text>
         {memories.shown.map(m => (
           <Text>
             <Text dimColor>{m.date} </Text>
@@ -561,10 +588,10 @@ export const register: Register = (on, options) => {
           </Text>
         ))}
         <Text> </Text>
-        <Text weight="semibold">{rule('Propositions', width)}</Text>
-        {proposals.length === 0 ? <Text dimColor>aucune proposition</Text> : null}
+        <Text weight="semibold">{rule(t.proposalsHeading, width)}</Text>
+        {proposals.length === 0 ? <Text dimColor>{t.noProposals}</Text> : null}
         {proposals.flatMap(p => [
-          <Text dimColor>{cut(`du ${p.date} : /${typed} applique ${p.date} <n…> ou ecarte ${p.date}`, width)}</Text>,
+          <Text dimColor>{cut(t.proposalHint(p.date, typed), width)}</Text>,
           ...p.lines.flatMap(l => wrap(l, width)).map(piece => <Text>{piece}</Text>),
         ])}
         {bust === undefined ? <Text> </Text> : null}

@@ -6,6 +6,8 @@ import type { Closest, Index } from './closest'
 import { PANE_COLUMNS, spark } from './gfx'
 import { placerEtapes, premiereCitation, seedOf, sousGraphe, visibles } from './layout'
 import type { Graphe, Position } from './layout'
+import { STRINGS, langOf } from './strings'
+import type { Strings } from './strings'
 
 const PANE = 'graphe'
 const ROWS = 36
@@ -15,11 +17,8 @@ const DRAWING_ROWS = ROWS - 9
 // ①…⑳: at most twenty labels can be numbered.
 const MAX_NODES = 20
 
-const ABSENT = 'Pas de graphe construit : plan B, tâche B6'
-const UNREADABLE = 'graphe.json illisible'
-// On the disk but not readable: on iCloud, a file evicted to the cloud.
-const EVICTED = 'graphe.json illisible (fichier évincé par iCloud ?)'
-const NO_MATCH = 'aucun nœud'
+// The strings of the `lang` option, set once by register.
+let t: Strings = STRINGS.fr
 // The centre's links and the search buttons stop here, then say how many more.
 const LIST_CAP = 8
 // The layout settles on screen: so many images of the run, one per tick, the
@@ -50,33 +49,31 @@ async function readText($: EngineInterface, path: string): Promise<FileRead> {
   )
 }
 
-const more = (hidden: number): string => `… et ${hidden} autre${hidden > 1 ? 's' : ''}`
-
 type Build = { date?: unknown; noeuds?: unknown; liens?: unknown; isoles?: unknown; exit?: unknown }
 
 function counts(b: Build): string {
   const nodes = Number(b.noeuds) || 0
   const share = nodes > 0 ? Math.round(((Number(b.isoles) || 0) / nodes) * 100) : 0
-  const date = typeof b.date === 'string' && b.date !== '' ? b.date : 'date inconnue'
+  const date = typeof b.date === 'string' && b.date !== '' ? b.date : t.unknownDate
 
-  return `Construit le ${date} · ${nodes} nœuds · ${Number(b.liens) || 0} liens · ${share} % isolés`
+  return t.built(date, nodes, Number(b.liens) || 0, share)
 }
 
 // The build journal as one header line: the last line when it ran clean; after
 // a failed run, the last clean build's counts and the failed run's code, since
 // a failed run's zeros say nothing about the graph on the disk.
 function header(journal: FileRead): string {
-  if (journal === 'unreadable') return 'journal illisible'
+  if (journal === 'unreadable') return t.journalUnreadable
   const lines = (journal === 'absent' ? '' : journal.text).split('\n').filter(l => l.trim() !== '')
-  if (lines.length === 0) return 'jamais construit'
+  if (lines.length === 0) return t.neverBuilt
   let last: Build
   try {
     last = JSON.parse(lines.at(-1)!) as Build
   } catch {
-    return 'journal illisible'
+    return t.journalUnreadable
   }
-  if (last.exit === 0) return `${counts(last)} · code 0`
-  const code = `dernier lancement : code ${String(last.exit ?? '?')}`
+  if (last.exit === 0) return `${counts(last)} · ${t.cleanCode}`
+  const code = t.lastRun(String(last.exit ?? '?'))
   for (const line of lines.slice(0, -1).reverse()) {
     try {
       const b = JSON.parse(line) as Build
@@ -86,21 +83,22 @@ function header(journal: FileRead): string {
     }
   }
 
-  return `jamais construit proprement · ${code}`
+  return t.neverBuiltClean(code)
 }
 
-type Unshown = typeof ABSENT | typeof UNREADABLE | typeof EVICTED
+// Why the graph cannot be drawn, a key of the strings table.
+type Unshown = 'absent' | 'unreadable' | 'evicted'
 
 function parse(file: FileRead): Graphe | Unshown {
-  if (file === 'absent') return ABSENT
-  if (file === 'unreadable') return EVICTED
+  if (file === 'absent') return 'absent'
+  if (file === 'unreadable') return 'evicted'
   try {
     const g = JSON.parse(file.text) as Graphe
-    if (!Array.isArray(g.nodes) || !Array.isArray(g.edges)) return UNREADABLE
+    if (!Array.isArray(g.nodes) || !Array.isArray(g.edges)) return 'unreadable'
 
     return g
   } catch {
-    return UNREADABLE
+    return 'unreadable'
   }
 }
 
@@ -162,6 +160,9 @@ const INSTRUCTION =
   'You pick the node of a knowledge graph closest to a conversation. Reply with exactly one id from the list, copied as written, or NONE. No other words.'
 
 type Centrage = 'haiku' | 'lexical' | 'off'
+// The flag that shows every genre, in either language.
+const isFlagAll = (word: string): boolean => word === STRINGS.fr.flagAll || word === STRINGS.en.flagAll
+
 const centrageOf = (options: PluginOptions): Centrage => (options.centrage === 'lexical' || options.centrage === 'off' ? options.centrage : 'haiku')
 
 // Replays the settle from its first image on the one timer this module keeps;
@@ -195,9 +196,7 @@ async function tick($: EngineInterface): Promise<void> {
 
 // The header while the conversation chose the centre.
 const autoHeader = (c: Chosen): string =>
-  `centré sur « ${c.id} » : le plus proche de cette conversation (${c.by === 'haiku' ? 'choisi par Haiku' : c.matched.join(', ')})`
-
-const plural = (count: number, word: string): string => `${count} ${word}${count > 1 ? 's' : ''}`
+  t.centredOn(c.id, c.by === 'haiku' ? t.byHaiku : c.matched.join(', '))
 
 // The drawn subgraph in one line: its degrees, highest first, as a sparkline,
 // then how many nodes and links.
@@ -209,7 +208,7 @@ function stats(sub: Graphe, width: number): string {
   }
   const sorted = [...degrees.values()].sort((a, b) => b - a)
 
-  return cut(`degrés ${spark(sorted, sorted.length)} · ${plural(sub.nodes.length, 'nœud')} · ${plural(sub.edges.length, 'lien')}`, width)
+  return cut(t.stats(spark(sorted, sorted.length), sub.nodes.length, sub.edges.length), width)
 }
 
 function indexFor(g: Graphe, isAll: boolean): Index {
@@ -312,7 +311,7 @@ function search(query: string, setting: Centrage): void {
   const exact = ids.filter(id => plain(id) === wanted)
   const found = exact.length > 0 ? exact : ids.filter(id => plain(id).includes(wanted))
   if (found.length === 1) centre = found[0]!
-  else if (found.length === 0) notice = NO_MATCH
+  else if (found.length === 0) notice = t.noMatch
   else choices = found.sort()
 }
 
@@ -336,6 +335,7 @@ function wrap(text: string, width: number): string[] {
 
 export const register: Register = (on, options) => {
   const setting = centrageOf(options)
+  t = STRINGS[langOf(options.lang)]
   // A fresh registration is a fresh conversation.
   mode = 'auto'
   chosen = undefined
@@ -368,14 +368,14 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'graphe',
-      description: 'Draw the writings graph, or one node and its neighbours; --tout shows posts and fiction too',
+      description: t.commandDescription,
     })
     // The pane the person left open comes back, unasked.
     if ((await $.store.get(PANE_OPEN)) === true && !(await $.ui.panes()).some(pane => pane.id === PANE)) {
       snapshot = await load($, options)
       steer(setting)
       settle($)
-      await $.ui.open({ id: PANE, title: 'Graphe', columns: PANE_COLUMNS, rows: ROWS })
+      await $.ui.open({ id: PANE, title: t.paneTitle, columns: PANE_COLUMNS, rows: ROWS })
     }
 
     return next(e)
@@ -397,7 +397,7 @@ export const register: Register = (on, options) => {
         snapshot = await load($, options)
         steer(setting)
         settle($)
-        await $.ui.open({ id: PANE, title: 'Graphe', columns: PANE_COLUMNS, rows: ROWS })
+        await $.ui.open({ id: PANE, title: t.paneTitle, columns: PANE_COLUMNS, rows: ROWS })
         await $.store.set(PANE_OPEN, true).catch(() => undefined)
       } else if (answer.text === PANEL_CLOSED) {
         await $.ui.close({ id: PANE })
@@ -414,16 +414,16 @@ export const register: Register = (on, options) => {
     snapshot = await load($, options)
     centre = null
     const words = e.args.split(/\s+/).filter(w => w !== '')
-    tout = words.includes('--tout')
-    search(words.filter(w => w !== '--tout').join(' '), setting)
+    tout = words.some(isFlagAll)
+    search(words.filter(w => !isFlagAll(w)).join(' '), setting)
     settle($)
     const isUp = (await $.ui.panes()).some(pane => pane.id === PANE)
     // A second /graphe redraws the pane it opened; it never opens another.
     if (isUp) $.ui.invalidate('ui.render')
-    else await $.ui.open({ id: PANE, title: 'Graphe', columns: PANE_COLUMNS, rows: ROWS })
+    else await $.ui.open({ id: PANE, title: t.paneTitle, columns: PANE_COLUMNS, rows: ROWS })
     await $.store.set(PANE_OPEN, true).catch(() => undefined)
 
-    return { text: centre === null ? 'Graphe.' : `Graphe autour de ${centre}.` }
+    return { text: centre === null ? t.reply : t.replyCentred(centre) }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -443,7 +443,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column">
           <Text dimColor>{cut(head, width)}</Text>
-          <Text>{cut(g, width)}</Text>
+          <Text>{cut(t[g], width)}</Text>
         </Box>
       )
     }
@@ -458,17 +458,17 @@ export const register: Register = (on, options) => {
     const rows = dessiner(sub, images[shownImage]!, width, DRAWING_ROWS, centre, beat)
     const notes: string[] = []
     if (centre === null) {
-      notes.push(...pack(GLYPHS.map(([, glyph, name]) => `${glyph} ${name}`), width))
+      notes.push(...pack(GLYPHS.map(([type, glyph]) => `${glyph} ${t.types[type] ?? type}`), width))
     } else {
       // → the centre does it to the other end; ← the other end does it to the centre.
       const links = shown.edges.flatMap(link =>
         link.from === link.to ? [] : link.from === centre ? [`→ ${link.relation} — ${link.to}`] : link.to === centre ? [`← ${link.relation} — ${link.from}`] : [],
       )
       notes.push(...links.slice(0, LIST_CAP).map(line => cut(line, width)))
-      if (links.length > LIST_CAP) notes.push(cut(more(links.length - LIST_CAP), width))
+      if (links.length > LIST_CAP) notes.push(cut(t.more(links.length - LIST_CAP), width))
       const centreNode = shown.nodes.find(n => n.id === centre)
       const quote = centreNode === undefined ? undefined : premiereCitation(centreNode, tout)
-      if (quote !== undefined && quote !== '') notes.push(...wrap(`« ${quote} »`, width))
+      if (quote !== undefined && quote !== '') notes.push(...wrap(t.quote(quote), width))
     }
 
     return (
@@ -478,7 +478,7 @@ export const register: Register = (on, options) => {
         {'Input' in elements && (
           <elements.Input
             key="recherche"
-            placeholder="Chercher un nœud"
+            placeholder={t.searchPlaceholder}
             onSubmit={value => {
               const before = centre
               search(value, setting)
@@ -500,7 +500,7 @@ export const register: Register = (on, options) => {
             }}
           />
         ))}
-        {choices.length > LIST_CAP && <Text dimColor>{cut(more(choices.length - LIST_CAP), width)}</Text>}
+        {choices.length > LIST_CAP && <Text dimColor>{cut(t.more(choices.length - LIST_CAP), width)}</Text>}
         {rows.map(row => (
           <Text>
             {row.map(span => (span.couleur === undefined ? <Text>{span.texte}</Text> : <Text color={span.couleur}>{span.texte}</Text>))}

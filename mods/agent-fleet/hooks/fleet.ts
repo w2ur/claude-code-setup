@@ -287,6 +287,11 @@ export type SpawnEvent = {
   parentAgentId?: string
   isBackground: boolean
   workflow?: { runId: string; agentIndex: number }
+  // A resume of an agent the session already ran (a message or a notification
+  // waking it), and when the spawn was asked for: an end recorded after that
+  // instant belongs to the resumed run, so it stands.
+  isResume?: boolean
+  requestedAt?: number
   // From the spawn's RESULT: an agentId means it started, a deny means it did not.
   agentId?: string
   model?: string
@@ -316,6 +321,8 @@ export type FleetEvent =
       window?: number
     }
   | { kind: 'tool'; at: number; agentId: string; tool: string }
+  // An agent's loop starts a turn: its first, or one that wakes it after an end.
+  | { kind: 'wake'; at: number; agentId: string }
   | {
       kind: 'complete'
       at: number
@@ -336,6 +343,7 @@ type SpawnInput = {
   parentAgentId?: string
   background: boolean
   workflow?: { runId: string; agentIndex: number }
+  resume?: { agentId: string }
 }
 
 type SpawnResult = { model?: string; agentId?: string; deny?: string }
@@ -345,6 +353,7 @@ export function spawnEventOf(
   result: SpawnResult,
   at: number,
   costUsd: number | undefined,
+  requestedAt?: number,
 ): SpawnEvent {
   const key = input.workflow
     ? `${input.tool_use_id || input.workflow.runId}#${input.workflow.agentIndex}`
@@ -363,6 +372,8 @@ export function spawnEventOf(
     model: result.model,
     deny: result.deny,
     costUsd,
+    ...(input.resume === undefined ? {} : { isResume: true }),
+    ...(requestedAt === undefined ? {} : { requestedAt }),
   }
 }
 
@@ -450,15 +461,28 @@ function revived(agent: Agent): Agent {
   return agent.status === 'lost' ? { ...agent, status: 'running', endedAt: undefined, endedTurn: undefined } : agent
 }
 
+// An agent recorded over (done, failed or lost) that is active again: a
+// background agent ends its turn while its own background work runs, is woken
+// by the task's notification or resumed by a message, and ends again later.
+// Its outcome so far is void and the next completion sets its end; the failure
+// marker goes too, so a second failure is said aloud.
+const ENDED_STATUSES: ReadonlySet<Agent['status']> = new Set(['done', 'failed', 'lost'])
+
+function reopened(agent: Agent): Agent {
+  if (!ENDED_STATUSES.has(agent.status)) return agent
+  return { ...agent, status: 'running', endedAt: undefined, endedTurn: undefined, outcomeSource: undefined, isAnnounced: undefined }
+}
+
 // Records `agent` (already carrying what the event says) as seen at `at`. A
-// sighting proves an agent recorded lost was only silent, unless it is late (it
-// predates a sighting already applied) or predates the loss itself: that one
-// says nothing about the agent after it, and reviving on it makes the agent flap.
+// sighting proves an agent recorded over (lost, or done or failed and then
+// woken) is active again, unless it is late (it predates a sighting already
+// applied) or predates the end itself: that one says nothing about the agent
+// after it, and reviving on it makes the agent flap.
 // Every sighting stamps `lastSeenAt`, which a loss must not predate.
 function sighted(f: Fleet, agent: Agent, at: number, isLate: boolean): void {
-  const isRevived = agent.status === 'lost' && !isLate && at > (agent.endedAt ?? -Infinity)
+  const isRevived = ENDED_STATUSES.has(agent.status) && !isLate && at > (agent.endedAt ?? -Infinity)
   const seen: Agent = { ...agent, lastSeenAt: Math.max(agent.lastSeenAt ?? at, at) }
-  putAgent(f, isRevived ? revived(seen) : seen)
+  putAgent(f, isRevived ? reopened(seen) : seen)
   touch(f, agent.runId, at)
   if (isRevived) settle(f, agent.runId)
 }
@@ -665,9 +689,13 @@ function workflowRunOf(f: Fleet, ev: SpawnEvent, workflowRunId: string): string 
 function onSpawn(f: Fleet, ev: SpawnEvent): void {
   const isWorkflow = ev.workflow !== undefined
   const parent = ev.parentAgentId === undefined ? undefined : f.agents[ev.parentAgentId]
+  // A resumed agent goes on in its own run, wherever and whenever the spawn
+  // that wakes it happens; one whose run was reduced starts afresh.
+  const resumed = ev.isResume === true && !isWorkflow && ev.agentId !== undefined ? f.agents[ev.agentId] : undefined
+  const resumedRunId = resumed !== undefined && f.runs[resumed.runId]?.summary === undefined ? resumed.runId : undefined
   const runId = ev.workflow
     ? workflowRunOf(f, ev, ev.workflow.runId)
-    : (parent?.runId ?? looseRunId(f))
+    : (resumedRunId ?? parent?.runId ?? looseRunId(f))
   const base = ensureRun(f, runId, isWorkflow ? 'workflow' : 'subagents', ev.at)
   const run: Run = {
     ...base,
@@ -703,7 +731,8 @@ function onSpawn(f: Fleet, ev: SpawnEvent): void {
   if (ev.agentId === undefined) return
 
   // What the spawn says wins: an agent it names is running, even one recorded
-  // lost earlier; only a completion seen before the spawn can say otherwise.
+  // lost earlier, or done or failed before a resume asked for it; only a
+  // completion seen before the spawn can say otherwise.
   const known = f.agents[ev.agentId]
   const seen = f.pending[ev.agentId]
   delete f.pending[ev.agentId]
@@ -721,11 +750,13 @@ function onSpawn(f: Fleet, ev: SpawnEvent): void {
             outcomeSource: seen.end.source,
           }),
     }
-  const alive = revived(carried)
+  const isWoken = resumed !== undefined && (resumed.endedAt ?? -Infinity) < (ev.requestedAt ?? ev.at)
+  const alive = isWoken ? reopened(carried) : revived(carried)
+  const description = resumed !== undefined && resumed.description !== '' ? resumed.description : clip(ev.description, LABEL_CHARS)
   const merged: Agent = {
     ...alive,
     parentId: ev.parentAgentId,
-    description: clip(ev.description, LABEL_CHARS),
+    description,
     subagentType: ev.subagentType,
     model: ev.model ?? alive.model,
     isBackground: ev.isBackground,
@@ -777,6 +808,17 @@ function onStep(f: Fleet, ev: Extract<FleetEvent, { kind: 'step' }>): void {
     return
   }
   sighted(f, stepped(agent, f, ev), ev.at, isLateStep(agent, ev))
+}
+
+// The start of a turn of an agent's loop: a sighting like any other, which
+// sets an agent recorded over running again, as its next step would.
+function onWake(f: Fleet, ev: Extract<FleetEvent, { kind: 'wake' }>): void {
+  const agent = f.agents[ev.agentId]
+  if (agent === undefined) {
+    f.pending[ev.agentId] = pendingOf(f, ev.agentId, ev.at)
+    return
+  }
+  sighted(f, agent, ev.at, false)
 }
 
 function onTool(f: Fleet, ev: Extract<FleetEvent, { kind: 'tool' }>): void {
@@ -1052,6 +1094,9 @@ export function reduce(previous: Fleet, event: FleetEvent): Fleet {
       break
     case 'tool':
       onTool(f, event)
+      break
+    case 'wake':
+      onWake(f, event)
       break
     case 'complete':
       onComplete(f, event)

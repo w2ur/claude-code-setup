@@ -322,6 +322,11 @@ function expandedRun(f: Fleet, run: Run, now: number, cols: number, tick: number
   return lines
 }
 
+function isUnfinished(f: Fleet, run: Run): boolean {
+  if (run.summary !== undefined) return false
+  return isLive(f, run) || (run.kind === 'workflow' && run.endedAt === undefined)
+}
+
 // `tick` is the animation frame (spinners, shimmer); 0 draws the first frame.
 export function paneLines(f: Fleet, now: number, columns: number, tick = 0): Line[] {
   const cols = Math.max(MIN_COLUMNS, columns)
@@ -331,8 +336,16 @@ export function paneLines(f: Fleet, now: number, columns: number, tick = 0): Lin
     return [fit([dim('No agents yet. Subagents and workflow runs of this session appear here.')], cols)]
   }
 
-  const lines = expandedRun(f, newest, now, cols, tick)
-  const earlier = runs.slice(0, -1).reverse()
+  // The newest run, and every run not over yet (an agent still running, a
+  // workflow that has not ended), are drawn in full, the most recent first; the
+  // rest fold into one line each.
+  const isExpanded = (run: Run): boolean => run === newest || isUnfinished(f, run)
+  const lines: Line[] = []
+  for (const run of [...runs].reverse().filter(isExpanded)) {
+    if (lines.length > 0) lines.push([text(' ')])
+    lines.push(...expandedRun(f, run, now, cols, tick))
+  }
+  const earlier = runs.filter(run => !isExpanded(run)).reverse()
   if (earlier.length > 0) {
     lines.push([dim('── earlier runs ──')])
     for (const run of earlier) lines.push(collapsedLine(f, run, now))

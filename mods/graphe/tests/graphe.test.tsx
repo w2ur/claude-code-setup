@@ -3,11 +3,14 @@ import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { buildIndex, rank } from '../hooks/closest'
-import { dessiner } from '../hooks/draw'
+import { GLYPHS, dessiner } from '../hooks/draw'
 import { placer, seedOf, sousGraphe } from '../hooks/layout'
 import type { Graphe } from '../hooks/layout'
 import { register } from '../hooks/register'
+import { STRINGS } from '../hooks/strings'
+import type { Strings } from '../hooks/strings'
 import { GRAPHE, JOURNAL } from './fixture'
+import { LIVE_FR, TOUR_FR } from './golden'
 
 // `claude plugin test` leaves nothing beneath `$.fs` or `$.env`: the hooks
 // below stand for the disk, a clock and a store. Everything they hold is invented.
@@ -21,6 +24,8 @@ type Disk = {
   unreadable: Set<string>
   reads: number
   opens: string[]
+  // The title of every pane opened, in order.
+  titles: string[]
   closes: string[]
   // What the panel mod beneath answers to /panel.
   panel: { text: string }
@@ -36,7 +41,7 @@ type Disk = {
 }
 
 function world(on: On, options: { isGraphe?: boolean; isJournal?: boolean; store?: Record<string, unknown> } = {}): Disk {
-  const disk: Disk = { files: new Map(), unreadable: new Set(), reads: 0, opens: [], closes: [], panel: { text: 'Panel opened.' }, clock: mock.clock(on), isShown: true, panesAsked: 0, store: new Map(Object.entries(options.store ?? {})), models: [], reply: async () => 'NONE', writes: [] }
+  const disk: Disk = { files: new Map(), unreadable: new Set(), reads: 0, opens: [], titles: [], closes: [], panel: { text: 'Panel opened.' }, clock: mock.clock(on), isShown: true, panesAsked: 0, store: new Map(Object.entries(options.store ?? {})), models: [], reply: async () => 'NONE', writes: [] }
   on('store.get', (_, e) => ({ value: disk.store.get(e.key) }))
   on('store.set', (_, e) => {
     disk.store.set(e.key, e.value)
@@ -86,6 +91,7 @@ function world(on: On, options: { isGraphe?: boolean; isJournal?: boolean; store
   })
   on('ui.open', (_, e) => {
     disk.opens.push(e.id)
+    disk.titles.push(e.title ?? '')
     isUp = true
 
     return { value: { isPlaced: true as const } }
@@ -828,4 +834,151 @@ test('an answer to a question asked before a pin and an unpin is dropped too', {
   await disk.clock.advance(60_000)
   expect(await centreOf($, 'le carnet')).toBe(false)
   expect(await header($)).not.toContain('Haiku')
+})
+
+// The locale. One tour walks every string the mod can show (the header in each
+// journal state, the stats strip, the legend, links and quote, the search
+// field's placeholder, the no-match and more-matches lines, every unreadable
+// graph, the /graphe replies and the pane title), so the French tour is pinned
+// whole and the English one scanned.
+async function tour($: Engine, disk: Disk, all: string): Promise<string[]> {
+  const out: string[] = []
+  const run = async (args: string, width = 80) => {
+    const reply = (await $.command.run(commandRun(args))) as { text?: string }
+    out.push(`> /graphe ${args} => ${reply.text ?? ''}`)
+    const ui = await $.ui.mount(pane(width))
+    out.push(...(await ui.findAll({ type: 'Text' })).map(t => t.text))
+    out.push(...(await ui.findAll({ type: 'Input' })).map(i => `input: ${String((i.props as { placeholder?: unknown }).placeholder)}`))
+    out.push(...(await ui.findAll({ type: 'Button' })).map(b => `button: ${String((b.props as { label?: unknown }).label)}`))
+    await ui.unmount()
+  }
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await run('')
+  await run('borges')
+  await run('xyz')
+  await run(`${all} e`)
+  await run(`${all} la promenade`)
+  const good = '{"date":"2026-01-01","noeuds":7,"liens":6,"isoles":1,"exit":0}\n'
+  for (const journal of [good + '{"date":"2026-01-08","noeuds":0,"liens":0,"isoles":0,"exit":2}\n', '{"noeuds":2,"liens":1,"isoles":0,"exit":0}\n', '{"exit":2}\n', good + 'pas du json\n']) {
+    disk.files.set(JOURNAL_PATH, journal)
+    await run('', 120)
+  }
+  disk.files.delete(JOURNAL_PATH)
+  disk.unreadable.add(JOURNAL_PATH)
+  await run('', 120)
+  disk.unreadable.delete(JOURNAL_PATH)
+  await run('', 120)
+  disk.unreadable.add(`${COFFRE}/graphe.json`)
+  await run('')
+  disk.unreadable.delete(`${COFFRE}/graphe.json`)
+  disk.files.set(`${COFFRE}/graphe.json`, '{}')
+  await run('')
+  disk.files.set(`${COFFRE}/graphe.json`, 'pas du json')
+  await run('')
+  disk.files.delete(`${COFFRE}/graphe.json`)
+  await run('')
+  out.push(`titles: ${disk.titles.join(', ')}`)
+
+  return out
+}
+
+// The live centre's header, chosen by the words and then by Haiku.
+async function live($: Engine, disk: Disk, words: string): Promise<string[]> {
+  disk.reply = async () => 'le carnet'
+  await open($)
+  await say($, disk, words)
+  const lexical = await header($)
+  await disk.clock.advance(3 * 60_000)
+  for (const text of ['rien de connu', 'toujours rien', 'encore rien']) await say($, disk, text)
+
+  return [lexical, await header($)]
+}
+
+// What the French pane says and the English one must not: each phrase below is
+// in the French tour (the control test proves it), none in the invented graph.
+const FRENCH = [
+  'Construit le', 'nœud', 'liens', 'isolés', 'dernier lancement', 'jamais construit', 'proprement', 'illisible',
+  'évincé', 'Pas de graphe', 'tâche', 'aucun', 'autres', 'date inconnue', 'degrés', 'centré sur', 'le plus proche',
+  'choisi par', '○ idée', '◇ goût', '▢ référence', '◆ vécu', '☉ personne', '✎ geste', 'Chercher', '«', '»',
+  'Graphe.', 'Graphe autour', 'titles: Graphe',
+]
+const frenchIn = (out: readonly string[]): string[] => {
+  const all = out.join('\n')
+
+  return FRENCH.filter(word => all.includes(word))
+}
+const EN = { ...OPTIONS, lang: 'en' }
+
+test('fr: the tour draws and answers exactly as before the English locale', { options: OPTIONS }, async ($, on) => {
+  expect(await tour($, world(on), '--tout')).toEqual([...TOUR_FR])
+})
+
+test('fr: lang "fr" set explicitly draws the same tour', { options: { ...OPTIONS, lang: 'fr' } }, async ($, on) => {
+  expect(await tour($, world(on), '--tout')).toEqual([...TOUR_FR])
+})
+
+test('fr: the live centre headers read exactly as before', { options: OPTIONS }, async ($, on) => {
+  expect(await live($, world(on), 'la bibliothèque')).toEqual([...LIVE_FR])
+})
+
+test('control: every French phrase scanned for is in the French tour', () => {
+  expect(FRENCH.filter(word => !frenchIn([...TOUR_FR, ...LIVE_FR]).includes(word))).toEqual([])
+})
+
+test('en: the whole tour carries no French phrase', { options: EN }, async ($, on) => {
+  const out = await tour($, world(on), '--all')
+  expect(frenchIn(out)).toEqual([])
+  const all = out.join('\n')
+  expect(all).toContain('> /graphe  => Graph.')
+  expect(all).toContain('> /graphe borges => Graph around borges.')
+  expect(all).toContain('Built 2026-01-02 · 9 nodes · 10 links · 11% isolated · exit 0')
+  expect(all).toContain('Built 2026-01-01 · 7 nodes · 6 links · 14% isolated · last run: exit 2')
+  expect(all).toContain('Built unknown date · 2 nodes · 1 link · 0% isolated · exit 0')
+  expect(all).toContain('never built cleanly · last run: exit 2')
+  expect(all).toContain('journal is unreadable')
+  expect(all).toContain('never built')
+  expect(all).toContain('degrees ████▆▆▆▃▃ · 9 nodes · 10 links')
+  expect(all).toContain('○ idea  ◇ taste  ▢ reference  ◆ lived  ☉ person  ✎ gesture')
+  expect(all).toContain('input: Search a node')
+  expect(all).toContain('no node found')
+  expect(all).toContain('… and 2 more')
+  // --all shows the post and the fiction, as --tout does.
+  expect(all).toContain('→ annonce — le brouillon')
+  expect(all).toContain('“Une citation inventée pour le centre du test.”')
+  expect(all).toContain('graphe.json is unreadable (evicted by iCloud?)')
+  expect(all).toContain('graphe.json is unreadable')
+  expect(all).toContain('No graph built: plan B, task B6')
+  expect(all).toContain('titles: Graph')
+})
+
+test('en: the live centre headers carry no French phrase', { options: EN }, async ($, on) => {
+  const out = await live($, world(on), 'la bibliothèque')
+  expect(frenchIn(out)).toEqual([])
+  expect(out).toEqual([
+    'centred on “la bibliothèque”: the closest to this conversation (bibliothèque)',
+    'centred on “le carnet”: the closest to this conversation (chosen by Haiku)',
+  ])
+})
+
+test('en: --tout still shows every genre', { options: EN }, async ($, on) => {
+  world(on)
+  await open($, '--tout la promenade')
+  expect((await rows($)).join('\n')).toContain('→ annonce — le brouillon')
+})
+
+// Every entry of a table, its functions called with sample arguments, so a
+// string no tour reaches is scanned too.
+const rendered = (table: Strings): string[] =>
+  Object.values(table).flatMap(v => (typeof v === 'function' ? [(v as (...a: unknown[]) => string)('x', 2, 3, 4)] : typeof v === 'object' ? Object.values(v) : [v]))
+
+test('en: no entry of the English table carries a French phrase', () => {
+  expect(frenchIn(rendered(STRINGS.en))).toEqual([])
+  // Control: the same scan finds the French table's.
+  expect(frenchIn(rendered(STRINGS.fr)).length).toBeGreaterThan(20)
+})
+
+test('the two tables have the same keys, and name the same node types', () => {
+  expect(Object.keys(STRINGS.en).sort()).toEqual(Object.keys(STRINGS.fr).sort())
+  expect(Object.keys(STRINGS.en.types).sort()).toEqual(Object.keys(STRINGS.fr.types).sort())
+  expect(GLYPHS.map(([type]) => type).filter(type => STRINGS.en.types[type] === undefined || STRINGS.fr.types[type] === undefined)).toEqual([])
 })

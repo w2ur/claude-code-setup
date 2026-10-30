@@ -977,11 +977,15 @@ test('the coarse idle check reads the state itself: a silent workflow run it was
   expect(shell.toasts).toEqual(['probe-run did not start'])
 })
 
-// A run that ended under a previous load of the mod, its end not yet announced.
+// A run that ended under a previous load of the mod, its end not yet announced,
+// and a later run whose agent `busy` still runs.
 const endedUnannounced = (now: number): Fleet => {
   const f = oldFleet()
   f.agents.old = { ...f.agents.old!, status: 'done', startedAt: now - 200, endedAt: now - 100, endedTurn: 1 }
   f.runs['subagents:1'] = { ...f.runs['subagents:1']!, endedAt: now - 100, endedTurn: 1 }
+  f.agents.busy = { ...f.agents.old!, id: 'busy', runId: 'subagents:2', status: 'running', startedAt: now - 50, endedAt: undefined, endedTurn: undefined }
+  f.runs['subagents:2'] = { id: 'subagents:2', kind: 'subagents', startedAt: now - 50, agentIds: ['busy'] }
+  f.order = ['subagents:1', 'subagents:2']
   return f
 }
 
@@ -1002,16 +1006,16 @@ test('a step or a tool call of an agent says nothing aloud: a due run end waits 
   persisted(on, shaped(FLEET_SHAPE, endedUnannounced(shell.clock.now())))
 
   // The kit's call input has no agentId; the hook reads it off the event all the same.
-  await $.tool.call({ tool: 'Bash', command: 'ls', agentId: 'old' } as unknown as Parameters<Engine['tool']['call']>[0])
-  const stream = $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1, agentId: 'old' })
+  await $.tool.call({ tool: 'Bash', command: 'ls', agentId: 'busy' } as unknown as Parameters<Engine['tool']['call']>[0])
+  const stream = $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1, agentId: 'busy' })
   let step = await stream.next()
   while (step.done !== true) step = await stream.next()
   expect(shell.toasts).toEqual([])
-  // The step itself still landed: a finished row draws its tokens, not its last tool.
+  // The step itself still landed.
   expect(await paneText($)).toContain('Tokens 2')
 
   // A completion is recorded: it announces what is due.
-  await complete($, 'old', 'ok')
+  await complete($, 'busy', 'ok')
   expect(shell.toasts).toHaveLength(1)
   expect(shell.toasts[0]).toMatch(/finished · 1\/1 done/)
 })
@@ -1114,4 +1118,46 @@ test('a shown pane with nothing running does not animate; a running agent starts
   await $.agent.spawn(spawnInput())
   await shell.clock.advance(2_000)
   expect(frameWrites).toBeGreaterThan(0)
+})
+
+// Regression: 4220be3 — a subagent's own turn.start counted as a main-loop turn, so the second of two agents launched in one assistant turn opened a run of its own and the first, still running, was folded under "earlier runs"
+test('two agents launched in one assistant turn share one run, even when the first agent\'s loop starts between them', async ($, on) => {
+  world(on)
+  let next = 0
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: `bg${++next}` }))
+
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.agent.spawn(spawnInput({ tool_use_id: 'toolu_a', description: 'first background agent' }))
+  await $.turn.start({ text: 'do the thing', turnId: 'tA', agentId: 'bg1' })
+  await $.agent.spawn(spawnInput({ tool_use_id: 'toolu_b', description: 'second background agent' }))
+
+  const text = await paneText($)
+  expect(text).toContain('first background agent')
+  expect(text).toContain('second background agent')
+  expect(text).toContain('Running · 2')
+  expect(text).not.toContain('earlier runs')
+})
+
+// Regression: 7279aeb — an agent woken after its first end stayed done, its elapsed time frozen at that end
+test('an agent whose loop starts again after its end is running again until its final completion', async ($, on) => {
+  const shell = world(on)
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'bg1' }))
+  await startSession($)
+
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.agent.spawn(spawnInput({ description: 'probe agent' }))
+  await shell.clock.advance(12_000)
+  await complete($, 'bg1', 'waiting on my background work')
+  await advanceInSteps(shell, 60_000)
+  expect(await paneText($)).not.toContain('Running')
+
+  await $.turn.start({ text: 'your background task finished', turnId: 't2', agentId: 'bg1' })
+  await advanceInSteps(shell, 60_000)
+  expect(await paneText($)).toContain('Running · 1')
+
+  await complete($, 'bg1', 'all done')
+  await pastGrace(shell)
+  const text = await paneText($)
+  expect(text).toContain('probe agent · 2:12')
+  expect(text).toContain('all done')
 })

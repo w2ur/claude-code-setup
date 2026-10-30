@@ -1,12 +1,13 @@
 {
   "name": "portrait",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "The Portrait tab of /panel, also opened by /portrait: key points of the owner portrait, the eight most recent memories with their types and a 30-day activity sparkline, pending portrait propositions and the portrait size check drawn as a bust filled with the portrait's own text, and every memory as a coloured square (Farben)",
   "userConfig": {
     "portrait": { "type": "string", "title": "Portrait file", "description": "Path of the portrait markdown file", "default": "~/.claude/portrait.md" },
     "memoires": { "type": "string", "title": "Memories root", "description": "Folder holding <project>/memory/ folders", "default": "~/.claude/projects" },
     "check": { "type": "string", "title": "Check script", "description": "Script whose exit code (0, 1, 2) and first line are shown in the footer", "default": "~/.claude/scripts/portrait-check.sh" },
     "propositions": { "type": "string", "title": "Propositions folder", "description": "Folder where portrait-consolide.sh leaves proposition-<date>.md; treated ones move to traitees/", "default": "~/.claude/state/portrait" },
-    "alias": { "type": "string", "title": "Command alias", "description": "A second command name answering exactly like /portrait (without the slash); empty registers none", "default": "" }
+    "alias": { "type": "string", "title": "Command alias", "description": "A second command name answering exactly like /portrait (without the slash); empty registers none", "default": "" },
+    "lang": { "type": "string", "title": "Language", "description": "fr: the pane and the replies in French; en: in English. The portrait's key points heading is read in either language", "default": "fr", "options": ["fr", "en"] }
   }
 }

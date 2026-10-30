@@ -224,7 +224,22 @@ export const register: Register = on => {
     return closed
   })
 
+  // A turn of the main loop counts a turn: the loose runs and the band's
+  // linger go by it. A turn of an agent's loop does not (counting it split two
+  // agents launched in one assistant turn into two runs); it is a sighting,
+  // taken before the turn runs so that it never postdates the turn's own end.
   on('turn.start', async ($, e, next) => {
+    if (e.agentId !== undefined) {
+      const agentId = e.agentId
+      try {
+        const at = await $.clock.now()
+        await record($, { kind: 'wake', at, agentId })
+      } catch {
+        // observe only, see `swallow`
+      }
+
+      return next(e)
+    }
     const started = await next(e)
     const tzOffsetMin = -new Date().getTimezoneOffset()
     await update($, fleet, f => reduce(f, { kind: 'turn-start', tzOffsetMin })).catch(swallow)
@@ -236,10 +251,11 @@ export const register: Register = on => {
   // refuse it, and a refused spawn must not look like a running agent.
   on('agent.spawn', async ($, e, next) => {
     const costUsd = await $.session.usage().then(u => u.cost?.usd, swallow)
+    const requestedAt = await $.clock.now().catch(swallow)
     const result = await next(e)
     try {
       const at = await $.clock.now()
-      await record($, spawnEventOf(e, result, at, costUsd))
+      await record($, spawnEventOf(e, result, at, costUsd, requestedAt))
       if ('agentId' in result) {
         let isFirst = false
         await update($, fleet, f => {

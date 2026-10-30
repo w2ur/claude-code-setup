@@ -1911,3 +1911,83 @@ describe('the bound reads what is announced before counting a run', () => {
     expect(f.agents.a0).toBeDefined()
   })
 })
+
+describe('an agent that ends its turn and is woken again', () => {
+  // A background agent stops at 12 s while its own background work runs, is
+  // woken by the task's notification, and ends for good at 130 s.
+  const firstStop = (): Fleet =>
+    run([
+      { kind: 'turn-start' },
+      spawnEventOf(SPAWN_LOOSE, { model: 'm', agentId: 'a1' }, 1000, undefined),
+      { kind: 'step', at: 5000, agentId: 'a1', turnId: 't1', index: 0, model: 'm', usage: usage(1, 1) },
+      done('a1', 13_000),
+      GRACE_OUT,
+    ])
+
+  // Regression: 7279aeb — a step after the first end left the agent done, its elapsed time and its run's frozen at the first stop
+  test('a step after its end sets it running again and reopens its run; the next completion is its end', async () => {
+    const stopped = firstStop()
+    expect(stopped.agents.a1).toMatchObject({ status: 'done', endedAt: 13_000 })
+
+    const woken = reduce(stopped, { kind: 'step', at: 60_000, agentId: 'a1', turnId: 't2', index: 0, model: 'm', usage: usage(1, 1) })
+    expect(woken.agents.a1?.status).toBe('running')
+    expect(woken.agents.a1?.endedAt).toBeUndefined()
+    expect(woken.runs['subagents:1']?.endedAt).toBeUndefined()
+    expect(isAnyRunning(woken)).toBe(true)
+
+    const ended = run([done('a1', 131_000), GRACE_OUT], woken)
+    expect(ended.agents.a1).toMatchObject({ status: 'done', endedAt: 131_000 })
+    const stats = runStats(ended, ended.runs['subagents:1']!)
+    expect(formatClock((stats.endedAt ?? 0) - stats.startedAt)).toBe('2:10')
+  })
+
+  test('a tool call or a wake of its loop after its end sets it running again', async () => {
+    expect(reduce(firstStop(), { kind: 'tool', at: 60_000, agentId: 'a1', tool: 'Bash' }).agents.a1?.status).toBe('running')
+    expect(reduce(firstStop(), { kind: 'wake', at: 60_000, agentId: 'a1' }).agents.a1?.status).toBe('running')
+  })
+
+  test('a sighting that predates the end says nothing: the agent stays done', async () => {
+    const f = reduce(firstStop(), { kind: 'tool', at: 12_000, agentId: 'a1', tool: 'Bash' })
+    expect(f.agents.a1).toMatchObject({ status: 'done', endedAt: 13_000 })
+  })
+
+  test('a woken agent that ends with the same outcome is not announced twice', async () => {
+    const first = announce(firstStop(), LATE)
+    expect(first.messages).toHaveLength(1)
+    const again = run(
+      [{ kind: 'step', at: 60_000, agentId: 'a1', turnId: 't2', index: 0, model: 'm', usage: usage(1, 1) }, done('a1', 131_000), GRACE_OUT],
+      first.fleet,
+    )
+    expect(announce(again, LATE).messages).toEqual([])
+  })
+
+  test('a resume spawn of a finished agent keeps it in its own run and sets it running', async () => {
+    const f = run(
+      [
+        { kind: 'turn-start' },
+        spawnEventOf(
+          { ...SPAWN_LOOSE, tool_use_id: 'toolu_msg', description: 'resumed', resume: { agentId: 'a1' } },
+          { model: 'm', agentId: 'a1' },
+          60_000,
+          undefined,
+          59_000,
+        ),
+      ],
+      firstStop(),
+    )
+    expect(f.agents.a1).toMatchObject({ status: 'running', runId: 'subagents:1', startedAt: 1000, description: 'Probe: trivial subagent' })
+    expect(f.order).toEqual(['subagents:1'])
+    expect(f.runs['subagents:1']?.endedAt).toBeUndefined()
+  })
+
+  test('a resume whose run already ended again before its result keeps that end', async () => {
+    const f = run(
+      [
+        { kind: 'turn-start' },
+        spawnEventOf({ ...SPAWN_LOOSE, tool_use_id: 'toolu_msg', resume: { agentId: 'a1' } }, { model: 'm', agentId: 'a1' }, 60_000, undefined, 10_000),
+      ],
+      firstStop(),
+    )
+    expect(f.agents.a1).toMatchObject({ status: 'done', endedAt: 13_000 })
+  })
+})

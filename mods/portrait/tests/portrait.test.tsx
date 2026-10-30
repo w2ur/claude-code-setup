@@ -3,6 +3,9 @@ import type { Engine, MockClock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { capacity } from '../hooks/calligram'
+import { STRINGS } from '../hooks/strings'
+import type { Strings } from '../hooks/strings'
+import { BARE_FR, TOUR_FR } from './golden'
 
 // `claude plugin test` leaves nothing beneath `$.fs`, `$.process` or `$.env`:
 // the test stands for the disk with the hooks below. Everything it holds is
@@ -45,6 +48,8 @@ type Disk = {
   runs: { argv: string[]; env: Record<string, string> | undefined }[]
   writes: { path: string; text: string }[]
   opens: string[]
+  // The title of every pane opened, in order.
+  titles: string[]
   closes: string[]
   // What the panel mod beneath answers to /panel.
   panel: { text: string }
@@ -75,6 +80,7 @@ function world(on: On, options: { isPortrait?: boolean } = {}): Disk {
     runs: [],
     writes: [],
     opens: [],
+    titles: [],
     closes: [],
     panel: { text: 'Panel opened.' },
     registered: [],
@@ -164,6 +170,7 @@ function world(on: On, options: { isPortrait?: boolean } = {}): Disk {
   }))
   on('ui.open', (_, e) => {
     disk.opens.push(e.id)
+    disk.titles.push(e.title ?? '')
     isUp = true
 
     return { value: { isPlaced: true as const } }
@@ -823,4 +830,219 @@ test('a pane opened behind another tab runs no timer, and shows the fill landed 
   // Nothing plays later: shown at last, the fill is already full.
   disk.isCovered = false
   expect(free(await drawn($))).toBe(capacity(60) - Math.round(capacity(60) / 2))
+})
+
+// The locale. One tour walks every string the mod can show (pane lines at three
+// widths, every /portrait reply, the pane title, the heading an applied line is
+// filed under), so the French tour is pinned whole and the English one scanned.
+const EN = { ...OPTIONS, lang: 'en' }
+const SECOND = '2026-11-02'
+const THIRD = '2026-11-03'
+// The line the second proposition removes, there twice so the removal is ambiguous.
+const DUP = '- Premier point synthétique du portrait.\n'
+
+async function tour($: Engine, disk: Disk, verbs: { apply: string; discard: string; all: string; picks: string }): Promise<string[]> {
+  // The portrait the world started with, French or English.
+  const base = disk.files.get(PORTRAIT)?.text ?? PORTRAIT_TEXT
+  const out: string[] = []
+  const say = async (args: string) => {
+    const reply = (await $.command.run(commandRun(args))) as { text?: string }
+    out.push(`> /portrait ${args} => ${reply.text ?? ''}`)
+  }
+  const look = async (...widths: number[]) => {
+    await disk.clock.advance(2000)
+    for (const w of widths) out.push(`[${w}]`, ...(await lines($, w)))
+  }
+  withProposal(disk)
+  disk.checkLine = CHECK_LINE(1000)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await say('')
+  await look(60, 29)
+  await say(verbs.all)
+  await look(60)
+  disk.checkLine = CHECK_LINE(4100)
+  await say('')
+  await look(60)
+  disk.checkLine = undefined
+  await say(verbs.apply)
+  await say(verbs.discard)
+  await say(`${verbs.apply} 2026-12-31 1`)
+  await say(`${verbs.apply} ${DATE} 9`)
+  disk.exit = 2
+  await say(`${verbs.apply} ${DATE} 1`)
+  disk.exit = 0
+  disk.limit = 1
+  await say(`${verbs.apply} ${DATE} 1`)
+  disk.limit = undefined
+  disk.files.set(`${ETAT}/proposition-${SECOND}.md`, { text: '1. [~] ancien: absent du portrait | nouveau: x — s\n2. [-] - Premier point synthétique du portrait. — s\n', mtimeMs: at(4, 2) })
+  await say(`${verbs.apply} ${SECOND} 1`)
+  disk.files.set(PORTRAIT, { text: base + DUP.repeat(base.includes(DUP) ? 1 : 2), mtimeMs: at(1, 1) })
+  await say(`${verbs.apply} ${SECOND} 2`)
+  disk.files.set(PORTRAIT, { text: base, mtimeMs: at(1, 1) })
+  await say(`${verbs.apply} ${DATE} ${verbs.picks}`)
+  out.push(...(disk.files.get(PORTRAIT)?.text ?? '').split('\n').filter(l => l.startsWith('## ')))
+  await say(`${verbs.discard} ${SECOND}`)
+  disk.files.set(PROPOSAL, { text: PROPOSAL_TEXT, mtimeMs: at(4, 1) })
+  await say(`${verbs.discard} ${DATE}`)
+  disk.files.delete(PROPOSAL)
+  await look(60)
+  disk.files.set(`${ETAT}/proposition-${THIRD}.md`, { text: '1. [+] Un fait de plus. — s\n', mtimeMs: at(4, 3) })
+  disk.writes.length = 0
+  disk.limit = 1
+  disk.isRestoreBroken = true
+  await say(`${verbs.apply} ${THIRD} 1`)
+  disk.isRestoreBroken = false
+  out.push(`titles: ${disk.titles.join(', ')}`)
+
+  return out
+}
+
+// The missing portrait: its line, and an application refused for it.
+async function bare($: Engine, disk: Disk, apply: string): Promise<string[]> {
+  withProposal(disk)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const reply = (await $.command.run(commandRun(`${apply} ${DATE} 1`))) as { text?: string }
+  await disk.clock.advance(2000)
+
+  return [`> ${reply.text ?? ''}`, ...(await lines($, 60))]
+}
+
+// What the French pane says and the English one must not: each phrase below is
+// in the French tour (the control test proves it), none in the invented data.
+const FRENCH = [
+  'Points clés', 'Portrait entier', 'caractères', 'car.', ' %', 'Taille', 'après propositions', 'au-delà', 'seuil',
+  'souvenir', ' projet 1', 'utilisateur', 'en attente', 'Activité', 'derniers jours', 'fichier', 'Derniers',
+  'Propositions', 'aucune', 'du 2026', 'ou ecart', 'usage :', 'AAAA', 'pas de proposition', 'déjà traitée',
+  'à la main', 'écartée', 'numéro', 'refusé', 'introuvable', 'ambiguë', 'restauration', 'contrôle', 'appliquées',
+  'rien appliqué', 'Pas de portrait', 'tâche', 'À ranger',
+]
+const frenchIn = (out: readonly string[]): string[] => {
+  const all = out.join('\n')
+
+  return FRENCH.filter(word => all.includes(word))
+}
+
+const FR_VERBS = { apply: 'applique', discard: 'ecarte', all: 'tout', picks: '1 2' }
+// Only the `+` item: the `~` one quotes the French portrait.
+const EN_VERBS = { apply: 'apply', discard: 'discard', all: 'all', picks: '1' }
+
+// An English portrait, as invented as the French one.
+const PORTRAIT_EN = `# Test portrait
+
+## Key points
+
+- First synthetic point of the portrait.
+- Second point, made up for the tests.
+- Third point, unrelated to any real fact.
+
+## Who he is
+
+An imaginary person who serves only as a fixture.
+`
+
+function worldEn(on: On, options: { isPortrait?: boolean } = {}): Disk {
+  const disk = world(on, options)
+  if (options.isPortrait !== false) disk.files.set(PORTRAIT, { text: PORTRAIT_EN, mtimeMs: at(1, 1) })
+
+  return disk
+}
+
+test('fr: the tour draws and answers exactly as before the English locale', { options: OPTIONS }, async ($, on) => {
+  expect(await tour($, world(on), FR_VERBS)).toEqual([...TOUR_FR])
+})
+
+test('fr: lang "fr" set explicitly draws the same tour', { options: { ...OPTIONS, lang: 'fr' } }, async ($, on) => {
+  expect(await tour($, world(on), FR_VERBS)).toEqual([...TOUR_FR])
+})
+
+test('fr: the missing portrait reads exactly as before', { options: OPTIONS }, async ($, on) => {
+  expect(await bare($, world(on, { isPortrait: false }), 'applique')).toEqual([...BARE_FR])
+})
+
+test('control: every French phrase scanned for is in the French tour', () => {
+  expect(FRENCH.filter(word => !frenchIn([...TOUR_FR, ...BARE_FR]).includes(word))).toEqual([])
+})
+
+test('en: the whole tour carries no French phrase', { options: EN }, async ($, on) => {
+  const out = await tour($, worldEn(on), EN_VERBS)
+  expect(frenchIn(out)).toEqual([])
+  const all = out.join('\n')
+  expect(all).toContain('> /portrait  => Key points.')
+  expect(all).toContain('> /portrait all => Whole portrait.')
+  expect(all).toContain('1000 / 4000 characters · 25% · 983 after proposals')
+  expect(all).toContain('+100 chars over the threshold')
+  expect(all).toContain('Size ')
+  expect(all).toContain('── Farben · 4 memories')
+  expect(all).toContain('■ feedback 1  ■ project 1  ■ user 1  ■ reference 1')
+  expect(all).toContain('3 proposals pending')
+  expect(all).toContain('── Activity · last 30 days')
+  expect(all).toContain('2 files changed')
+  expect(all).toContain('── Recent memories')
+  expect(all).toContain('── Proposals')
+  expect(all).toContain('no proposals')
+  expect(all).toContain('from 2026-11-01: /portrait apply 2026-11-01 <n…> or discard')
+  expect(all).toContain('usage: /portrait apply <YYYY-MM-DD> <n> [<n>…]')
+  expect(all).toContain('=> applied: 1')
+  expect(all).toContain('=> refused: line 2 is ambiguous')
+  expect(all).toContain('=> restore failed: portrait over the threshold')
+  // An applied `+` line is filed under the English heading.
+  expect(all).toContain('## To file')
+  expect(all).toContain('titles: Portrait')
+})
+
+test('en: the missing portrait carries no French phrase', { options: EN }, async ($, on) => {
+  const out = await bare($, worldEn(on, { isPortrait: false }), 'apply')
+  expect(frenchIn(out)).toEqual([])
+  expect(out[0]).toBe('> no portrait: nothing applied')
+  expect(out).toContain('No portrait: plan A, task A2')
+})
+
+test('en: "## Key points" is parsed, and so is "## Points clés"', { options: EN }, async ($, on) => {
+  const disk = worldEn(on)
+  await open($)
+  const english = await lines($)
+  expect(english.find(l => l.startsWith('- '))).toBe('- First synthetic point of the portrait.')
+  expect(english.join('\n')).not.toContain('Who he is')
+  disk.files.set(PORTRAIT, { text: PORTRAIT_TEXT, mtimeMs: at(1, 1) })
+  await $.command.run(commandRun(''))
+  const french = await lines($)
+  expect(french.find(l => l.startsWith('- '))).toBe('- Premier point synthétique du portrait.')
+  expect(french.join('\n')).not.toContain('Qui il est')
+})
+
+test('fr: "## Key points" is parsed too', { options: OPTIONS }, async ($, on) => {
+  worldEn(on)
+  await open($)
+  expect((await lines($)).find(l => l.startsWith('- '))).toBe('- First synthetic point of the portrait.')
+})
+
+test('en: the French verbs still work, and answer in English', { options: EN }, async ($, on) => {
+  const disk = worldEn(on)
+  withProposal(disk)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(((await $.command.run(commandRun('tout'))) as { text?: string }).text).toBe('Whole portrait.')
+  expect(((await $.command.run(commandRun(`ecarte ${DATE}`))) as { text?: string }).text).toBe(`proposal from ${DATE} discarded`)
+})
+
+test('fr: the English verbs work too, and answer in French', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  withProposal(disk)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(((await $.command.run(commandRun('all'))) as { text?: string }).text).toBe('Portrait entier.')
+  expect(((await $.command.run(commandRun(`discard ${DATE}`))) as { text?: string }).text).toBe(`proposition du ${DATE} écartée`)
+})
+
+// Every entry of a table, its functions called with sample arguments, so a
+// string no tour reaches (a failed move, a check that could not start) is scanned too.
+const rendered = (table: Strings): string[] =>
+  Object.values(table).flatMap(v => (typeof v === 'function' ? [(v as (...a: unknown[]) => string)(2, 'portrait', 3)] : typeof v === 'object' ? Object.values(v) : [v]))
+
+test('en: no entry of the English table carries a French phrase', () => {
+  expect(frenchIn(rendered(STRINGS.en))).toEqual([])
+  // Control: the same scan finds the French table's.
+  expect(frenchIn(rendered(STRINGS.fr)).length).toBeGreaterThan(20)
+})
+
+test('the two tables have the same keys', () => {
+  expect(Object.keys(STRINGS.en).sort()).toEqual(Object.keys(STRINGS.fr).sort())
 })

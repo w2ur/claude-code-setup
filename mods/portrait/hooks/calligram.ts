@@ -1,4 +1,6 @@
 import { bar, cut, heat } from './gfx'
+import { STRINGS } from './strings'
+import type { Strings } from './strings'
 
 // The portrait's size as a bust drawn in its own words, as data: lines of styled
 // segments, already cut to the pane's width. register.tsx only maps them to
@@ -77,6 +79,8 @@ export type CalligramInput = {
   fill: number
   width: number
   projection?: Projection
+  // The words under the bust; French when absent.
+  strings?: Strings
 }
 
 type Kind = 'letter' | 'cursor' | 'ghost' | 'empty'
@@ -97,10 +101,10 @@ export function layout(input: CalligramInput): { filled: number; ghost: number }
 
 // Under the bust: the size in words, then the size the propositions would make.
 function summary(input: CalligramInput): Line[] {
-  const pct = Math.round((input.n / input.limit) * 100)
-  const base = `${input.n} / ${input.limit} caractères · ${pct} %`
+  const t = input.strings ?? STRINGS.fr
+  const base = t.sizeSummary(input.n, input.limit, Math.round((input.n / input.limit) * 100))
   if (input.projection === undefined) return [[{ text: cut(base, input.width) }]]
-  const after = `${input.projection.size} après propositions`
+  const after = t.afterProposals(input.projection.size)
   if (base.length + 3 + after.length <= input.width) return [[{ text: `${base} · ${after}` }]]
 
   return [[{ text: cut(base, input.width) }], [{ text: cut(after, input.width) }]]
@@ -135,17 +139,17 @@ export function calligram(input: CalligramInput): Line[] | undefined {
     out.push(line)
   }
   if (input.n > input.limit && filled >= capacity(input.width)) {
-    out.push([{ text: cut(`+${input.n - input.limit} car. au-delà du seuil`, input.width), tone: 'error' }])
+    out.push([{ text: cut((input.strings ?? STRINGS.fr).overflow(input.n - input.limit), input.width), tone: 'error' }])
   }
 
   return [...out, ...summary(input)]
 }
 
 // Today's gauge line, kept for a pane too narrow for the bust.
-export function gauge(n: number, limit: number, fill: number, width: number): Line {
+export function gauge(n: number, limit: number, fill: number, width: number, t: Strings = STRINGS.fr): Line {
   const ratio = n / limit
-  const label = ` ${n} / ${limit} car.`
-  const [on, off] = bar(ratio * fill, Math.max(0, width - 'Taille '.length - label.length))
+  const label = t.gaugeCount(n, limit)
+  const [on, off] = bar(ratio * fill, Math.max(0, width - t.gaugeLabel.length - label.length))
 
-  return [{ text: 'Taille ', bold: true }, { text: on, color: heat(ratio, 0.85, 0.97) }, { text: off, dim: true }, { text: label }]
+  return [{ text: t.gaugeLabel, bold: true }, { text: on, color: heat(ratio, 0.85, 0.97) }, { text: off, dim: true }, { text: label }]
 }

@@ -11,13 +11,14 @@ const LABEL = 14
 const NUMBERS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'
 
 // Node types as the extraction writes them (`idee`, `vecu`…), accents optional.
-export const GLYPHS: readonly (readonly [type: string, glyph: string, name: string])[] = [
-  ['idee', '○', 'idée'],
-  ['gout', '◇', 'goût'],
-  ['reference', '▢', 'référence'],
-  ['vecu', '◆', 'vécu'],
-  ['personne', '☉', 'personne'],
-  ['geste', '✎', 'geste'],
+// Their names in the legend are in strings.ts, keyed by the same type.
+export const GLYPHS: readonly (readonly [type: string, glyph: string])[] = [
+  ['idee', '○'],
+  ['gout', '◇'],
+  ['reference', '▢'],
+  ['vecu', '◆'],
+  ['personne', '☉'],
+  ['geste', '✎'],
 ]
 
 export const plain = (text: string): string =>

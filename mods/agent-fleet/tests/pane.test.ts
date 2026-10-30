@@ -331,3 +331,53 @@ describe('moodOf', () => {
     expect(blinks(1)).toEqual([19, 20])
   })
 })
+
+describe('runs still running stay expanded', () => {
+  const done = (agentId: string, at: number): FleetEvent => ({ kind: 'complete', at, agentId, answer: 'ok', isAborted: false, reason: 'answer' })
+
+  // Regression: 4220be3 — only the latest run was expanded, so an older run whose agent still ran was folded under "earlier runs"
+  test('an older run with a running agent is expanded above "earlier runs", the most recent first', () => {
+    const f = run([
+      { kind: 'turn-start' },
+      spawn('a1', 'still running', 'claude-opus-5-5', 1000, false),
+      { kind: 'turn-start' },
+      spawn('a2', 'finished early', 'claude-opus-5-5', 2000, false),
+      { kind: 'turn-start' },
+      spawn('a3', 'long done', 'claude-opus-5-5', 3000, false),
+      done('a3', 3500),
+      { kind: 'expire', at: 10 ** 9 },
+      { kind: 'turn-start' },
+      spawn('a4', 'newest', 'claude-opus-5-5', 4000, false),
+      done('a4', 4500),
+      done('a2', 2500),
+      { kind: 'expire', at: 10 ** 9 },
+    ])
+    const all = rows(paneLines(f, NOW, 100))
+    const earlier = indexOfRow(all, 'earlier runs')
+    const running = indexOfRow(all, 'still running')
+    const newest = indexOfRow(all, 'newest')
+    expect(running).toBeGreaterThan(-1)
+    expect(earlier).toBeGreaterThan(running)
+    // The newest run stays expanded and first; the running one follows it.
+    expect(newest).toBeLessThan(running)
+    // Finished older runs fold as before: one collapsed line each, no agent row.
+    expect(all.some(row => row.includes('finished early'))).toBe(false)
+    expect(all.some(row => row.includes('long done'))).toBe(false)
+    expect(all.slice(earlier + 1)).toHaveLength(2)
+  })
+
+  test('an open workflow run with no agent yet stays expanded too', () => {
+    const f = run([
+      { kind: 'turn-start' },
+      { kind: 'workflow-start', at: 1000, toolUseId: 'toolu_wf', script: SCRIPT },
+      { kind: 'workflow-launched', at: 1001, toolUseId: 'toolu_wf', runId: 'wf_1' },
+      { kind: 'turn-start' },
+      spawn('a4', 'newest', 'claude-opus-5-5', 4000, false),
+      done('a4', 4500),
+      { kind: 'expire', at: 4500 + 20_000 },
+    ])
+    const all = rows(paneLines(f, NOW, 100))
+    expect(indexOfRow(all, 'review-changes')).toBeGreaterThan(indexOfRow(all, 'newest'))
+    expect(all.some(row => row.includes('earlier runs'))).toBe(false)
+  })
+})
