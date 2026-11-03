@@ -128,12 +128,20 @@ reads as *not found* — a false negative, the silent kind.
 **`devlog-collect`** — the plist executes `collect.py` directly so its `uv run
 --script` shebang selects the interpreter. See the FDA note above.
 
-**`graphe`** — weekly build of the writings graph (`my-editor-app/tools/graphe`), via
-`graphe.sh`. **Sunday 08:47, not 08:37**: 08:37 is held every day by another agent, Sunday included, and 08:47 is clear of the other jobs (checked against `jobs-inventory.sh` on 2026-10-27). LaunchAgent because the tool calls
+**`graphe`** — daily build of the writings graph and the corpus index
+(`my-editor-app/tools/graphe`, `my-editor-app/tools/index`), via `graphe.sh`. **Daily since
+2026-11-01** so a text reaching final, a newer `.pages` or a published post reaches the
+index the next morning; the index costs no model call, and the graph re-extracts only
+changed texts. **08:47, not 08:37**: 08:37 is held every day by another agent, and 08:47
+is clear of the other jobs (checked against `jobs-inventory.sh` on 2026-10-27, and for
+every weekday on 2026-11-01). **The indexer needs Node 24 by path and two installed
+dependency trees** — `my-editor-app/node_modules` (the stemmer) and
+`my-editor-app/tools/index/node_modules` (the model runtime); the script checks both and
+exits 2 without them, so list this job before deleting either. LaunchAgent because the tool calls
 `claude -p` (OAuth in the login keychain) and reads the Google Drive File Provider
 mount, which exists only in the GUI session. **The per-run extraction cap lives in
 the script, not the plist**: an unattended run must be cost-bounded, and a backlog
-shows up as `differes` in the journal and drains over weeks. Notifies through
+shows up as `differes` in the journal and drains over the following runs. Notifies through
 `notifier.sh` **only on exit 1 or 2**, with journal counts as the body, never a path
 or a citation (the topic is public). Every run, success included, ends with one
 timestamped summary line so the log's age stays a liveness signal. The script owns

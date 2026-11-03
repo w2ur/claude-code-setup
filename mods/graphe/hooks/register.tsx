@@ -1,13 +1,17 @@
 import type { EngineInterface, PluginOptions, Register, Timer } from 'claude-code'
 
 import { GLYPHS, cut, dessiner, pack, plain } from './draw'
-import { best, buildIndex, rank } from './closest'
+import { MIN_SCORE, best, buildIndex, rank } from './closest'
 import type { Closest, Index } from './closest'
 import { PANE_COLUMNS, spark } from './gfx'
-import { placerEtapes, premiereCitation, seedOf, sousGraphe, visibles } from './layout'
+import { estMasque, placerEtapes, premiereCitation, seedOf, sousGraphe, visibles } from './layout'
 import type { Graphe, Position } from './layout'
+import { MIN_PASSAGE_SCORE, fuseCentre, passageLines, passageParts, rankPart, rankStep } from './passages'
+import type { EntryPassages, PassagePart } from './passages'
+import { askCentre, askEntry, clearStatus, readySocket, startServer, stopServer } from './server'
+import type { CentreAnswer, Via } from './server'
 import { STRINGS, langOf } from './strings'
-import type { Strings } from './strings'
+import type { Lang, Strings } from './strings'
 
 const PANE = 'graphe'
 const ROWS = 36
@@ -19,6 +23,7 @@ const MAX_NODES = 20
 
 // The strings of the `lang` option, set once by register.
 let t: Strings = STRINGS.fr
+let lang: Lang = 'fr'
 // The centre's links and the search buttons stop here, then say how many more.
 const LIST_CAP = 8
 // The layout settles on screen: so many images of the run, one per tick, the
@@ -131,8 +136,10 @@ let timer: Timer | undefined
 // person typed a search, which stays until a search-less /graphe.
 let mode: 'auto' | 'pinned' = 'auto'
 // What the conversation chose (`by`), and the terms that matched when the
-// lexical score chose it. Set only while the drawn `centre` is that node.
-type Chosen = { id: string; matched: string[]; by: 'lexical' | 'haiku' }
+// lexical score chose it, or the titles of the passages that did (`via` how
+// the corpus server found them). Set only while the drawn `centre` is that node.
+// `fused`: a passage-chosen centre's fused score in the server's last answer.
+type Chosen = { id: string; matched: string[]; by: 'lexical' | 'haiku' | 'passages'; via?: Via; fused?: number }
 let chosen: Chosen | undefined
 // The last prompts the person typed, oldest first. Memory only: never written
 // to `$.state`, `$.store` or the disk, and gone with the process.
@@ -143,6 +150,13 @@ let epoch = 0
 let asking = false
 let lastAsk: { at: number; count: number } | undefined
 let indexed: { graphe: Graphe; tout: boolean; index: Index } | undefined
+// The corpus server's passages for the drawn centre, and the latest request of
+// each kind: an answer to an older one is dropped.
+let entry: { id: string; passages: EntryPassages } | undefined
+// The centre whose /entry is in flight: asked once, asked again after a failure.
+let entryAsked: string | undefined
+let centreRequest = 0
+let entryRequest = 0
 
 const KEPT_PROMPTS = 20
 // The centre changes only for a challenger this much better (hysteresis).
@@ -154,6 +168,9 @@ const ASK_EVERY_PROMPTS = 3
 const ASK_EVERY_MS = 2 * 60_000
 const ASK_PROMPTS = 5
 const ASK_CHARS = 2000
+// The /centre text, newest end kept: the server embeds the first 2048 tokens
+// only, which a longer text would fill with its oldest prompts.
+const CENTRE_CHARS = 4000
 const ASK_NODES = 200
 const ASK_TIMEOUT_MS = 15_000
 const INSTRUCTION =
@@ -196,7 +213,7 @@ async function tick($: EngineInterface): Promise<void> {
 
 // The header while the conversation chose the centre.
 const autoHeader = (c: Chosen): string =>
-  t.centredOn(c.id, c.by === 'haiku' ? t.byHaiku : c.matched.join(', '))
+  t.centredOn(c.id, c.by === 'haiku' ? t.byHaiku : c.by === 'passages' ? t.byPassages(c.via ?? 'words', c.matched.join(', ')) : c.matched.join(', '))
 
 // The drawn subgraph in one line: its degrees, highest first, as a sparkline,
 // then how many nodes and links.
@@ -231,7 +248,13 @@ function steer(setting: Centrage): Steer | undefined {
   const was = chosen
   const held = was === undefined ? undefined : ranked.find(r => r.id === was.id)
   let next = was
-  if (top !== undefined && (was === undefined || top.id === was.id || top.score >= (held?.score ?? 0) * SWITCH_RATIO)) {
+  // A centre the passages chose stays for them to decide, unless the words'
+  // winner, on the fused scale (a lone top word match), clears the hold
+  // against its last fused score: no move here and back in askPassages.
+  const isPassageHeld = was?.by === 'passages' && readySocket() !== undefined && top !== undefined && top.id !== was.id && rankPart(1) < (was.fused ?? 0) * SWITCH_RATIO
+  if (isPassageHeld) {
+    next = was
+  } else if (top !== undefined && (was === undefined || top.id === was.id || top.score >= (held?.score ?? 0) * SWITCH_RATIO)) {
     next = { id: top.id, matched: top.matched, by: 'lexical' }
   } else if (top === undefined) {
     if (was?.by === 'lexical') next = undefined
@@ -280,6 +303,7 @@ async function askModel($: EngineInterface): Promise<void> {
       chosen = { id, matched: [], by: 'haiku' }
       centre = id
       settle($)
+      wantEntry($)
     }
     $.ui.invalidate('ui.render')
   } catch {
@@ -287,6 +311,168 @@ async function askModel($: EngineInterface): Promise<void> {
   } finally {
     asking = false
   }
+}
+
+// The corpus server's passages for the drawn centre, fetched once per centre
+// while the server is ready. Never awaited by a hook.
+function wantEntry($: EngineInterface): void {
+  const id = centre
+  if (id === null || readySocket() === undefined || entry?.id === id || entryAsked === id) return
+  const wanted = ++entryRequest
+  entryAsked = id
+  void askEntry($, id).then(
+    passages => {
+      if (wanted !== entryRequest) return
+      entryAsked = undefined
+      if (centre !== id) return
+      entry = { id, passages }
+      $.ui.invalidate('ui.render')
+    },
+    () => {
+      // Failed: the next prompt asks again while this centre holds.
+      if (wanted === entryRequest) entryAsked = undefined
+    },
+  )
+}
+
+// The passages a visible-node ranking may read: those of a hidden genre (posts,
+// fiction) only under `tout`, as `visibles` shows their nodes.
+const shownHits = (answer: CentreAnswer) => answer.passages.filter(p => !estMasque(p.genre, tout))
+
+// The server's last answer backs a passage-chosen centre with nothing: steer
+// no longer holds it for the passages.
+function forgetFused(): void {
+  if (chosen?.by === 'passages') chosen = { ...chosen, fused: 0 }
+}
+
+/**
+ * Re-centres on the corpus server's passages for the last prompts, fused with
+ * the words' ranking. A winner the words found moves the centre only if its
+ * lexical score clears MIN_SCORE; one only the passages found, if its passage
+ * part clears MIN_PASSAGE_SCORE. No passages: the lexical step stands, as
+ * without the server. Never awaited by the prompt; the latest request wins.
+ */
+async function askPassages($: EngineInterface, setting: Centrage): Promise<void> {
+  const wanted = ++centreRequest
+  const wantedEpoch = epoch
+  let answer: CentreAnswer | undefined
+  try {
+    answer = await askCentre($, prompts.slice(-ASK_PROMPTS).join('\n\n').slice(-CENTRE_CHARS))
+  } catch {
+    // No answer: the lexical step stands, and the model decides as before.
+  }
+  const g = snapshot?.graphe
+  if (wanted !== centreRequest || epoch !== wantedEpoch || g === undefined || typeof g === 'string') return
+  const lexical = rank(indexFor(g, tout), prompts)
+  const hits = answer === undefined ? [] : shownHits(answer)
+  if (answer === undefined || hits.length === 0) {
+    forgetFused()
+    if (setting === 'haiku' && isUndecided(lexical)) void askModel($)
+    return
+  }
+  const shown = new Set(visibles(g, tout).nodes.map(n => n.id))
+  const fused = fuseCentre(lexical, hits, shown)
+  const parts = passageParts(hits, shown)
+  const words = new Map(lexical.map(c => [c.id, c]))
+  const top = fused[0]
+  if (top === undefined) {
+    forgetFused()
+    return
+  }
+  const own = words.get(top.id)
+  // Each bar is judged on its own scale, never a fused score against MIN_SCORE.
+  // A winner the words found: their bar, and 0.4.0's hysteresis against a
+  // centre the words chose. A passage-only winner: the passage bar. Either
+  // way, a challenger beats the held centre's fused score by SWITCH_RATIO.
+  const held = chosen?.by === 'lexical' && chosen.id === centre && chosen.id !== top.id ? (words.get(chosen.id)?.score ?? 0) : undefined
+  const heldFused = centre === null || centre === top.id ? 0 : (fused.find(c => c.id === centre)?.score ?? 0)
+  const clearsBar = own !== undefined ? own.score >= MIN_SCORE && (held === undefined || own.score >= held * SWITCH_RATIO) : top.score >= MIN_PASSAGE_SCORE
+  const moves = clearsBar && top.score >= heldFused * SWITCH_RATIO
+  if (moves && top.id !== centre) {
+    chosen = own !== undefined ? { id: top.id, matched: own.matched, by: 'lexical' } : { id: top.id, matched: top.matched, by: 'passages', via: answer.by }
+    centre = top.id
+    settle($)
+    $.ui.invalidate('ui.render')
+  }
+  if (chosen?.by === 'passages' && chosen.id === centre) chosen = { ...chosen, fused: fused.find(c => c.id === centre)?.score ?? 0 }
+  wantEntry($)
+  if (setting === 'haiku' && isUndecidedFused(top, fused[1], lexical, parts)) void askModel($)
+}
+
+// Whether the model should break the fused ranking's tie, by the part that
+// chose the winner: the words' own rule when the words found it (the fused
+// scores of neighbouring ranks are always within TIE_RATIO); for a passage-only
+// winner, a miss of the passage bar, or a runner-up whose passage part is
+// within one rank of the winner's.
+function isUndecidedFused(top: Closest, second: Closest | undefined, lexical: readonly Closest[], parts: ReadonlyMap<string, PassagePart>): boolean {
+  if (lexical.some(c => c.id === top.id)) return isUndecided(lexical)
+  const mine = parts.get(top.id)
+  if (mine === undefined || mine.part < MIN_PASSAGE_SCORE) return true
+  const theirs = second === undefined ? 0 : (parts.get(second.id)?.part ?? 0)
+
+  // A tolerance: a runner-up exactly one rank behind sits on the line.
+  return mine.part - theirs <= rankStep(mine.rank) + 1e-12
+}
+
+// Opens the pane; once it is drawn, the corpus server starts for this opening.
+async function openPane($: EngineInterface, options: PluginOptions, setting: Centrage): Promise<void> {
+  const opened = await $.ui.open({ id: PANE, title: t.paneTitle, columns: PANE_COLUMNS, rows: ROWS })
+  if (!opened.isPlaced || setting === 'off') return
+  const serveur = String(options.serveur ?? '').trim()
+  if (serveur === '') return
+  const coffre = await expand($, String(options.coffre))
+  startServer($, {
+    node: await expand($, String(options.node ?? 'node')),
+    serveur: await expand($, serveur),
+    index: `${coffre}/index-corpus.json`,
+    graphe: `${coffre}/graphe.json`,
+    unavailable: t.passagesUnavailable,
+    onReady: () => {
+      wantEntry($)
+      // Prompts typed while it started: one query with them.
+      if (mode === 'auto' && prompts.length > 0) void askPassages($, setting)
+    },
+    onGone: () => {
+      entry = undefined
+      $.ui.invalidate('ui.render')
+    },
+  })
+}
+
+// Whether this mod's pane is still open; a `$` that cannot say counts as closed.
+async function isPaneUp($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.ui.panes()).some(pane => pane.id === PANE)
+  } catch {
+    return false
+  }
+}
+
+// How long after a close the pane is looked for again, in case the engine
+// still listed it when the close resolved.
+const CLOSE_RECHECK_MS = 250
+
+function endServer($: EngineInterface): void {
+  closePane()
+  clearStatus($)
+}
+
+async function recheckClose($: EngineInterface): Promise<void> {
+  try {
+    await $.clock.sleep(CLOSE_RECHECK_MS)
+  } catch {
+    return
+  }
+  if (!(await isPaneUp($))) endServer($)
+}
+
+// The pane closed, or the panel did: the server goes with it, and its passages.
+function closePane(): void {
+  stopServer()
+  entry = undefined
+  entryAsked = undefined
+  centreRequest += 1
+  entryRequest += 1
 }
 
 // A search, without accents or case, over the node ids: an exact id wins,
@@ -335,7 +521,8 @@ function wrap(text: string, width: number): string[] {
 
 export const register: Register = (on, options) => {
   const setting = centrageOf(options)
-  t = STRINGS[langOf(options.lang)]
+  lang = langOf(options.lang)
+  t = STRINGS[lang]
   // A fresh registration is a fresh conversation.
   mode = 'auto'
   chosen = undefined
@@ -345,6 +532,9 @@ export const register: Register = (on, options) => {
   asking = false
   lastAsk = undefined
   indexed = undefined
+  closePane()
+  centreRequest = 0
+  entryRequest = 0
 
   on('prompt.submit', async ($, e, next) => {
     // Only what the person typed: a plugin's, a peer's or a notification's text is not the conversation.
@@ -354,9 +544,16 @@ export const register: Register = (on, options) => {
       promptCount += 1
       try {
         const result = steer(setting)
-        if (result?.moved) settle($)
+        if (result?.moved) {
+          settle($)
+          wantEntry($)
+        }
         if (result?.redraw) $.ui.invalidate('ui.render')
-        if (result !== undefined && setting === 'haiku' && isUndecided(result.ranked)) void askModel($)
+        // An /entry that failed is asked again while the centre holds.
+        wantEntry($)
+        // With the corpus server ready, its passages decide first, then the model.
+        if (result !== undefined && readySocket() !== undefined) void askPassages($, setting)
+        else if (result !== undefined && setting === 'haiku' && isUndecided(result.ranked)) void askModel($)
       } catch {
         // The pane is this mod's affair; the prompt goes through.
       }
@@ -375,16 +572,23 @@ export const register: Register = (on, options) => {
       snapshot = await load($, options)
       steer(setting)
       settle($)
-      await $.ui.open({ id: PANE, title: t.paneTitle, columns: PANE_COLUMNS, rows: ROWS })
+      await openPane($, options, setting)
     }
 
     return next(e)
   })
 
   // Closed by the person: it stays closed. A plugin's close, an unload or a
-  // close a hook refused forgets nothing.
+  // close a hook refused forgets nothing. Any close of the pane ends the
+  // corpus server.
   on('ui.close', async ($, e, next) => {
     const closed = await next(e)
+    // A close another hook refused leaves the pane, and its server, up. The
+    // pane may still be listed when `next` resolves: look again a little later.
+    if (e.id === PANE) {
+      if (!(await isPaneUp($))) endServer($)
+      else void recheckClose($)
+    }
     if (e.id === PANE && e.origin.kind === 'person') await $.store.delete(PANE_OPEN).catch(() => undefined)
 
     return closed
@@ -397,7 +601,7 @@ export const register: Register = (on, options) => {
         snapshot = await load($, options)
         steer(setting)
         settle($)
-        await $.ui.open({ id: PANE, title: t.paneTitle, columns: PANE_COLUMNS, rows: ROWS })
+        await openPane($, options, setting)
         await $.store.set(PANE_OPEN, true).catch(() => undefined)
       } else if (answer.text === PANEL_CLOSED) {
         await $.ui.close({ id: PANE })
@@ -417,10 +621,11 @@ export const register: Register = (on, options) => {
     tout = words.some(isFlagAll)
     search(words.filter(w => !isFlagAll(w)).join(' '), setting)
     settle($)
+    wantEntry($)
     const isUp = (await $.ui.panes()).some(pane => pane.id === PANE)
     // A second /graphe redraws the pane it opened; it never opens another.
     if (isUp) $.ui.invalidate('ui.render')
-    else await $.ui.open({ id: PANE, title: t.paneTitle, columns: PANE_COLUMNS, rows: ROWS })
+    else await openPane($, options, setting)
     await $.store.set(PANE_OPEN, true).catch(() => undefined)
 
     return { text: centre === null ? t.reply : t.replyCentred(centre) }
@@ -469,6 +674,8 @@ export const register: Register = (on, options) => {
       const centreNode = shown.nodes.find(n => n.id === centre)
       const quote = centreNode === undefined ? undefined : premiereCitation(centreNode, tout)
       if (quote !== undefined && quote !== '') notes.push(...wrap(t.quote(quote), width))
+      // The corpus passages the centre's mentions fall in, while the server answers.
+      if (entry?.id === centre) notes.push(...passageLines(entry.passages, width, genre => estMasque(genre, tout), lang))
     }
 
     return (
@@ -483,6 +690,7 @@ export const register: Register = (on, options) => {
               const before = centre
               search(value, setting)
               if (centre !== before) settle($)
+              wantEntry($)
               redraw()
             }}
           />
@@ -496,6 +704,7 @@ export const register: Register = (on, options) => {
               if (centre !== id) settle($)
               centre = id
               choices = []
+              wantEntry($)
               redraw()
             }}
           />

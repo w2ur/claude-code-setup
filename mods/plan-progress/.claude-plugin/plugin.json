@@ -1,0 +1,1 @@
+{ "name": "plan-progress", "version": "0.1.0", "author": { "name": "{author-name}" }, "description": "Read-only view of the plans being executed, derived from their execution ledgers: the Plans tab of /panel", "types": "./types/index.d.ts" }

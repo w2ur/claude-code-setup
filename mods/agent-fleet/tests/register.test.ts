@@ -3,7 +3,11 @@ import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { Fleet } from '../types'
+import { endWaitMs } from '../hooks/budget'
 import { FLEET_SHAPE, RUN_END_GRACE_MS, emptyFleet } from '../hooks/fleet'
+import { HEARTBEAT_MS, SESSION_WATCH_DIR, parsePeer } from '../hooks/peers'
+import { fakeFs } from './fakeFs'
+import type { FakeFile } from './fakeFs'
 
 // The mod's state belongs to the mod: a hook of the test cannot read it, so
 // these tests drive the hooks through the engine and read what the band draws.
@@ -1166,4 +1170,265 @@ test('an agent whose loop starts again after its end is running again until its 
   const text = await paneText($)
   expect(text).toContain('probe agent · 2:12')
   expect(text).toContain('all done')
+})
+
+// Publishing this session's snapshot for the other sessions.
+
+const DIR = `/home/{username}/.claude/${SESSION_WATCH_DIR}`
+
+function published(
+  on: On,
+  shell: Shell,
+  id: { current: string },
+  env: Record<string, string> = { HOME: '/home/t' },
+  isHung: () => boolean = () => false,
+) {
+  mock.env(on, env)
+  on('session.id', () => ({ value: id.current }))
+  on('session.end', (_, e) => ({ sessionId: e.sessionId }))
+  const files = new Map<string, FakeFile>()
+  const fs = fakeFs(on, files, () => shell.clock.now(), isHung)
+  const read = (sessionId: string) => {
+    const file = files.get(`${DIR}/${sessionId}.fleet.json`)
+
+    return file === undefined ? undefined : parsePeer(file.text)
+  }
+
+  return { files, fs, read }
+}
+
+test('session.start publishes an empty snapshot under this session id', async ($, on) => {
+  const shell = world(on)
+  const { read } = published(on, shell, { current: 's1' })
+  await startSession($)
+  await shell.clock.advance(1000)
+
+  expect(read('s1')).toMatchObject({ v: 1, sessionId: 's1', cwd: '/tmp', runs: [] })
+})
+
+test('a spawn then one tick rewrites the snapshot with the run; an unchanged tick writes nothing', async ($, on) => {
+  const shell = world(on)
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'abc' }))
+  const { read, fs } = published(on, shell, { current: 's1' })
+  await startSession($)
+  await shell.clock.advance(1000)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.agent.spawn(spawnInput())
+  await shell.clock.advance(1000)
+  expect(read('s1')?.runs).toHaveLength(1)
+
+  const before = fs.writes().length
+  await shell.clock.advance(2000)
+  expect(fs.writes().length).toBe(before)
+})
+
+test('an idle session with no run ever still heartbeats once HEARTBEAT_MS has passed', async ($, on) => {
+  const shell = world(on)
+  const { read, fs } = published(on, shell, { current: 's1' })
+  await startSession($)
+  await shell.clock.advance(1000)
+  const first = read('s1')?.heartbeatAt ?? 0
+  const before = fs.writes().length
+
+  await shell.clock.advance(HEARTBEAT_MS)
+  expect(fs.writes().length).toBe(before + 1)
+  expect(read('s1')?.heartbeatAt).toBeGreaterThan(first)
+  expect(read('s1')?.runs).toEqual([])
+})
+
+test('session.end writes endedAt', async ($, on) => {
+  const shell = world(on)
+  const { read } = published(on, shell, { current: 's1' })
+  await startSession($)
+  await shell.clock.advance(1000)
+  await $.session.end({ reason: 'other', sessionId: 's1', resume: {} } as Parameters<Engine['session']['end']>[0])
+
+  expect(read('s1')?.endedAt).toBeGreaterThan(0)
+})
+
+test('/clear: the old file keeps endedAt, a new file appears under the new id with a fresh startedAt', async ($, on) => {
+  const shell = world(on)
+  const id = { current: 's1' }
+  const { read } = published(on, shell, id)
+  await startSession($)
+  await shell.clock.advance(1000)
+  const oldStart = read('s1')?.startedAt ?? 0
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as Parameters<Engine['session']['end']>[0])
+  id.current = 's2'
+  await shell.clock.advance(5000)
+  await shell.clock.advance(1000)
+
+  expect(read('s1')?.endedAt).toBeGreaterThan(0)
+  expect(read('s1')?.startedAt).toBe(oldStart)
+  expect(read('s2')?.endedAt).toBeUndefined()
+  expect(read('s2')?.startedAt).toBeGreaterThan(oldStart)
+})
+
+// Regression: f01b50b — on /clear the engine may already answer the new id inside session.end; the end write must use the event's id
+test('session.end writes endedAt under the event id even when session.id already answers the new id', async ($, on) => {
+  const shell = world(on)
+  const id = { current: 's1' }
+  const { read } = published(on, shell, id)
+  await startSession($)
+  await shell.clock.advance(1000)
+  id.current = 's2'
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as Parameters<Engine['session']['end']>[0])
+
+  expect(read('s1')?.endedAt).toBeGreaterThan(0)
+  expect(read('s2')).toBeUndefined()
+})
+
+test('session.end still reaches next when an earlier tick write never settles', async ($, on) => {
+  const shell = world(on)
+  let isHung = false
+  published(on, shell, { current: 's1' }, { HOME: '/home/t' }, () => isHung)
+  await startSession($)
+  await shell.clock.advance(1000)
+  isHung = true
+  await shell.clock.advance(HEARTBEAT_MS)
+  let isDone = false
+  const ending = $.session.end({ reason: 'other', sessionId: 's1', resume: {} } as Parameters<Engine['session']['end']>[0]).then(() => {
+    isDone = true
+  })
+  // The mock gives the hook a 10 s budget; the end write is bounded within it.
+  for (let i = 0; i < 25; i++) await shell.clock.advance(500)
+  await Promise.race([ending, Promise.resolve()])
+
+  expect(isDone).toBe(true)
+})
+
+test('a tick after session.end, the id still the old one, leaves endedAt in the file', async ($, on) => {
+  const shell = world(on)
+  const { read } = published(on, shell, { current: 's1' })
+  await startSession($)
+  await shell.clock.advance(1000)
+  await $.session.end({ reason: 'other', sessionId: 's1', resume: {} } as Parameters<Engine['session']['end']>[0])
+  await shell.clock.advance(HEARTBEAT_MS + 2000)
+
+  expect(read('s1')?.endedAt).toBeGreaterThan(0)
+})
+
+test('with no CLAUDE_CONFIG_DIR and no HOME nothing is written', async ($, on) => {
+  const shell = world(on)
+  const { fs } = published(on, shell, { current: 's1' }, {})
+  await startSession($)
+  await shell.clock.advance(HEARTBEAT_MS + 2000)
+
+  expect(fs.writes()).toEqual([])
+})
+
+test('an empty CLAUDE_CONFIG_DIR is unset: the home default is used', async ($, on) => {
+  const shell = world(on)
+  const { read } = published(on, shell, { current: 's1' }, { CLAUDE_CONFIG_DIR: '', HOME: '/home/t' })
+  await startSession($)
+  await shell.clock.advance(1000)
+
+  expect(read('s1')).toMatchObject({ sessionId: 's1' })
+})
+
+// Reading the other sessions' snapshots into the Fleet tab.
+
+const peerFile = (sessionId: string, heartbeatAt: number, extra: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    v: 1,
+    sessionId,
+    cwd: '/Users/{username}/Dev/my-editor-app',
+    startedAt: heartbeatAt - 600_000,
+    heartbeatAt,
+    runs: [{ title: 'review-changes', kind: 'workflow', total: 7, done: 4, failed: 0, startedAt: heartbeatAt - 720_000 }],
+    ...extra,
+  })
+
+async function withShownPane($: Engine, on: On, id = 's1') {
+  const shell = world(on)
+  const set = published(on, shell, { current: id })
+  await startSession($)
+  await $.command.run(commandRun('fleet'))
+
+  return { shell, ...set }
+}
+
+test('a shown pane lists a live peer after the poll, and never this session itself', async ($, on) => {
+  const { shell, files } = await withShownPane($, on)
+  const now = shell.clock.now()
+  files.set(`${DIR}/peer0001-x.fleet.json`, { text: peerFile('peer0001-x', now), mtimeMs: now })
+  await shell.clock.advance(5_000)
+  const text = await paneText($)
+
+  expect(text).toContain('Other sessions')
+  expect(text).toContain('my-editor-app · peer0001')
+  expect(text).toContain('review-changes · 4/7')
+  expect(text).not.toContain('s1 ·')
+  expect(text).not.toContain('1 idle session')
+})
+
+test('a hidden pane polls nothing', async ($, on) => {
+  const { shell, files } = await withShownPane($, on)
+  coverPane()
+  const now = shell.clock.now()
+  files.set(`${DIR}/peer0001-x.fleet.json`, { text: peerFile('peer0001-x', now), mtimeMs: now })
+  await shell.clock.advance(10_000)
+
+  expect(await paneText($)).not.toContain('Other sessions')
+})
+
+test('a truncated file is skipped, the others still drawn', async ($, on) => {
+  const { shell, files } = await withShownPane($, on)
+  const now = shell.clock.now()
+  files.set(`${DIR}/broken.fleet.json`, { text: '{"v":1,"sessionId":"bro', mtimeMs: now })
+  files.set(`${DIR}/peer0001-x.fleet.json`, { text: peerFile('peer0001-x', now), mtimeMs: now })
+  await shell.clock.advance(5_000)
+
+  expect(await paneText($)).toContain('my-editor-app · peer0001')
+})
+
+test('a file older than the live window by mtime is skipped unread, and a foreign file name is ignored', async ($, on) => {
+  const { shell, files } = await withShownPane($, on)
+  const now = shell.clock.now()
+  files.set(`${DIR}/old00001-x.fleet.json`, { text: peerFile('old00001-x', now), mtimeMs: now - 120_000 })
+  files.set(`${DIR}/other00-x.json`, { text: peerFile('other00-x', now), mtimeMs: now })
+  await shell.clock.advance(5_000)
+
+  expect(await paneText($)).not.toContain('Other sessions')
+})
+
+test('a peer that stops heartbeating leaves the section within the live window', async ($, on) => {
+  const { shell, files } = await withShownPane($, on)
+  const now = shell.clock.now()
+  files.set(`${DIR}/peer0001-x.fleet.json`, { text: peerFile('peer0001-x', now), mtimeMs: now })
+  await shell.clock.advance(5_000)
+  expect(await paneText($)).toContain('Other sessions')
+
+  await shell.clock.advance(65_000)
+  expect(await paneText($)).not.toContain('Other sessions')
+})
+
+// Regression: 269a689 — a tick awaited its snapshot publish before animating and upkeep, so one hung write froze both and queued one more publish per second.
+test('a hung snapshot write neither stops the ticks nor queues a publish per tick', async ($, on) => {
+  const shell = world(on)
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'bg1' }))
+  let isHung = false
+  const { fs } = published(on, shell, { current: 's1' }, { HOME: '/home/t' }, () => isHung)
+  await startSession($)
+  await shell.clock.advance(1000)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.agent.spawn(spawnInput({ description: 'probe agent' }))
+  await shell.clock.advance(1000)
+  isHung = true
+  const before = fs.attempts()
+  await complete($, 'bg1', 'all done')
+  await advanceInSteps(shell, RUN_END_GRACE_MS + 5_000)
+  // upkeep still ran: the run end was announced
+  expect(shell.toasts).toHaveLength(1)
+  // one tick publish started and hung; the next 60+ ticks skipped theirs
+  expect(fs.attempts() - before).toBeLessThanOrEqual(1)
+})
+
+// Regression: 269a689 — session.end with a finite budget already spent still waited END_WAIT_MS before calling next.
+test('endWaitMs: a spent finite budget waits not at all; an unmetered one waits the fixed share', () => {
+  expect(endWaitMs(0)).toBeUndefined()
+  expect(endWaitMs(-5)).toBeUndefined()
+  expect(endWaitMs(Number.POSITIVE_INFINITY)).toBe(700)
+  expect(endWaitMs(10_000)).toBe(9_700)
+  expect(endWaitMs(200)).toBe(0)
 })

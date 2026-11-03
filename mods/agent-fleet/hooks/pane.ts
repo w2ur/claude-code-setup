@@ -1,6 +1,7 @@
-import type { Agent, Fleet, Run } from '../types'
-import { clip, formatClock, formatTokens, isLive, runStats, runTitle } from './fleet'
+import type { Agent, Fleet, PeerSnapshot, Run } from '../types'
+import { clip, formatClock, formatElapsed, formatTokens, isLive, runStats, runTitle } from './fleet'
 import { HUE, bar } from './gfx'
+import { isLivePeer } from './peers'
 
 // The pane as data: lines of styled segments, already cut to the pane's width.
 // register.tsx only maps them to Text elements, so the layout is testable
@@ -327,13 +328,40 @@ function isUnfinished(f: Fleet, run: Run): boolean {
   return isLive(f, run) || (run.kind === 'workflow' && run.endedAt === undefined)
 }
 
+const folderOf = (cwd: string): string => cwd.split('/').filter(part => part !== '').pop() ?? cwd
+
+// The other sessions' live runs. The render checks liveness again: a heartbeat
+// can go stale between the poll and the draw. A session with no run is only
+// counted; two in one folder are told apart by the start of their id.
+export function peerLines(peers: readonly PeerSnapshot[], now: number, columns: number): Line[] {
+  const cols = Math.max(MIN_COLUMNS, columns)
+  const live = peers.filter(p => isLivePeer(p, now))
+  if (live.length === 0) return []
+  const lines: Line[] = [[text(' ')], [text('Other sessions', { bold: true })]]
+  for (const p of live.filter(q => q.runs.length > 0)) {
+    // The folder yields first: ` · ` and the 8-character id always fit.
+    const room = Math.max(1, cols - 11)
+    const folder = folderOf(p.cwd)
+    const shown = folder.length > room ? `${folder.slice(0, Math.max(0, room - 1))}…` : folder
+    lines.push([text(shown, { bold: true }), dim(` · ${p.sessionId.slice(0, 8)}`)])
+    for (const r of p.runs) {
+      const failed = r.failed > 0 ? ` · ${r.failed} failed` : ''
+      lines.push([text(` ${r.title} · ${r.done}/${r.total}${failed} · ${formatElapsed(now - r.startedAt)}`)])
+    }
+  }
+  const idle = live.filter(p => p.runs.length === 0).length
+  if (idle > 0) lines.push([dim(` ${idle} idle session${idle === 1 ? '' : 's'}`)])
+
+  return lines.map(line => fit(line, cols))
+}
+
 // `tick` is the animation frame (spinners, shimmer); 0 draws the first frame.
-export function paneLines(f: Fleet, now: number, columns: number, tick = 0): Line[] {
+export function paneLines(f: Fleet, now: number, columns: number, tick = 0, peers: readonly PeerSnapshot[] = []): Line[] {
   const cols = Math.max(MIN_COLUMNS, columns)
   const runs = f.order.map(id => f.runs[id]).filter((r): r is Run => r !== undefined)
   const newest = runs[runs.length - 1]
   if (newest === undefined) {
-    return [fit([dim('No agents yet. Subagents and workflow runs of this session appear here.')], cols)]
+    return [fit([dim('No agents yet. Subagents and workflow runs of this session appear here.')], cols), ...peerLines(peers, now, cols)]
   }
 
   // The newest run, and every run not over yet (an agent still running, a
@@ -350,5 +378,5 @@ export function paneLines(f: Fleet, now: number, columns: number, tick = 0): Lin
     lines.push([dim('── earlier runs ──')])
     for (const run of earlier) lines.push(collapsedLine(f, run, now))
   }
-  return lines.map(line => fit(line, cols))
+  return [...lines, ...peerLines(peers, now, cols)].map(line => fit(line, cols))
 }

@@ -37,6 +37,9 @@ const byDegree = (near: Map<string, Set<string>>) => (a: string, b: string) =>
 // whose mentions mix genres is `mixte` and stays.
 export const GENRES_MASQUES: readonly string[] = ['post', 'fiction']
 
+/** Whether a genre is hidden: one of GENRES_MASQUES, unless `tout` shows every genre. */
+export const estMasque = (genre: string, tout: boolean): boolean => !tout && GENRES_MASQUES.includes(genre)
+
 // `source_id` prefix → genre. The tool writes a nouvelle as `nouvelle:<slug>`
 // while its genre is `fiction` (my-editor-app `tools/graphe/sources.py`), so a
 // prefix is never read as a genre by itself. Same map as the page's
@@ -77,7 +80,7 @@ export function premiereCitation(n: Noeud, tout: boolean): string | undefined {
  */
 export function visibles(g: Graphe, tout: boolean): Graphe {
   if (tout) return g
-  const hidden = (genre: string) => GENRES_MASQUES.includes(genre)
+  const hidden = (genre: string) => estMasque(genre, tout)
   const nodes = g.nodes.filter(n => !hidden(n.genre))
   const kept = new Set(nodes.map(n => n.id))
 

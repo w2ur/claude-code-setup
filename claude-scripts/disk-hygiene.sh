@@ -43,6 +43,11 @@ TASKS_DAYS=7            # tasks/ entries older than this are deleted.
                         # .lock is ever held by a running process, so a
                         # "keep entries with a live session" rule would
                         # delete everything.
+SESSION_WATCH_DAYS=1    # state/session-watch/ -- dead agent-fleet session
+                        # files. A live session rewrites its file every 15 s,
+                        # so a day of silence is death; mtime alone decides.
+                        # find -mtime +N rounds down: this matches files at
+                        # least 48 h old, not 24 h.
 BACKUPS_KEEP=2          # backups/ -- keep the newest N *.claude.json.backup.*
                         # files (see the two traps documented in do_backups).
 SHELL_SNAPSHOTS_KEEP=1  # shell-snapshots/ -- keep the newest N, PLUS any
@@ -706,6 +711,7 @@ main() {
   do_older_than "file-history" "$ROOT/file-history" "$FILE_HISTORY_DAYS"
   do_older_than "paste-cache" "$ROOT/paste-cache" "$PASTE_CACHE_DAYS"
   do_older_than "tasks" "$ROOT/tasks" "$TASKS_DAYS"
+  do_older_than "session-watch" "$ROOT/state/session-watch" "$SESSION_WATCH_DAYS"
   do_changelog
   do_job_logs
   do_plans_archive

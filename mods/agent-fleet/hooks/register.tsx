@@ -1,8 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Fleet } from '../types'
-
+import type { Fleet, PeerSnapshot } from '../types'
 import {
   FLEET_SHAPE,
   announce,
@@ -16,7 +15,9 @@ import {
   unlistedRunning,
 } from './fleet'
 import type { FleetEvent } from './fleet'
+import { endWaitMs } from './budget'
 import { PANE_COLUMNS } from './gfx'
+import { HEARTBEAT_MS, LIVE_WINDOW_MS, SESSION_WATCH_DIR, livePeers, parsePeer, sameContent, snapshotOf } from './peers'
 import { paneLines } from './pane'
 import type { Seg } from './pane'
 
@@ -36,6 +37,9 @@ const tick = atom({ plugin: 'agent-fleet', key: 'tick' } as const, 0)
 // the pane is shown and something runs. An idle or hidden pane does not redraw.
 const FRAME_MS = 125
 const frame = atom({ plugin: 'agent-fleet', key: 'frame' } as const, 0)
+// The other sessions' live snapshots, refreshed by a poll while the pane is shown.
+const PEERS_POLL_MS = 5_000
+const peers = atom({ plugin: 'agent-fleet', key: 'peers' } as const, [] as PeerSnapshot[])
 // Remembered in the store when the person opens the pane with /fleet or /panel,
 // so the next session opens it unasked; their own close forgets it.
 const PANE_OPEN = 'paneOpen'
@@ -133,9 +137,107 @@ function animation($: EngineInterface): Animation {
   }
 }
 
+// What this session last published, and when it began: module state, since the
+// snapshot file belongs to the process, not to the fleet atom. `session.end`
+// resets both so the next tick starts a new file under the new session id.
+let lastSnapshot: PeerSnapshot | undefined
+let startedAt: number | undefined
+let sessionCwd = ''
+// The id whose file carries endedAt: no later tick may rewrite it while the
+// engine still answers that id (the process is exiting, or the id switches late).
+let endedId: string | undefined
+// True while a tick's publish is in flight: the next tick skips its own, so a
+// hung write cannot queue one more link per second.
+let isTickPublishing = false
+// Every publish runs after the previous one, so a tick's in-flight write cannot
+// land after the end write.
+let queue: Promise<void> = Promise.resolve()
+
+// The Claude config dir: no API returns it, so the env var, else the home default.
+// Undefined unless the result is absolute: `$.fs` resolves a relative path
+// against the session cwd, which would write into the person's project.
+async function watchDir($: EngineInterface): Promise<string | undefined> {
+  const configured = await $.env.get('CLAUDE_CONFIG_DIR')
+  const home = await $.env.get('HOME')
+  const dir = configured || (home ? `${home}/.claude` : '')
+  if (!dir.startsWith('/')) return undefined
+
+  return `${dir}/${SESSION_WATCH_DIR}`
+}
+
+async function snapshotPath($: EngineInterface, sessionId: string): Promise<string | undefined> {
+  const dir = await watchDir($)
+
+  return dir === undefined ? undefined : `${dir}/${sessionId}.fleet.json`
+}
+
+// Reads the other sessions' snapshots, only while the pane is shown. A file
+// whose mtime is past the live window is skipped unread (dead files wait for
+// the hygiene sweep); one that does not parse (read mid-write) is skipped for
+// this poll. The atom is written on every shown poll so peer elapsed times
+// move while this session is idle.
+async function pollPeers($: EngineInterface): Promise<void> {
+  const isShown = (await $.ui.panes()).some(pane => pane.id === PANE && pane.isShown)
+  if (!isShown) return
+  const dir = await watchDir($)
+  if (dir === undefined) return
+  const now = await $.clock.now()
+  const selfId = await $.session.id()
+  const entries = await $.fs.list(dir)
+  const found: PeerSnapshot[] = []
+  for (const entry of entries) {
+    if (!entry.name.endsWith('.fleet.json') || now - entry.mtimeMs > LIVE_WINDOW_MS) continue
+    const peer = await $.fs.read(`${dir}/${entry.name}`).then(parsePeer, swallow)
+    if (peer !== undefined) found.push(peer)
+  }
+  await update($, peers, () => livePeers(found, selfId, now))
+}
+
+// Publishes this session's runs for the other sessions: on a change, and at
+// least every HEARTBEAT_MS so an idle session is not taken for a dead one. The
+// id is read on every call (a /clear changes it with no session.start).
+function publish($: EngineInterface, f: Fleet, endedAt?: number, id?: string): Promise<void> {
+  const run = queue.then(() => publishNow($, f, endedAt, id))
+  queue = run.catch(swallow)
+
+  return run
+}
+
+// `id` is the explicit owner of the write: the end write passes the ended
+// session's id, because session.id() may already answer the id after a /clear.
+async function publishNow($: EngineInterface, f: Fleet, endedAt?: number, id?: string): Promise<void> {
+  const now = await $.clock.now()
+  const sessionId = id ?? (await $.session.id())
+  if (endedAt === undefined && sessionId === endedId) return
+  startedAt ??= now
+  const next = snapshotOf(f, {
+    sessionId,
+    cwd: sessionCwd,
+    startedAt,
+    heartbeatAt: now,
+    ...(endedAt !== undefined && { endedAt }),
+  })
+  const last = lastSnapshot
+  const isStale = last === undefined || last.sessionId !== sessionId || now - last.heartbeatAt >= HEARTBEAT_MS
+  if (endedAt === undefined && !isStale && sameContent(last, next)) return
+  const path = await snapshotPath($, sessionId)
+  if (path === undefined) return
+  await $.fs.write(path, JSON.stringify(next))
+  lastSnapshot = next
+}
+
 // The 1 Hz tick: nothing live, nothing to do (and no animation).
 async function tickOnce($: EngineInterface, animate: Animation): Promise<void> {
   const f = await read($, fleet)
+  // Before the isRunning gate: an idle session still heartbeats.
+  if (!isTickPublishing) {
+    isTickPublishing = true
+    void publish($, f)
+      .catch(swallow)
+      .finally(() => {
+        isTickPublishing = false
+      })
+  }
   const isRunning = isAnyRunning(f)
   await animate(isRunning).catch(swallow)
   if (isRunning) await upkeep($, f)
@@ -157,6 +259,11 @@ const segProps = (seg: Seg) => ({
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    lastSnapshot = undefined
+    startedAt = undefined
+    endedId = undefined
+    isTickPublishing = false
+    sessionCwd = e.cwd
     await $.command.register({
       name: 'fleet',
       description: 'Bring the Fleet tab of /panel (subagents and workflow runs); "clear" drops finished runs',
@@ -164,6 +271,9 @@ export const register: Register = on => {
     const animate = animation($)
     $.clock.every(TICK_MS, () => {
       void tickOnce($, animate).catch(swallow)
+    })
+    $.clock.every(PEERS_POLL_MS, () => {
+      void pollPeers($).catch(swallow)
     })
     $.clock.every(IDLE_CHECK_MS, () => {
       void watchIdle($).catch(swallow)
@@ -174,6 +284,34 @@ export const register: Register = on => {
     // The pane the person kept open last time comes back with the session.
     const wasOpen = (await $.store.get(PANE_OPEN).catch(swallow)) === true
     if (wasOpen) await $.ui.open({ id: PANE, title: 'Fleet', columns: PANE_COLUMNS }).catch(swallow)
+
+    const f0 = await read($, fleet).catch(swallow)
+    if (f0 !== undefined) await publish($, f0).catch(swallow)
+
+    return next(e)
+  })
+
+  // One write fits the end-of-session budget. After a /clear the process goes
+  // on under a new id: the reset makes the next tick open a new file.
+  on('session.end', async ($, e, next) => {
+    endedId = e.sessionId
+    const f = await read($, fleet).catch(swallow)
+    if (f !== undefined) {
+      const at = await $.clock.now().catch(swallow)
+      if (at !== undefined) {
+        // Bounded: a tick write that hangs must not eat the whole exit budget.
+        const waitMs = endWaitMs(next.budget.remainingMs)
+        // A spent finite budget leaves no time for the write: next(e) at once.
+        if (waitMs !== undefined) {
+          const stop = new AbortController()
+          const wait = $.clock.sleep(waitMs, { signal: stop.signal }).catch(swallow)
+          await Promise.race([publish($, f, at, e.sessionId).catch(swallow), wait])
+          stop.abort()
+        }
+      }
+    }
+    lastSnapshot = undefined
+    startedAt = undefined
 
     return next(e)
   })
@@ -414,8 +552,9 @@ export const register: Register = on => {
     const state = await read($, fleet)
     await read($, tick)
     const at = await read($, frame)
+    const others = await read($, peers)
     const now = await $.clock.now()
-    const lines = paneLines(state, now, e.props.bodyColumns, at)
+    const lines = paneLines(state, now, e.props.bodyColumns, at, others)
 
     return (
       <Box flexDirection="column">

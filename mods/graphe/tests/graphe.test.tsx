@@ -40,7 +40,7 @@ type Disk = {
   writes: string[]
 }
 
-function world(on: On, options: { isGraphe?: boolean; isJournal?: boolean; store?: Record<string, unknown> } = {}): Disk {
+function world(on: On, options: { isGraphe?: boolean; isJournal?: boolean; store?: Record<string, unknown>; isPlaced?: boolean } = {}): Disk {
   const disk: Disk = { files: new Map(), unreadable: new Set(), reads: 0, opens: [], titles: [], closes: [], panel: { text: 'Panel opened.' }, clock: mock.clock(on), isShown: true, panesAsked: 0, store: new Map(Object.entries(options.store ?? {})), models: [], reply: async () => 'NONE', writes: [] }
   on('store.get', (_, e) => ({ value: disk.store.get(e.key) }))
   on('store.set', (_, e) => {
@@ -94,7 +94,7 @@ function world(on: On, options: { isGraphe?: boolean; isJournal?: boolean; store
     disk.titles.push(e.title ?? '')
     isUp = true
 
-    return { value: { isPlaced: true as const } }
+    return { value: options.isPlaced === false ? { isPlaced: false as const, reason: 'no-surface' } : { isPlaced: true as const } }
   })
   on('ui.close', (_, e) => {
     disk.closes.push(e.id)
@@ -981,4 +981,709 @@ test('the two tables have the same keys, and name the same node types', () => {
   expect(Object.keys(STRINGS.en).sort()).toEqual(Object.keys(STRINGS.fr).sort())
   expect(Object.keys(STRINGS.en.types).sort()).toEqual(Object.keys(STRINGS.fr.types).sort())
   expect(GLYPHS.map(([type]) => type).filter(type => STRINGS.en.types[type] === undefined || STRINGS.fr.types[type] === undefined)).toEqual([])
+})
+
+// The corpus server, faked: `process.spawn` stands for the child and
+// `http.fetch` for its socket, so no process starts. Every title, excerpt and
+// node below is invented.
+type Kid = {
+  spawns: (readonly string[])[]
+  alive: number
+  most: number
+  asked: { route: string; body: { text?: string; id?: string } }[]
+  centre: (text: string) => Promise<unknown>
+  entry: (id: string) => Promise<unknown>
+  // Ends the running child as if it exited by itself.
+  exit: () => void
+  // The sweep: what `<TMPDIR>/graphe` holds, and what `rm` was asked to remove.
+  dir: { name: string; kind: 'file' | 'other'; isLive: boolean; error?: string }[]
+  removed: string[]
+  statuses: (string | undefined)[]
+  // While set, the child holds its ready line until `ready()`.
+  isReadyHeld: boolean
+  ready: () => void
+  // So many /entry requests answer 500 first.
+  entryFailures: number
+}
+
+const SERVED = { ...OPTIONS, centrage: 'lexical', node: '/fake/node', serveur: '/fake/serve.ts' }
+const SERVED_HAIKU = { ...SERVED, centrage: 'haiku' }
+const answered = (data: unknown) => ({ status: 200, ok: true, headers: {}, text: JSON.stringify(data) })
+
+function kid(on: On): Kid {
+  const k: Kid = {
+    spawns: [],
+    alive: 0,
+    most: 0,
+    asked: [],
+    centre: async () => ({ by: 'words', passages: [] }),
+    entry: async () => ({ passages: [] }),
+    exit: () => undefined,
+    dir: [],
+    removed: [],
+    statuses: [],
+    isReadyHeld: false,
+    ready: () => undefined,
+    entryFailures: 0,
+  }
+  on('session.id', () => ({ value: '0123456789abcdef' }))
+  on('ui.status', (_, e) => {
+    k.statuses.push(e.text)
+
+    return { value: undefined }
+  })
+  on('ui.log', () => ({ value: undefined }))
+  // world() answers every variable with /fakehome, so TMPDIR is /fakehome.
+  on('fs.list', (_, e) => ({ value: e.path === '/fakehome/graphe' ? k.dir.map(d => ({ name: d.name, kind: d.kind, size: 0, mtimeMs: 0, isLink: false })) : [] }))
+  on('process.run', (_, e) => {
+    k.removed.push(e.argv.at(-1)!)
+
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('http.fetch', async (_, e) => {
+    const route = new URL(e.url).pathname
+    if (route === '/health') {
+      const socket = k.dir.find(d => e.init?.socketPath === `/fakehome/graphe/${d.name}`)
+      // A rejection, as the engine hands one up: `{ deny }` with the error's text.
+      if (socket?.isLive !== true) return { deny: socket?.error ?? 'connect ECONNREFUSED' }
+
+      return { value: answered({ index: 'ok', meaning: 'ready', built_at: null }) }
+    }
+    const body = JSON.parse(e.init?.body ?? '{}') as { text?: string; id?: string }
+    k.asked.push({ route, body })
+    if (route === '/entry' && k.entryFailures > 0) {
+      k.entryFailures -= 1
+
+      return { value: { status: 500, ok: false, headers: {}, text: '{"error":"invented"}' } }
+    }
+
+    return { value: answered(await (route === '/centre' ? k.centre(body.text ?? '') : k.entry(body.id ?? ''))) }
+  })
+  on('process.spawn', async function* (_, e, next) {
+    k.spawns.push(e.argv)
+    k.alive += 1
+    k.most = Math.max(k.most, k.alive)
+    try {
+      await new Promise<void>(resolve => {
+        k.ready = resolve
+        next.signal.addEventListener('abort', () => resolve())
+        if (!k.isReadyHeld) resolve()
+      })
+      if (next.signal.aborted) return { value: { code: null, signal: 'SIGTERM' } }
+      yield { stream: 'stdout' as const, text: '{"ready":"words"}\n' }
+      await new Promise<void>(resolve => {
+        k.exit = resolve
+        next.signal.addEventListener('abort', () => resolve())
+      })
+
+      return { value: { code: 0, signal: null } }
+    } finally {
+      k.alive -= 1
+    }
+  })
+
+  return k
+}
+
+const hit = (entries: string[], titre: string, genre = 'article') => ({ i: 0, texte: `${genre}:essai`, titre, genre, n: 1, excerpt: 'Un extrait inventé.', score: 1, entries })
+const passage = (titre: string, genre = 'article', neighbours: unknown[] = []) => ({ i: 1, texte: `${genre}:essai`, titre, genre, n: 2, excerpt: 'Un passage inventé.', neighbours })
+const voisin = (titre: string) => ({ i: 2, texte: 'article:voisin', titre, genre: 'article', n: 3, excerpt: 'Un voisin inventé.' })
+
+async function panel($: Engine, disk: Disk, text: 'Panel opened.' | 'Panel closed.'): Promise<void> {
+  disk.panel.text = text
+  await $.command.run(commandRun('', 'panel'))
+  await disk.clock.settle()
+}
+
+async function opened($: Engine, disk: Disk): Promise<void> {
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await panel($, disk, 'Panel opened.')
+}
+
+test('un_seul_enfant: one child per opening, ended by each stop signal, never two alive', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  expect(k.spawns).toHaveLength(1)
+  expect(k.alive).toBe(1)
+  expect(k.spawns[0]!.slice(0, 8)).toEqual(['/fake/node', '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '/fake/serve.ts', '--index', `${COFFRE}/index-corpus.json`, '--graphe', `${COFFRE}/graphe.json`, '--socket'])
+  expect(k.spawns[0]![8]).toMatch(/^\/fakehome\/graphe\/01234567-[a-z0-9]{4}\.sock$/)
+  // An open while one lives starts nothing.
+  await panel($, disk, 'Panel opened.')
+  expect(k.spawns).toHaveLength(1)
+  // The panel's « Panel closed. » answer.
+  await panel($, disk, 'Panel closed.')
+  expect(k.alive).toBe(0)
+  await panel($, disk, 'Panel opened.')
+  expect(k.spawns).toHaveLength(2)
+  await panel($, disk, 'Panel closed.')
+  await panel($, disk, 'Panel opened.')
+  expect(k.spawns).toHaveLength(3)
+  expect(k.alive).toBe(1)
+  expect(k.most).toBe(1)
+  // Each opening has a socket of its own.
+  expect(new Set(k.spawns.map(argv => argv[8])).size).toBe(3)
+})
+
+// The test kit raises no `ui.close` of the person's: the mod's
+// hooks are taken from a second `register`, over a `$` of the test's own whose
+// `process.spawn` stands for the child. That registration has a module state
+// of its own, apart from the one the kit loaded.
+function bare() {
+  const child = { spawns: 0, alive: 0, most: 0 }
+  // What `$.ui.panes()` lists after a close: empty, unless a hook refused it.
+  const panes: { id: string }[] = []
+  // Every `$.clock.sleep` asked, held until the test resolves it.
+  const sleeps: { ms: number; resolve: () => void }[] = []
+  const spawn = () => {
+    child.spawns += 1
+    child.alive += 1
+    child.most = Math.max(child.most, child.alive)
+    let isReadySent = false
+    let isDone = false
+    let end = () => undefined as void
+    const over = { done: true as const, value: { code: null, signal: 'SIGTERM' } }
+
+    return {
+      [Symbol.asyncIterator]() {
+        return this
+      },
+      next: () => {
+        if (!isReadySent) {
+          isReadySent = true
+
+          return Promise.resolve({ done: false as const, value: { stream: 'stdout' as const, text: '{"ready":"words"}\n' } })
+        }
+
+        return isDone ? Promise.resolve(over) : new Promise(resolve => (end = () => resolve(over)))
+      },
+      return: async () => {
+        if (!isDone) {
+          isDone = true
+          child.alive -= 1
+          end()
+        }
+
+        return over
+      },
+    }
+  }
+  const $ = {
+    env: { get: async () => '/fakehome' },
+    fs: { exists: async () => false, read: async () => '', list: async () => [] },
+    store: { get: async () => undefined, set: async () => undefined, delete: async () => undefined },
+    clock: { every: () => ({ cancel: () => undefined }), now: async () => 0, sleep: (ms: number) => new Promise<void>(resolve => sleeps.push({ ms, resolve })) },
+    ui: { open: async () => ({ isPlaced: true }), log: () => undefined, status: () => undefined, invalidate: () => undefined, panes: async () => panes },
+    session: { id: async () => '0123456789abcdef' },
+    process: { spawn, run: async () => ({ exitCode: 0, stdout: '', stderr: '' }) },
+  }
+  const hooks = new Map<string, (...args: unknown[]) => Promise<unknown>>()
+  const capture = (event: string, ...rest: unknown[]) => {
+    const filter = rest.length > 1 ? JSON.stringify(rest[0]) : ''
+    hooks.set(event + filter, rest.at(-1) as (...args: unknown[]) => Promise<unknown>)
+  }
+  register(capture as unknown as On, SERVED)
+  const settle = async () => {
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+  }
+  const openPanel = async () => {
+    await hooks.get('command.run{"command":"panel"}')!($, { command: 'panel', args: '' }, async () => ({ text: 'Panel opened.' }))
+    await settle()
+  }
+  const close = async (kind: 'person') => {
+    await hooks.get('ui.close')!($, { id: 'graphe', origin: { kind } }, async (e: unknown) => e)
+    await settle()
+  }
+
+  const wake = async (ms: number) => {
+    for (const s of sleeps.filter(s => s.ms === ms)) s.resolve()
+    await settle()
+  }
+
+  return { child, openPanel, close, panes, wake }
+}
+
+// An unload is not tested here: its `ui.close` runs none of the opener's
+// hooks; the engine ends the spawn loop, which kills the child.
+test('un_seul_enfant: the person\'s close ends the child too', async () => {
+  const { child, openPanel, close } = bare()
+  await openPanel()
+  expect(child.alive).toBe(1)
+  await close('person')
+  expect(child.alive).toBe(0)
+  await openPanel()
+  expect(child.spawns).toBe(2)
+  expect(child.most).toBe(1)
+})
+
+test('a close another hook refused leaves the pane and its child up', async () => {
+  const { child, openPanel, close, panes, wake } = bare()
+  await openPanel()
+  panes.push({ id: 'graphe' })
+  await close('person')
+  expect(child.alive).toBe(1)
+  // Still listed at the second look: still up.
+  await wake(250)
+  expect(child.alive).toBe(1)
+})
+
+test('a close the engine lists a little longer still ends the child at the second look', async () => {
+  const { child, openPanel, close, panes, wake } = bare()
+  await openPanel()
+  // The pane is listed when the close resolves, gone by the second look.
+  panes.push({ id: 'graphe' })
+  await close('person')
+  expect(child.alive).toBe(1)
+  panes.length = 0
+  await wake(250)
+  expect(child.alive).toBe(0)
+})
+
+test('un_seul_enfant: a pane that is not placed starts no child', { options: SERVED }, async ($, on) => {
+  const disk = world(on, { isPlaced: false })
+  const k = kid(on)
+  await opened($, disk)
+  await open($, 'borges')
+  await disk.clock.settle()
+  expect(k.spawns).toEqual([])
+})
+
+test('a child that ends by itself is not restarted in the same opening, and the status says so', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  k.exit()
+  await disk.clock.settle()
+  expect(k.alive).toBe(0)
+  expect(k.statuses).toEqual(['Graphe : passages du corpus indisponibles'])
+  await panel($, disk, 'Panel opened.')
+  expect(k.spawns).toHaveLength(1)
+  // Closed and opened again: a new child, and the status cleared.
+  await panel($, disk, 'Panel closed.')
+  expect(k.statuses.at(-1)).toBeUndefined()
+  await panel($, disk, 'Panel opened.')
+  expect(k.spawns).toHaveLength(2)
+})
+
+test('the sweep removes the sockets nobody answers on, and nothing else', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  k.dir = [
+    { name: 'morte.sock', kind: 'other', isLive: false },
+    { name: 'vivante.sock', kind: 'other', isLive: true },
+    { name: 'notes.txt', kind: 'other', isLive: false },
+    { name: 'fichier.sock', kind: 'file', isLive: false },
+    { name: 'disparue.sock', kind: 'other', isLive: false, error: 'connect ENOENT /fakehome/graphe/disparue.sock' },
+    { name: 'bun.sock', kind: 'other', isLive: false, error: 'FailedToOpenSocket: Was there a typo in the url or port?' },
+    // Refused for another cause (a web-fetch policy, say): not known to be dead.
+    { name: 'refusee.sock', kind: 'other', isLive: false, error: 'request refused by the web fetch policy' },
+  ]
+  await opened($, disk)
+  expect(k.removed.sort()).toEqual(['/fakehome/graphe/bun.sock', '/fakehome/graphe/disparue.sock', '/fakehome/graphe/morte.sock'])
+  expect(k.spawns).toHaveLength(1)
+})
+
+test('reponse_perimee_ignoree: an older /centre answer arriving last is dropped', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  // The first answer waits for the test to release it (not on the clock:
+  // advancing the mocked clock under a live child slows the kit to a crawl).
+  let release = () => undefined as void
+  let calls = 0
+  k.centre = async () => {
+    calls += 1
+    if (calls === 1) {
+      await new Promise<void>(resolve => {
+        release = resolve
+      })
+
+      return { by: 'words', passages: [hit(['le carnet'], 'Titre ancien')] }
+    }
+
+    return { by: 'meaning', passages: [hit(['le miroir'], 'Titre récent')] }
+  }
+  await say($, disk, 'rien de connu ici')
+  await say($, disk, 'toujours rien')
+  expect(await centreOf($, 'le miroir')).toBe(true)
+  release()
+  await disk.clock.settle()
+  expect(calls).toBe(2)
+  expect(await centreOf($, 'le miroir')).toBe(true)
+  expect(await centreOf($, 'le carnet')).toBe(false)
+  expect(await header($)).toBe(AUTO_HEAD('le miroir', 'passages, par le sens : Titre récent'))
+})
+
+test('reponse_perimee_ignoree: a /centre answer arriving after a pin is dropped', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  let release = () => undefined as void
+  k.centre = async () => {
+    await new Promise<void>(resolve => {
+      release = resolve
+    })
+
+    return { by: 'words', passages: [hit(['le carnet'], 'Titre')] }
+  }
+  await say($, disk, 'rien de connu ici')
+  await $.command.run(commandRun('borges'))
+  release()
+  await disk.clock.settle()
+  expect(await centreOf($, 'borges')).toBe(true)
+  expect(await centreOf($, 'le carnet')).toBe(false)
+})
+
+test('prompt_jamais_bloque: a /centre that never answers does not hold the prompt', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  k.centre = () => new Promise(() => undefined)
+  // Resolves without the clock moving: the hook returned before the child answered.
+  await $.prompt.submit(typed('Parlons de la bibliothèque'))
+  expect(k.asked.filter(a => a.route === '/centre')).toHaveLength(1)
+  // The lexical step still re-centred at once.
+  expect(await header($)).toBe(AUTO_HEAD('la bibliothèque', 'bibliothèque'))
+  await $.prompt.submit(typed('encore une'))
+  expect(k.asked.filter(a => a.route === '/centre')).toHaveLength(2)
+})
+
+test('the /centre query is the last five prompts, newest last, joined by blank lines', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  for (const text of ['un', 'deux', 'trois', 'quatre', 'cinq', 'six']) await say($, disk, text)
+  expect(k.asked.filter(a => a.route === '/centre').at(-1)!.body.text).toBe('deux\n\ntrois\n\nquatre\n\ncinq\n\nsix')
+})
+
+test('epingle_sans_centrage: a pinned node gets its passages and no centring', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  k.entry = async id => ({ passages: id === 'borges' ? [passage('Titre épinglé')] : [] })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run(commandRun('borges'))
+  await disk.clock.settle()
+  expect(k.asked).toEqual([{ route: '/entry', body: { id: 'borges' } }])
+  expect((await rows($)).join('\n')).toContain('Titre épinglé · Un passage inventé.')
+  k.centre = async () => ({ by: 'words', passages: [hit(['le carnet'], 'Titre')] })
+  await say($, disk, 'la bibliothèque')
+  expect(k.asked.filter(a => a.route === '/centre')).toEqual([])
+  expect(await centreOf($, 'borges')).toBe(true)
+})
+
+test('section_passages_dessinee: the centre\'s passages under the graph, at the pane\'s width', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  k.entry = async id => ({ passages: id === 'la bibliothèque' ? [passage('Titre inventé', 'article', [voisin('Voisin inventé')])] : [] })
+  await opened($, disk)
+  await say($, disk, 'Parlons de la bibliothèque')
+  expect(k.asked.filter(a => a.route === '/entry')).toEqual([{ route: '/entry', body: { id: 'la bibliothèque' } }])
+  const out = await rows($)
+  const at = out.indexOf('Passages qui font écho')
+  expect(at).toBeGreaterThan(0)
+  expect(out.slice(at)).toEqual(['Passages qui font écho', 'Titre inventé · Un passage inventé.', '  ↳ Voisin inventé · Un voisin inventé.'])
+  for (const line of await rows($, 30)) expect(Array.from(line).length).toBeLessThanOrEqual(30)
+  // The child gone, the section goes with it.
+  k.exit()
+  await disk.clock.settle()
+  expect(await rows($)).not.toContain('Passages qui font écho')
+})
+
+test('a passage-only winner centres from rank 1, its header names the passages and their title', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  k.centre = async () => ({ by: 'words', passages: [hit(['le carnet'], 'Titre du carnet')] })
+  await say($, disk, 'rien de connu ici')
+  expect(await centreOf($, 'le carnet')).toBe(true)
+  expect(await header($)).toBe(AUTO_HEAD('le carnet', 'passages, par les mots : Titre du carnet'))
+  expect(k.asked.at(-1)).toEqual({ route: '/entry', body: { id: 'le carnet' } })
+})
+
+test('a passage-only winner under MIN_PASSAGE_SCORE does not centre', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  // Five hits name a node that is not in the graph; the sixth names le carnet: 1/66, under the bar.
+  k.centre = async () => ({ by: 'words', passages: [...Array.from({ length: 5 }, () => hit(['hors du graphe'], 'Ailleurs')), hit(['le carnet'], 'Titre')] })
+  await say($, disk, 'rien de connu ici')
+  expect(await centreOf($, 'le carnet')).toBe(false)
+  expect(await header($)).toContain('2026-01-02')
+})
+
+// Nine nodes, three of which share « commun »: weight 0.5, so the word alone
+// scores 0.5, under MIN_SCORE.
+const COMMUN = {
+  nodes: ['alpha commun', 'beta commun', 'gamma commun', 'delta', 'epsilon', 'zeta', 'theta', 'iota', 'kappa'].map(id => ({ id, type: 'idee', genre: 'article', premiere_date: '2026-01-02', mentions: [] })),
+  edges: [
+    { from: 'alpha commun', to: 'delta', relation: 'touche', citation: '', source_id: '', genre: 'article' },
+    { from: 'beta commun', to: 'epsilon', relation: 'touche', citation: '', source_id: '', genre: 'article' },
+  ],
+}
+
+test('a winner the words found centres only if its lexical score clears MIN_SCORE, never its fused score', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  disk.files.set(`${COFFRE}/graphe.json`, JSON.stringify(COMMUN))
+  const k = kid(on)
+  await opened($, disk)
+  // alpha commun: lexical 0.5 and the top passage, the best fused score; its words do not clear the bar.
+  k.centre = async () => ({ by: 'words', passages: [hit(['alpha commun'], 'Titre A')] })
+  await say($, disk, 'commun')
+  expect(await centreOf($, 'alpha commun')).toBe(false)
+  // Two passages naming a node the words did not find centre it.
+  k.centre = async () => ({ by: 'words', passages: [hit(['delta'], 'Titre D'), hit(['delta'], 'Titre D bis')] })
+  await say($, disk, 'commun encore')
+  expect(await centreOf($, 'delta')).toBe(true)
+})
+
+test('haiku decides on the fused ranking: a clear passage winner asks no model, a tie does', { options: SERVED_HAIKU }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  disk.reply = async () => 'le miroir'
+  await opened($, disk)
+  // Without the server this prompt asks the model (no lexical match); a lone top passage decides it.
+  k.centre = async () => ({ by: 'words', passages: [hit(['le carnet'], 'Titre')] })
+  await say($, disk, 'rien de connu ici')
+  expect(disk.models).toEqual([])
+  expect(await centreOf($, 'le carnet')).toBe(true)
+  // Two nodes within 10 %: the model breaks the tie.
+  k.centre = async () => ({ by: 'words', passages: [hit(['la nuit'], 'Titre N'), hit(['le silence'], 'Titre S')] })
+  await say($, disk, 'autre chose')
+  expect(disk.models).toHaveLength(1)
+  expect(await header($)).toBe(AUTO_HEAD('le miroir', 'choisi par Haiku'))
+})
+
+test('fiction_suit_tout: fiction passages neither centre nor show, unless --tout', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  k.centre = async () => ({ by: 'words', passages: [hit(['le carnet'], 'Récit inventé', 'fiction')] })
+  k.entry = async () => ({ passages: [passage('Récit inventé', 'fiction'), passage('Essai inventé')] })
+  await opened($, disk)
+  await say($, disk, 'rien de connu ici')
+  expect(await centreOf($, 'le carnet')).toBe(false)
+  await $.command.run(commandRun('le carnet'))
+  await disk.clock.settle()
+  let all = (await rows($)).join('\n')
+  expect(all).toContain('Essai inventé')
+  expect(all).not.toContain('Récit inventé')
+  // --tout: the fiction passage shows, and centres.
+  await $.command.run(commandRun('--tout le carnet'))
+  all = (await rows($)).join('\n')
+  expect(all).toContain('Récit inventé · Un passage inventé.')
+  await $.command.run(commandRun('--tout'))
+  await say($, disk, 'rien de connu')
+  expect(await centreOf($, 'le carnet')).toBe(true)
+})
+
+test('repli_sans_enfant: a server with no index answers nothing, and the pane reads as without one', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  await say($, disk, 'Parlons de la bibliothèque')
+  expect(k.asked.map(a => a.route)).toEqual(['/entry', '/centre'])
+  expect(await header($)).toBe(AUTO_HEAD('la bibliothèque', 'bibliothèque'))
+  expect(await rows($)).not.toContain('Passages qui font écho')
+})
+
+test('repli_sans_enfant: with no passages, the words\' hysteresis stands as without the server', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  disk.files.set(`${COFFRE}/graphe.json`, JSON.stringify(WORDS))
+  const k = kid(on)
+  await opened($, disk)
+  await say($, disk, 'aaaa bbbb')
+  // "aaaa cccc" now leads the words, by less than 20 %: the hysteresis test's control.
+  await say($, disk, 'cccc')
+  expect(k.asked.filter(a => a.route === '/centre')).toHaveLength(2)
+  expect(await header($)).toContain('« aaaa bbbb »')
+})
+
+test('hysteresis survives a passage answer: an unrelated hit does not hand the centre to a challenger under 20 %', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  disk.files.set(`${COFFRE}/graphe.json`, JSON.stringify(WORDS))
+  const k = kid(on)
+  await opened($, disk)
+  k.centre = async () => ({ by: 'meaning', passages: [hit(['gggg'], 'Titre G')] })
+  await say($, disk, 'aaaa bbbb')
+  await say($, disk, 'cccc')
+  expect(k.asked.filter(a => a.route === '/centre')).toHaveLength(2)
+  expect(await header($)).toContain('« aaaa bbbb »')
+  // Past 20 %, the words move it, passages or not.
+  await say($, disk, 'cccc')
+  expect(await header($)).toContain('« aaaa cccc »')
+})
+
+test('haiku: a decided word winner plus an unrelated hit asks no model', { options: SERVED_HAIKU }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  // The unrelated hit is rank 2: the words' winner stays on top of the fused ranking.
+  k.centre = async () => ({ by: 'meaning', passages: [hit(['hors du graphe'], 'Ailleurs'), hit(['borges'], 'Titre B')] })
+  await say($, disk, 'Parlons de la bibliothèque')
+  expect(k.asked.filter(a => a.route === '/centre')).toHaveLength(1)
+  expect(disk.models).toEqual([])
+  expect(await header($)).toBe(AUTO_HEAD('la bibliothèque', 'bibliothèque'))
+})
+
+test('haiku: passage-only winners two ranks apart are decided', { options: SERVED_HAIKU }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  k.centre = async () => ({ by: 'words', passages: [hit(['la nuit'], 'Titre N'), hit(['hors du graphe'], 'Ailleurs'), hit(['le silence'], 'Titre S')] })
+  await say($, disk, 'rien de connu ici')
+  expect(disk.models).toEqual([])
+  expect(await centreOf($, 'la nuit')).toBe(true)
+})
+
+test('a child with no ready line within 30 s is ended, and the passages are unavailable for this opening', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  k.isReadyHeld = true
+  await opened($, disk)
+  expect(k.alive).toBe(1)
+  await disk.clock.advance(30_000 - 1)
+  expect(k.alive).toBe(1)
+  await disk.clock.advance(1)
+  expect(k.alive).toBe(0)
+  expect(k.statuses).toEqual(['Graphe : passages du corpus indisponibles'])
+  await panel($, disk, 'Panel opened.')
+  expect(k.spawns).toHaveLength(1)
+})
+
+test('prompts typed before the ready line are sent once it comes', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  k.isReadyHeld = true
+  await opened($, disk)
+  await say($, disk, 'Parlons de la bibliothèque')
+  expect(k.asked).toEqual([])
+  k.ready()
+  await disk.clock.settle()
+  expect(k.asked.filter(a => a.route === '/centre')).toEqual([{ route: '/centre', body: { text: 'Parlons de la bibliothèque' } }])
+})
+
+test('a held centre keeps a lone top passage naming another node out', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  k.centre = async () => ({ by: 'meaning', passages: [hit(['borges'], 'Titre B')] })
+  await say($, disk, 'Parlons de la bibliothèque')
+  expect(k.asked.filter(a => a.route === '/centre')).toHaveLength(1)
+  expect(await header($)).toBe(AUTO_HEAD('la bibliothèque', 'bibliothèque'))
+})
+
+test('a passage-only challenger with far stronger support takes a held centre', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  // Three top hits: 1/61 + 1/62 + 1/63 against the held centre's 1/61.
+  k.centre = async () => ({ by: 'meaning', passages: [hit(['borges'], 'Titre B'), hit(['borges'], 'Titre B2'), hit(['borges'], 'Titre B3')] })
+  await say($, disk, 'Parlons de la bibliothèque')
+  expect(await header($)).toBe(AUTO_HEAD('borges', 'passages, par le sens : Titre B'))
+})
+
+test('a passage-only challenger only just ahead of a held passage centre does not take it', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  k.centre = async () => ({ by: 'words', passages: [hit(['le carnet'], 'Titre C')] })
+  await say($, disk, 'rien de connu ici')
+  expect(await centreOf($, 'le carnet')).toBe(true)
+  // le miroir: 1/61; le carnet: 1/62 — ahead, by less than 20 %.
+  k.centre = async () => ({ by: 'words', passages: [hit(['le miroir'], 'Titre M'), hit(['le carnet'], 'Titre C')] })
+  await say($, disk, 'rien encore')
+  expect(await centreOf($, 'le carnet')).toBe(true)
+})
+
+test('the /centre text keeps the newest end, at most 4000 characters', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  await say($, disk, 'mot '.repeat(5000))
+  await say($, disk, 'le dernier mot dit')
+  const text = k.asked.filter(a => a.route === '/centre').at(-1)!.body.text!
+  expect(text.length).toBeLessThanOrEqual(4000)
+  expect(text.length).toBeGreaterThan(3000)
+  expect(text.endsWith('le dernier mot dit')).toBe(true)
+})
+
+test('genres_masques: post passages neither centre nor show, unless --tout', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  k.centre = async () => ({ by: 'words', passages: [hit(['le carnet'], 'Billet inventé', 'post')] })
+  k.entry = async () => ({ passages: [passage('Billet inventé', 'post', [voisin('Essai voisin')]), passage('Essai inventé', 'article', [{ ...voisin('Billet voisin'), genre: 'post' }])] })
+  await opened($, disk)
+  await say($, disk, 'rien de connu ici')
+  expect(await centreOf($, 'le carnet')).toBe(false)
+  await $.command.run(commandRun('le carnet'))
+  await disk.clock.settle()
+  let all = (await rows($)).join('\n')
+  expect(all).toContain('Essai inventé')
+  expect(all).not.toContain('Billet inventé')
+  expect(all).not.toContain('Billet voisin')
+  await $.command.run(commandRun('--tout le carnet'))
+  all = (await rows($)).join('\n')
+  expect(all).toContain('Billet inventé · Un passage inventé.')
+  expect(all).toContain('Billet voisin')
+})
+
+test('a centre the passages chose does not flip to the words and back within a prompt', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  const two = { by: 'meaning', passages: [hit(['le carnet'], 'Titre C'), hit(['le carnet'], 'Titre C2')] }
+  k.centre = async () => two
+  await say($, disk, 'rien de connu ici')
+  expect(await centreOf($, 'le carnet')).toBe(true)
+  // The words name la bibliothèque; the same two passages still back le carnet (1/61 + 1/62 against 1/61).
+  await say($, disk, 'Parlons de la bibliothèque')
+  expect(await centreOf($, 'le carnet')).toBe(true)
+  expect(k.asked.filter(a => a.route === '/entry' && a.body.id === 'la bibliothèque')).toEqual([])
+  // Once the passages stop naming it, the words take the centre.
+  k.centre = async () => ({ by: 'meaning', passages: [hit(['hors du graphe'], 'Ailleurs')] })
+  await say($, disk, 'la bibliothèque encore')
+  await say($, disk, 'la bibliothèque toujours')
+  expect(await centreOf($, 'la bibliothèque')).toBe(true)
+})
+
+test('a failed /entry is asked again on the next prompt while the centre holds', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  k.entryFailures = 1
+  k.entry = async id => ({ passages: id === 'la bibliothèque' ? [passage('Titre inventé')] : [] })
+  await opened($, disk)
+  await say($, disk, 'Parlons de la bibliothèque')
+  expect(await rows($)).not.toContain('Passages qui font écho')
+  await say($, disk, 'toujours la bibliothèque')
+  expect(k.asked.filter(a => a.route === '/entry' && a.body.id === 'la bibliothèque')).toHaveLength(2)
+  expect(await rows($)).toContain('Titre inventé · Un passage inventé.')
+})
+
+test('an empty /centre answer stops holding a passage-chosen centre for the passages', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  k.centre = async () => ({ by: 'meaning', passages: [hit(['le carnet'], 'Titre C'), hit(['le carnet'], 'Titre C2')] })
+  await say($, disk, 'rien de connu ici')
+  expect(await centreOf($, 'le carnet')).toBe(true)
+  // The server now answers nothing: the next prompt's words take the centre.
+  k.centre = async () => ({ by: 'meaning', passages: [] })
+  await say($, disk, 'Parlons de la bibliothèque')
+  await say($, disk, 'la bibliothèque encore')
+  expect(await centreOf($, 'la bibliothèque')).toBe(true)
+})
+
+test('an answer naming no visible node stops holding a passage-chosen centre too', { options: SERVED }, async ($, on) => {
+  const disk = world(on)
+  const k = kid(on)
+  await opened($, disk)
+  k.centre = async () => ({ by: 'meaning', passages: [hit(['le carnet'], 'Titre C'), hit(['le carnet'], 'Titre C2')] })
+  await say($, disk, 'rien de connu ici')
+  expect(await centreOf($, 'le carnet')).toBe(true)
+  // No word match and only hits outside the graph: an empty fused ranking.
+  k.centre = async () => ({ by: 'meaning', passages: [hit(['hors du graphe'], 'Ailleurs')] })
+  await say($, disk, 'rien encore')
+  // The next answer never comes: the words move the centre on their own.
+  k.centre = () => new Promise(() => undefined)
+  await say($, disk, 'Parlons de la bibliothèque')
+  expect(await centreOf($, 'la bibliothèque')).toBe(true)
 })

@@ -1,11 +1,13 @@
 {
   "name": "graphe",
-  "version": "0.4.0",
-  "description": "The Graphe tab of /panel, also opened by /graphe [recherche]: the pane draws the writings graph in ASCII: a force-directed layout of the strongest nodes, or of one node and its neighbours. Live centre: the pane re-centres on the node closest to the conversation (words of your last prompts, then Haiku to break a tie) until you pin one with /graphe <recherche>",
+  "version": "0.5.0",
+  "description": "The Graphe tab of /panel, also opened by /graphe [recherche]: the pane draws the writings graph in ASCII: a force-directed layout of the strongest nodes, or of one node and its neighbours. Live centre: the pane re-centres on the node closest to the conversation (words of your last prompts, then the corpus passages that echo them, by words and by meaning, then Haiku to break a tie) until you pin one with /graphe <recherche>; below the graph, the passages the centre's mentions fall in. The passages come from a local corpus server, one child process while the pane is open",
   "userConfig": {
     "coffre": { "type": "string", "title": "Vault folder", "description": "Folder holding graphe.json", "default": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/écrits" },
     "journal": { "type": "string", "title": "Build journal", "description": "JSON-lines file whose last line describes the last build", "default": "~/.claude/state/graphe/journal.jsonl" },
-    "centrage": { "type": "string", "title": "Live centre", "description": "haiku: the words of your last prompts, with Haiku to break a tie or a miss; lexical: the words alone; off: the pane never follows the conversation", "default": "haiku", "options": ["haiku", "lexical", "off"] },
+    "centrage": { "type": "string", "title": "Live centre", "description": "haiku: the words of your last prompts and the corpus passages that echo them, with Haiku to break a tie or a miss; lexical: the same without Haiku; off: the pane never follows the conversation, and no corpus server runs, so no passages show even under a centre you pinned", "default": "haiku", "options": ["haiku", "lexical", "off"] },
+    "node": { "type": "string", "title": "Node", "description": "The Node.js (24 or later) that runs the corpus server", "default": "~/.local/share/fnm/aliases/default/bin/node" },
+    "serveur": { "type": "string", "title": "Corpus server", "description": "The corpus server script, run with --index <coffre>/index-corpus.json; empty: no passages, the words and Haiku alone", "default": "~/Dev/my-editor-app/tools/index/serve.ts" },
     "lang": { "type": "string", "title": "Language", "description": "fr: the pane and the replies in French; en: in English. The graph data (ids, relations, quotes) is shown as written", "default": "fr", "options": ["fr", "en"] }
   }
 }

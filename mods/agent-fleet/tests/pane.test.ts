@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Agent, Fleet } from '../types'
+import type { Agent, Fleet, PeerRun, PeerSnapshot } from '../types'
 import { emptyFleet, reduce, spawnEventOf } from '../hooks/fleet'
 import type { FleetEvent } from '../hooks/fleet'
 import { HUE } from '../hooks/gfx'
-import { fit, moodOf, paneLines, propOf, tierHue, tierOf } from '../hooks/pane'
+import { fit, moodOf, paneLines, peerLines, propOf, tierHue, tierOf } from '../hooks/pane'
 import type { Line } from '../hooks/pane'
 
 const run = (events: FleetEvent[], from: Fleet = emptyFleet()): Fleet => events.reduce(reduce, from)
@@ -379,5 +379,99 @@ describe('runs still running stay expanded', () => {
     const all = rows(paneLines(f, NOW, 100))
     expect(indexOfRow(all, 'review-changes')).toBeGreaterThan(indexOfRow(all, 'newest'))
     expect(all.some(row => row.includes('earlier runs'))).toBe(false)
+  })
+})
+
+// Other sessions, drawn from their published snapshots.
+
+const MIN = 60_000
+const peer = (overrides: Partial<PeerSnapshot> = {}, runs: PeerRun[] = []): PeerSnapshot => ({
+  v: 1,
+  sessionId: '3f2a1c9e-aaaa-bbbb-cccc-000000000001',
+  cwd: '/Users/{username}/Dev/my-editor-app',
+  startedAt: NOW - 60 * MIN,
+  heartbeatAt: NOW - 5_000,
+  runs,
+  ...overrides,
+})
+const review = (extra: Partial<PeerRun> = {}): PeerRun => ({
+  title: 'review-changes',
+  kind: 'workflow',
+  total: 7,
+  done: 4,
+  failed: 0,
+  startedAt: NOW - 12 * MIN,
+  ...extra,
+})
+
+describe('peers in the pane', () => {
+  test('no live peers: the output is exactly what it was', () => {
+    const f = workflowFleet()
+    expect(paneLines(f, NOW, 80, 0, [])).toEqual(paneLines(f, NOW, 80, 0))
+    expect(paneLines(f, NOW, 80, 0, [peer({ endedAt: NOW - 1 })])).toEqual(paneLines(f, NOW, 80, 0))
+    expect(peerLines([], NOW, 80)).toEqual([])
+  })
+
+  test('a peer with a run: header, folder and short id, then the run with progress and elapsed time', () => {
+    const all = rows(paneLines(workflowFleet(), NOW, 80, 0, [peer({}, [review()])]))
+    expect(all).toContain('Other sessions')
+    const head = indexOfRow(all, 'my-editor-app · 3f2a1c9e')
+    expect(head).toBeGreaterThan(indexOfRow(all, 'Other sessions'))
+    const row = all[indexOfRow(all, 'review-changes · 4/7')] ?? ''
+    expect(row).toContain('12m')
+    expect(row).not.toContain('failed')
+  })
+
+  test('failed runs add the count, zero adds nothing', () => {
+    const withFailed = rows(peerLines([peer({}, [review({ failed: 1 })])], NOW, 80).map(l => l))
+    expect(withFailed.some(r => r.includes('review-changes') && r.includes('1 failed'))).toBe(true)
+    const without = rows(peerLines([peer({}, [review({ failed: 0 })])], NOW, 80))
+    expect(without.join('\n')).not.toContain('failed')
+  })
+
+  test('two peers in one folder get two headers, told apart by short id', () => {
+    const a = peer({ sessionId: 'aaaaaaaa-1' }, [review()])
+    const b = peer({ sessionId: 'bbbbbbbb-2' }, [review()])
+    const all = rows(peerLines([a, b], NOW, 80))
+    expect(all.filter(r => r.includes('my-editor-app · '))).toHaveLength(2)
+    expect(all.some(r => r.includes('my-editor-app · aaaaaaaa'))).toBe(true)
+    expect(all.some(r => r.includes('my-editor-app · bbbbbbbb'))).toBe(true)
+  })
+
+  test('at 30 columns a long folder is clipped so the short id still shows', () => {
+    const cwd = '/Users/{username}/Dev/{portfolio-site}-very-long-name'
+    const a = peer({ sessionId: 'aaaaaaaa-1', cwd }, [review()])
+    const b = peer({ sessionId: 'bbbbbbbb-2', cwd }, [review()])
+    const headers = rows(peerLines([a, b], NOW, 30)).filter(r => r.includes(' · aaaaaaaa') || r.includes(' · bbbbbbbb'))
+    expect(headers).toHaveLength(2)
+    expect(headers[0]).not.toBe(headers[1])
+    expect(headers.every(r => r.length <= 30)).toBe(true)
+  })
+
+  test('idle peers are counted, never listed', () => {
+    const all = rows(peerLines([peer({ sessionId: 'aaaaaaaa-1' }), peer({ sessionId: 'bbbbbbbb-2' })], NOW, 80))
+    expect(all.filter(r => r.includes('2 idle sessions'))).toHaveLength(1)
+    expect(all.join('\n')).not.toContain('aaaaaaaa')
+    expect(rows(peerLines([peer()], NOW, 80)).join('\n')).toContain('1 idle session')
+  })
+
+  test('an empty local fleet still draws the section after the empty-state row', () => {
+    const all = rows(paneLines(emptyFleet(), NOW, 80, 0, [peer({}, [review()])]))
+    expect(all[0]).toContain('No agents yet')
+    expect(all).toContain('Other sessions')
+    expect(indexOfRow(all, 'my-editor-app · 3f2a1c9e')).toBeGreaterThan(0)
+  })
+
+  test('a peer whose heartbeat went stale since the poll is not drawn', () => {
+    const stale = peer({ heartbeatAt: NOW - 61_000 }, [review()])
+    expect(peerLines([stale], NOW, 80)).toEqual([])
+  })
+
+  test('every row fits the pane, at 20 and at 60 columns, whatever the names', () => {
+    const long = 'y'.repeat(200)
+    const peers = [peer({ cwd: `/a/${long}` }, [review({ title: long, failed: 3 })]), peer({ sessionId: 'zzzzzzzz' })]
+    for (const columns of [20, 60]) {
+      for (const line of paneLines(workflowFleet(), NOW, columns, 0, peers)) expect(text(line).length).toBeLessThanOrEqual(columns)
+    }
   })
 })

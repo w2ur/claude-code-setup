@@ -34,8 +34,14 @@ const fr = {
   // The live centre's header.
   centredOn: (id: string, why: string) => `centré sur « ${id} » : le plus proche de cette conversation (${why})`,
   byHaiku: 'choisi par Haiku',
+  // The corpus passages chose it: by their words or by their meaning, then the titles.
+  byPassages: (via: 'words' | 'meaning', titles: string) => `passages, par ${via === 'meaning' ? 'le sens' : 'les mots'} : ${titles}`,
+  // The status line once the corpus server ended or could not start.
+  passagesUnavailable: 'Graphe : passages du corpus indisponibles',
   // The stats strip under the header.
   stats: (spark: string, nodes: number, links: number) => `degrés ${spark} · ${plural(nodes, 'nœud')} · ${plural(links, 'lien')}`,
+  // The section of corpus passages that echo the centred node.
+  passagesHeading: 'Passages qui font écho',
   searchPlaceholder: 'Chercher un nœud',
   quote: (text: string) => `« ${text} »`,
   // The legend's name for each node type, keyed as the extraction writes it.
@@ -64,7 +70,10 @@ const en: Strings = {
   cleanCode: 'exit 0',
   centredOn: (id, why) => `centred on “${id}”: the closest to this conversation (${why})`,
   byHaiku: 'chosen by Haiku',
+  byPassages: (via, titles) => `passages, by ${via === 'meaning' ? 'meaning' : 'words'}: ${titles}`,
+  passagesUnavailable: 'Graph: corpus passages unavailable',
   stats: (spark, nodes, links) => `degrees ${spark} · ${plural(nodes, 'node')} · ${plural(links, 'link')}`,
+  passagesHeading: 'Passages that echo',
   searchPlaceholder: 'Search a node',
   quote: text => `“${text}”`,
   types: { idee: 'idea', gout: 'taste', reference: 'reference', vecu: 'lived', personne: 'person', geste: 'gesture' },

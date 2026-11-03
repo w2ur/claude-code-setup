@@ -120,6 +120,27 @@ export type Fleet = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'agent-fleet': { fleet: Shaped<Fleet>; tick: number; frame: number }
+    'agent-fleet': { fleet: Shaped<Fleet>; tick: number; frame: number; peers: PeerSnapshot[] }
   }
+}
+
+// One live run as another session's pane draws it.
+export type PeerRun = {
+  title: string
+  kind: 'workflow' | 'subagents'
+  total: number
+  done: number
+  failed: number
+  startedAt: number
+}
+
+// What a session publishes to state/session-watch/<sessionId>.fleet.json.
+export type PeerSnapshot = {
+  v: 1
+  sessionId: string
+  cwd: string
+  startedAt: number
+  heartbeatAt: number
+  endedAt?: number
+  runs: PeerRun[]
 }
