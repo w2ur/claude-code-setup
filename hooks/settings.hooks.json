@@ -21,6 +21,7 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/secret-scan/hook.sh",
             "timeout": 5,
+            "onFailure": "block",
             "statusMessage": "Scanning for secrets..."
           }
         ]
@@ -32,6 +33,7 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/secret-scan/hook.sh",
             "timeout": 5,
+            "onFailure": "block",
             "statusMessage": "Scanning for secrets..."
           },
           {

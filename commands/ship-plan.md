@@ -67,4 +67,5 @@ rounds — follow them there.
 
 Report: the commits created, the code-review findings and how each was resolved, and any
 plan requirement not met. **Do not push, merge or deploy.** That is the owner's go, given in
-the session.
+the session: ask for it through the question tool, naming the branch and the target. Once he
+gives it, merge and push yourself (`git -C <repo> push`); never hand him the commands.

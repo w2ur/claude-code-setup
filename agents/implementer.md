@@ -3,6 +3,7 @@ name: implementer
 description: Executes well-scoped implementation tasks with clear specifications. Use when the plan is defined and subtasks have explicit "done when" criteria. Not for architecture decisions or ambiguous tasks.
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
+effort: medium
 memory: project
 skills:
   - testing-conventions

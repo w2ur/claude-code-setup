@@ -89,6 +89,15 @@ describe('the grid size', () => {
     expect(out[4]).toContain('□ free')
   })
 
+  // Regression: fix/mods-review-2026-11-04 — at 10 to 18 columns the spaced grid (19 wide) was stacked under the legend and every row cut with an ellipsis.
+  test('at 15 columns the grid stacks under the legend packed, with no row cut', () => {
+    const out = squareLines(input(15))
+    const lines = rows(out)
+    expect(gridOf(out, 10, false).every(r => r.length === 10 && !r.includes('…'))).toBe(true)
+    expect(lines.slice(2, 12).every(r => !r.includes('…') && !r.includes(' '))).toBe(true)
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(15)
+  })
+
   test('at 80 columns: twenty rows, the legend beside the grid after a three-space gutter', () => {
     const out = rows(squareLines(input(80)))
     expect(out).toHaveLength(2 + 20)

@@ -30,6 +30,7 @@
 # 2 the check could not run (no gh, no jq, not authenticated, search failed) —
 # which must be read as UNKNOWN, never as healthy.
 set -euo pipefail
+. "$(dirname "$0")/notify-on-exit.sh"; watch_notify_on_exit gate-watch
 
 DAYS="${GATE_WATCH_DAYS:-90}"
 MIN_PRS="${GATE_WATCH_MIN_PRS:-3}"

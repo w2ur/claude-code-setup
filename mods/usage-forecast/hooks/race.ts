@@ -38,6 +38,12 @@ export function dateOf(ms: number): string {
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`
 }
 
+// When a window fills, for the band and the plain gauge: the 7-day window names
+// the day, as its camp line does, since a bare clock time reads as today.
+export function fullWhen(kind: string, at: number): string {
+  return kind === 'seven_day' ? `on ${dateOf(at)} at ~${clock(at)}` : `~${clock(at)}`
+}
+
 // "3 d 4 h", "1 h 42", "42 min".
 export function span(ms: number): string {
   const minutes = Math.max(0, Math.round(ms / MINUTE))

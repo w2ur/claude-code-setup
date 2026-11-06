@@ -20,6 +20,9 @@ All code, comments, identifiers, commit messages → English. User-facing conten
 - When {author-first-name} is optimising for Claude's approval rather than for the work, name it.
 - Propose the light option before the structured one.
 - Finish the current project before opening another.
+- Put every decision {author-first-name} must make to him through the question tool, with options and the recommended one first — never as a prose list at the end of a reply.
+- **Before handing {author-first-name} a step, attempt it or name its blocker**: his identity, credential or two-factor code, money, a decision that is his, a physical step, or a refusal received this session (quote it). After an auto-mode refusal, ask for a go that names the action and its target ("push vigie main"); a general go does not clear it. Never paste a `!` command you could run on his go. Push as `git -C <repo> push`, one repo per call: that form hits the `ask` rule and becomes a one-click prompt instead of a classifier refusal.
+- **Close every batch of background work.** While tasks run, a reply to a notification is one line unless it needs a decision now. When the last task started for a prompt finishes, the final message ends with a **Waiting on you** block (only the items still open, one line each, each decision then asked through the question tool) and calls the `PushNotification` tool — never `notifier.sh`, whose topic is public.
 
 ## Planning and execution
 
@@ -47,7 +50,7 @@ Default to parallel dispatch for any 2+ independent tasks. **Every `Agent` call 
 | execution | **sonnet** | implementation against a spec with "done when" criteria (`implementer`), applying a reviewed diff whose replacement text is already written, verifying against a written checklist, single-file changes, doc fixes that also verify URLs (`docs-checker`). |
 | basic | **haiku** | passive audits (`portfolio-audit`), Explore searches (`model: haiku`; escalate to sonnet only when a haiku search returns empty on something known to exist), anything whose output is a list the caller re-checks. |
 
-Effort lives per model in settings.json `modelSettings`, which is the source of truth; a top-level `effortLevel` does not reach Opus 5.5 or later. Raise it per task with `/effort high` for plans and money-path, auth or migration reviews; use xhigh or max only after a measured gain, since subagents inherit the session level unless their frontmatter sets `effort`.
+Effort lives per model in settings.json `modelSettings`, which is the source of truth; a top-level `effortLevel` does not reach Opus 5.5 or later. Raise it per task with `/effort high` for plans and money-path, auth or migration reviews; use xhigh or max only after a measured gain. **The session effort reaches a subagent only when it runs on the session's model; on any other model it does not apply** — so every non-haiku agent definition under `~/.claude/agents/` sets `effort` in its frontmatter (haiku agents set none: unverified whether haiku honours one), and an ad-hoc cross-model dispatch passes it per call.
 
 The test between complex and execution: if the agent receives the replacement text or the checklist, it is execution; if it must decide what the replacement or the checklist is, it is judgment.
 

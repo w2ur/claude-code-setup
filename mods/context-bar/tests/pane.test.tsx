@@ -219,6 +219,58 @@ test('a new measurement glides frame by frame, then the clock stops asking for r
   expect((await texts($, PANE))?.join('')).toContain('80%')
 })
 
+// Regression: fix/mods-review-2026-11-04 — a permanent 125 ms timer ran from session start, pane open or not.
+// A permanent timer cannot cross a 30 minute advance in the test kit (10,000-wait cap).
+test('with no pane open, or a settled one, no frame timer runs', async ($, on) => {
+  const shell = world(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await shell.clock.advance(30 * 60_000)
+  await $.command.run(commandRun())
+  await shell.clock.advance(30 * 60_000)
+  expect((await texts($, PANE))?.join('')).toContain('36%')
+})
+
+test('a glide that has landed stops the timer', async ($, on) => {
+  let used = 36_000
+  const shell = world(on, { used: () => used })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run(commandRun())
+  used = 80_000
+  await $.session.measure({ changed: ['context'] } as Parameters<Engine['session']['measure']>[0])
+  await shell.clock.advance(30 * 60_000)
+  expect((await texts($, PANE))?.join('')).toContain('80%')
+})
+
+// Regression: fix/mods-review-2026-11-04 — a frame decided on the snapshot it read before waiting for the pane check,
+// so a measurement landing during that wait was overwritten by the stale target and the view stayed behind.
+test('a measurement landing while a frame checks the pane is not overwritten', async ($, on) => {
+  let used = 36_000
+  const withoutPanes = ((event: string, ...rest: unknown[]) => (event === 'ui.panes' ? undefined : (on as (...args: unknown[]) => unknown)(event, ...rest))) as unknown as On
+  const shell = world(withoutPanes, { used: () => used })
+  let release: (() => void) | undefined
+  let isGated = false
+  on('ui.panes', async () => {
+    const own = [{ id: 'context', title: 'Context', isShown: true, isFocused: false, isPlaced: true }]
+    if (!isGated) return { value: shell.isShown ? own : [] }
+    isGated = false
+    await new Promise<void>(resolve => (release = resolve))
+
+    return { value: [] }
+  })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run(commandRun())
+  used = 80_000
+  await $.session.measure({ changed: ['context'] } as Parameters<Engine['session']['measure']>[0])
+  // The next frame finds the pane hidden, after the wait; a newer measurement lands meanwhile.
+  isGated = true
+  await shell.clock.advance(125)
+  used = 90_000
+  await $.session.measure({ changed: ['context'] } as Parameters<Engine['session']['measure']>[0])
+  release?.()
+  await shell.clock.advance(125 * 60)
+  expect((await texts($, PANE))?.join('')).toContain('90%')
+})
+
 // Regression: review fix — an open pane the engine has not drawn (no room for it)
 // must not hide the band.
 test('the band stays while the pane is open but not placed', async ($, on) => {

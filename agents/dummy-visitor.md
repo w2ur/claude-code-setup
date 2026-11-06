@@ -7,6 +7,7 @@ description: |
   Examples:
   - "Run dummy-visitor https://budget.example.com ~/Dev/my-budget-app" — full visit + informed reaction
 model: sonnet
+effort: medium
 tools: Read, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_navigate_back, mcp__plugin_playwright_playwright__browser_tabs, mcp__plugin_playwright_playwright__browser_resize
 omitClaudeMd: true
 ---

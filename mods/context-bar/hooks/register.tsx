@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { ContextBarReading, ContextBarRow, ContextBarSnapshot, ContextBarView } from '../types'
 import { formatTokens, fractionsOf, glide, isSettled, segmentWidths } from './bar'
@@ -25,6 +25,14 @@ const history = atom({ plugin: 'context-bar', key: 'history' } as const, [], { s
 const expanded = atom({ plugin: 'context-bar', key: 'expanded' } as const, null)
 // Read by the pane's drawing only: bumping it is what asks for a frame.
 const tick = atom({ plugin: 'context-bar', key: 'tick' } as const, 0)
+
+// The one frame timer: it runs only while a shown pane has a glide left to draw.
+let timer: Timer | undefined
+
+const stopTimer = (): void => {
+  timer?.cancel()
+  timer = undefined
+}
 
 const targetOf = (s: ContextBarSnapshot): ContextBarView => ({
   percent: s.percent,
@@ -77,30 +85,56 @@ async function refresh($: EngineInterface): Promise<void> {
     const reading: ContextBarReading = { percent: next.percent, at: await $.clock.now() }
     await update($, history, h => [...h, reading].slice(-HISTORY_MAX))
   }
+  await startGlide($)
 }
 
-// One frame of the glide, only while the pane is on screen and still moving:
-// an idle pane asks for no redraw.
+// One frame of the glide, only while the pane is on screen and still moving.
+// A settled view or a pane out of sight ends the timer: an idle pane costs no
+// frame, and nothing tells this mod when a tab comes forward.
 async function frame($: EngineInterface): Promise<void> {
+  const [snap, drawn] = await Promise.all([read($, snapshot), read($, view)])
+  if (snap === null || drawn === null) return stopTimer()
+  if (isSettled(drawn, targetOf(snap))) return settle($)
+  if (!(await isPaneShown($))) {
+    // Nothing is on screen to glide: snap, so the timer has nothing left to do.
+    // The target is read again: a measurement may have landed during the wait.
+    const latest = await read($, snapshot)
+    if (latest !== null) await update($, view, () => targetOf(latest))
+    return settle($)
+  }
+
+  const latest = await read($, snapshot)
+  await update($, view, v => (v === null || latest === null ? v : glide(v, targetOf(latest))))
+  await update($, tick, t => t + 1)
+}
+
+// Ends the timer, then looks once more: a measurement that landed while the
+// frame was deciding found the timer still running and started nothing.
+async function settle($: EngineInterface): Promise<void> {
+  stopTimer()
+  await startGlide($)
+}
+
+// After a measurement: starts the frame timer when a shown pane has a glide to
+// draw; a pane out of sight gets the new view at once.
+async function startGlide($: EngineInterface): Promise<void> {
   const [snap, drawn] = await Promise.all([read($, snapshot), read($, view)])
   if (snap === null || drawn === null) return
   const target = targetOf(snap)
   if (isSettled(drawn, target)) return
   if (!(await isPaneShown($))) {
-    // Nothing is on screen to glide: snap, so the timer has nothing left to do.
     await update($, view, () => target)
     return
   }
-
-  await update($, view, v => (v === null ? v : glide(v, target)))
-  await update($, tick, t => t + 1)
+  timer ??= $.clock.every(FRAME_MS, () => {
+    void frame($).catch(() => undefined)
+  })
 }
 
 export const register: Register = on => {
+  // A reload leaves the earlier registration's timer behind: end it.
+  stopTimer()
   on('session.start', async ($, e, next) => {
-    $.clock.every(FRAME_MS, () => {
-      void frame($).catch(() => undefined)
-    })
     // Reopened unasked: the engine seats it only where the terminal is wide enough.
     if (await isRemembered($)) {
       await $.ui.open({ id: PANE, title: 'Context', columns: PANE_COLUMNS })

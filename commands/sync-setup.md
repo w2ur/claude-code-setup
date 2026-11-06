@@ -128,4 +128,4 @@ Show:
 - Audit status
 - `git diff --stat`
 
-Propose a commit message following Conventional Commits. Do NOT push — the owner reviews and pushes.
+Propose a commit message following Conventional Commits. Do not push until the owner says so; then push it yourself with `git -C <repo> push`.

@@ -44,21 +44,14 @@ MIN_BYTES=4096
 CONFIG="${DB_BACKUP_CONFIG:-$HOME/.claude/db-backup.json}"
 ICLOUD_ROOT="${DB_BACKUP_ICLOUD_ROOT:-$HOME/Library/Mobile Documents/com~apple~CloudDocs}"
 DEST="${DB_BACKUP_DEST:-$ICLOUD_ROOT/exports/db-backups}"
-NOTIFIER="${NOTIFIER_BIN:-$HOME/.claude/scripts/notifier.sh}"
+. "$(dirname "${BASH_SOURCE[0]}")/push-text.sh"
 ACCOUNT="${USER:-$(id -un)}"
 
 umask 077
 
 warn() { echo "WARN: $*" >&2; }
 
-notify() {
-  [ -x "$NOTIFIER" ] || return 0
-  local body_file
-  body_file=$(mktemp)
-  printf '%s\n' "$2" > "$body_file"
-  "$NOTIFIER" "$1" "$body_file" --priorite 4 >/dev/null 2>&1 || true
-  rm -f "$body_file"
-}
+notify() { push_text "$1" "$2" 4; }
 
 die2() {
   warn "$1"

@@ -3,8 +3,8 @@ name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
 about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, hooks included."
-facts_fr: "8 commandes, 5 agents, 10 skills, 4 hooks et 7 mods."
-facts_en: "8 commands, 5 agents, 10 skills, 4 hooks and 7 mods."
+facts_fr: "9 commandes, 5 agents, 10 skills, 4 hooks et 7 mods."
+facts_en: "9 commands, 5 agents, 10 skills, 4 hooks and 7 mods."
 -->
 
 # Claude Code Setup
@@ -39,7 +39,7 @@ You type a command; it dispatches agents; agents load skills; hooks guard the wr
 [![A tour of the workflow guide: the bug-fix scenario, then the agents and skills, hooks and mods tabs, then the switch to French](docs/media/workflow-guide-tour.gif)](https://w2ur.github.io/claude-code-setup/workflow-guide.html)
 
 <details>
-<summary><strong>Commands (8)</strong> — entry points that orchestrate everything</summary>
+<summary><strong>Commands (9)</strong> — entry points that orchestrate everything</summary>
 
 | Command | What it does | When to use it |
 |---------|-------------|----------------|
@@ -51,6 +51,7 @@ You type a command; it dispatches agents; agents load skills; hooks guard the wr
 | `/cleanup` | Disk hygiene sweep of `~/.claude` first, then stale plans, plugin audit, memory compaction | Weekly housekeeping |
 | `/tech-debt` | Monthly triage → deep review → auto-fix | Monthly health check |
 | `/sync-setup` | Sync this repo from live `~/.claude/` config (anonymize + audit) | After workflow changes |
+| `/setup-watch` | Reviews the weekly setup-watch sheet: failing jobs, login expiry, unreviewed Claude Code changelog entries mapped to this setup | When the Thursday sheet lands |
 
 </details>
 

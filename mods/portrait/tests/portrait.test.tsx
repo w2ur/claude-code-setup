@@ -286,6 +286,13 @@ test('no line is longer than the pane at 40 columns', { options: OPTIONS }, asyn
   for (const line of out) expect(line.length).toBeLessThanOrEqual(40)
 })
 
+// Regression: fix/mods-review-2026-11-04 — wrap() looped forever at a width of zero or less.
+test('a pane of no width still draws, one column at most per piece', { options: OPTIONS }, async ($, on) => {
+  world(on)
+  await open($, 'tout')
+  for (const width of [0, -3]) expect((await lines($, width)).length).toBeGreaterThan(0)
+})
+
 test('a default path with ~ is expanded from HOME', async ($, on) => {
   const disk = world(on)
   disk.files.set('/fakehome/.claude/portrait.md', { text: PORTRAIT_TEXT, mtimeMs: at(1, 1) })

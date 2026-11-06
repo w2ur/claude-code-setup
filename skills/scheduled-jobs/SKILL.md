@@ -159,6 +159,36 @@ keychain reason as every `claude -p` job. The window, the pinned model and the c
 timeout live in the script; nothing calls the model when no memory is recent.
 Notifies through `notifier.sh` only on 1 or 2, counts only, never a proposed text.
 
+**`setup-watch`** — weekly health sheet for the Claude Code setup itself, via
+`setup-watch.sh`; it proposes and applies nothing. It watches three things, each
+because it fails without a sound: the **login expiry** (an expired OAuth login
+turns every `claude -p` job into `Not logged in` at once), the **unreviewed
+CHANGELOG versions** (upstream changes land in `settings.json`, hooks and
+frontmatter semantics without anyone being told), and the **scheduled jobs
+failing**. LaunchAgent for the keychain reason, as every `claude` caller. **No model
+in v1**: it is a delta and a list, and the model stage is revisited only after a
+few sheets have been treated by hand, together with a generic propositions tab —
+deferred because the verbs do not share a meaning (a portrait edit is mechanical,
+a setup item is session work) and the sheet format is known to be provisional.
+**The CHANGELOG, not the RSS**: the RSS drops every `Fixed` line, and those are
+the ones that explain a behaviour that changed under a hook. Versions are skipped
+upstream, so membership is by exact heading line, never by number, and the
+marker's own heading is a falsifying control: absent from the fetched body, the
+section is unknown (exit 2), never "everything is new". **The marker advances only
+through `--traite`**, run by the owner from `/setup-watch`: a marker that advances
+by itself either marks unread versions as reviewed or grows without bound.
+**News alone is exit 0**: a weekly exit 1 on routine releases teaches the reader
+to skip it, and vigie drops exit 1. **Failures are keyed on first sighting in the
+job's own state**, not parsed from heterogeneous logs, so the age is "at least",
+never the failure's real start. An unknown launchd exit (`-`, `(never exited)`)
+after a reboot or reload **keeps** the first-seen date; dropping it would reset
+the age at every reboot and hide a long failure. Two exemptions on exit 1, for
+different reasons: `portrait` (1 means a proposal was written, not a failure) and
+`setup-watch` itself (its 1 restates findings already listed, so counting it makes
+every finding re-report itself the following week). The marker lives in `state/`,
+which is not backed up: losing it gives exit 2 `repère absent` until re-seeded,
+the honest failure. The script owns the threshold, the timeouts and the item cap.
+
 **`vigie-refresh`** — its script lives in a project repo, like `devlog-collect`'s
 and the tool `graphe.sh` launches, so `/sync-setup` covers none of them and each
 runs whatever branch that checkout has. It collects the snapshot and then **pushes

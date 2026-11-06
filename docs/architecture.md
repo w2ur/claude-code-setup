@@ -8,7 +8,7 @@ How the pieces fit together, and why each one is shaped the way it is. The READM
 ┌───────────────────────────────────────────────────────────┐
 │                    You type a command                     │
 │      /audit  /cleanup  /new-app  /tech-debt  /sync-setup  │
-│        /model-review  /ship-plan  /design-audit           │
+│   /model-review  /ship-plan  /design-audit  /setup-watch  │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼

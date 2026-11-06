@@ -19,7 +19,7 @@ import {
 } from './forecast'
 import type { Armed, WindowSamples } from './forecast'
 import { gauge } from './gauge'
-import { RISE_MS, canRace, raceLines } from './race'
+import { RISE_MS, canRace, fullWhen, projection, raceLines } from './race'
 import type { Seg } from './race'
 import { HUE, PANE_COLUMNS, cut, ease, heat, pulse, rule, spark } from './gfx'
 
@@ -53,6 +53,26 @@ let lastStatus: string | undefined
 let isArmedLast = false
 // The latest reading that moved up: the runner stride runs while it is recent.
 let lastRiseSeen: number | undefined
+
+// The 7-day window takes the race scene's average pace, never the burn rate:
+// that one is extrapolated over nights and days off, and the band would
+// contradict the scene. Both its full time and its landing follow that pace.
+function projectedOf(limit: SessionRateLimit, ratePerHour: number | undefined, now: number, resetsAt: number | undefined): number | undefined {
+  if (limit.kind === 'seven_day' && resetsAt !== undefined) {
+    const landing = projection(limit.kind, limit.percentUsed, now, resetsAt, ratePerHour)?.landing
+
+    return landing === undefined ? undefined : Math.min(100, landing)
+  }
+
+  return projectedAtReset(limit.percentUsed, ratePerHour, now, resetsAt)
+}
+
+// When the window fills, on the same basis as projectedOf.
+function fullAtOf(limit: SessionRateLimit, ratePerHour: number | undefined, now: number, resetsAt: number | undefined): number | undefined {
+  if (limit.kind === 'seven_day' && resetsAt !== undefined) return projection(limit.kind, limit.percentUsed, now, resetsAt, ratePerHour)?.fullAt
+
+  return projectFull(limit.percentUsed, ratePerHour, now, resetsAt)
+}
 
 // $.store is shared by every session, so the burn rate counts what parallel
 // sessions spend too: the limit is the account's, not this session's.
@@ -88,8 +108,8 @@ async function observe($: EngineInterface, limit: SessionRateLimit, now: number)
     percent: limit.percentUsed,
     resetsAt,
     ratePerHour,
-    fullAt: projectFull(limit.percentUsed, ratePerHour, now, resetsAt),
-    projected: projectedAtReset(limit.percentUsed, ratePerHour, now, resetsAt),
+    fullAt: fullAtOf(limit, ratePerHour, now, resetsAt),
+    projected: projectedOf(limit, ratePerHour, now, resetsAt),
     history,
     lastRiseAt,
   }
@@ -236,6 +256,12 @@ export const register: Register = on => {
         // the next response: the band, beacon and status line go with it.
         if (!isArmed) await say($, [])
         const isSeen = await isPaneShown($)
+        // A pane hidden or closed mid-glide never renders again to clear the
+        // flag: land the gauges where they are heading, so the timer rests.
+        if (!isSeen && isGliding) {
+          for (const v of await read($, windows)) drawn.set(v.kind, v.percent)
+          isGliding = false
+        }
         const now = await $.clock.now()
         const isRising = lastRiseSeen !== undefined && now - lastRiseSeen <= RISE_MS
         // The last frame after the stride ends draws the runner standing.
@@ -348,7 +374,7 @@ export const register: Register = on => {
               ))}
               <Text> {v.percent}%</Text>
               <Text dimColor>{v.resetsAt === undefined ? '' : ` ↺${duration(v.resetsAt - now)}`}</Text>
-              {v.fullAt !== undefined && <Text color="warning"> full ~{clock(v.fullAt)}</Text>}
+              {v.fullAt !== undefined && <Text color="warning"> full {fullWhen(v.kind, v.fullAt)}</Text>}
               {'   '}
             </Text>
           ))}
@@ -414,7 +440,7 @@ export const register: Register = on => {
         v.ratePerHour === undefined ? 'pace: measuring' : `${v.ratePerHour.toFixed(1)} pts/h`,
       ].filter((f): f is string => f !== undefined)
       const line: Seg[] = [{ text: cut(facts.join(' · '), cols), dim: true }]
-      if (v.fullAt !== undefined) line.push({ text: ` · full ~${clock(v.fullAt)}`, color: HUE.hot, bold: true })
+      if (v.fullAt !== undefined) line.push({ text: ` · full ${fullWhen(v.kind, v.fullAt)}`, color: HUE.hot, bold: true })
       else if (v.projected !== undefined) line.push({ text: ` · ≈${Math.round(v.projected)}% at reset`, color: HUE.calm })
       rows.push(line)
       if (v.history !== undefined && v.history.length > 1) {

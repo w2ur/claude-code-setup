@@ -61,7 +61,9 @@ async function expand($: EngineInterface, path: string): Promise<string> {
 
 // Breaks a line at spaces so that no piece is longer than the pane; a word
 // longer than the pane is cut.
-function wrap(text: string, width: number): string[] {
+function wrap(text: string, columns: number): string[] {
+  // A width under one column would never shorten a word: one column is the least.
+  const width = Math.max(1, columns)
   if (text.length <= width) return [text]
   const out: string[] = []
   let line = ''

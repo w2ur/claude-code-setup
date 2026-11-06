@@ -395,16 +395,23 @@ test('the centre beats while the layout settles, never after', { options: OPTION
   }
 })
 
-test('a pane behind another tab does not settle until it is shown', { options: OPTIONS }, async ($, on) => {
+// Regression: fix/mods-review-2026-11-04 — a hidden pane left the 125 ms timer running forever.
+test('a pane behind another tab lands the settle and stops the timer', { options: OPTIONS }, async ($, on) => {
   const disk = world(on)
   await open($, 'borges')
   const start = await rows($)
   disk.isShown = false
-  await disk.clock.advance(SETTLE_MS)
-  expect(await rows($)).toEqual(start)
+  await disk.clock.advance(125)
+  const asked = disk.panesAsked
+  await disk.clock.advance(10_000)
+  expect(disk.panesAsked).toBe(asked)
+  // Shown again: drawn on the landed image, the same as a full settle.
   disk.isShown = true
+  const landed = await rows($)
+  expect(landed).not.toEqual(start)
+  expect(landed.join('\n')).toContain('☉ borges')
   await disk.clock.advance(SETTLE_MS)
-  expect(await rows($)).not.toEqual(start)
+  expect(await rows($)).toEqual(landed)
 })
 
 test('a search that recentres settles again; one that finds nothing does not', { options: OPTIONS }, async ($, on) => {
@@ -512,6 +519,53 @@ test('once settled, the timer is cancelled and asks for nothing', { options: OPT
   await open($, 'borges')
   await disk.clock.advance(SETTLE_MS)
   expect(disk.panesAsked).toBeGreaterThan(asked)
+})
+
+// Regression: fix/mods-review-2026-11-04 — closePane() kept the snapshot, so a closed pane still ranked and asked the model.
+test('a closed pane ranks nothing and asks no model; reopening works', { options: OPTIONS }, async ($, on) => {
+  const disk = world(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run(commandRun('', 'panel'))
+  disk.panel.text = 'Panel closed.'
+  await $.command.run(commandRun('', 'panel'))
+  expect(disk.closes).toEqual(['graphe'])
+  const asked = disk.panesAsked
+  await $.prompt.submit(typed('un rien'))
+  await disk.clock.settle()
+  expect(disk.models).toHaveLength(0)
+  await disk.clock.advance(10_000)
+  expect(disk.panesAsked).toBe(asked)
+  disk.panel.text = 'Panel opened.'
+  await $.command.run(commandRun('', 'panel'))
+  expect((await rows($)).join('\n')).toContain('☉ borges')
+})
+
+// Regression: fix/mods-review-2026-11-04 — askModel took its epoch after awaiting the clock, so a close during that wait did not drop the answer.
+test('a pane closed while the model step waits for the clock drops the answer', { options: OPTIONS }, async ($, on) => {
+  // The kit's own clock.now answers at once: leave it out, so the test's can wait.
+  const withoutNow = ((event: string, ...rest: unknown[]) => (event === 'clock.now' ? undefined : (on as (...args: unknown[]) => unknown)(event, ...rest))) as unknown as On
+  const disk = world(withoutNow)
+  let release: (() => void) | undefined
+  let isGated = false
+  on('clock.now', async () => {
+    if (isGated) await new Promise<void>(resolve => (release = resolve))
+
+    return { value: 0 }
+  })
+  disk.reply = async () => 'le labyrinthe'
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run(commandRun('', 'panel'))
+  isGated = true
+  await $.prompt.submit(typed('borges labyrinthe'))
+  disk.panel.text = 'Panel closed.'
+  await $.command.run(commandRun('', 'panel'))
+  isGated = false
+  release?.()
+  await disk.clock.settle()
+  expect(disk.models).toHaveLength(0)
+  disk.panel.text = 'Panel opened.'
+  await $.command.run(commandRun('', 'panel'))
+  expect((await rows($, 120))[0]).not.toContain('Haiku')
 })
 
 // The live centre. A prompt as the engine raises it for what the person typed.

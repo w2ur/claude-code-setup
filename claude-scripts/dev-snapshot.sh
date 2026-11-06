@@ -162,7 +162,7 @@ FAIL_REASON="unexpected exit"
 # Stable key for the cooldown: what failed, never a count or a path.
 FAIL_CAUSE="unexpected"
 EVICTED_REPLACED=0
-NOTIFIER="${NOTIFIER_BIN:-${HOME:-}/.claude/scripts/notifier.sh}"
+. "$(dirname "${BASH_SOURCE[0]}")/push-text.sh"
 NOTIFY_STATE="${DEV_SNAPSHOT_NOTIFY_STATE:-${HOME:-}/.claude/dev-snapshot.notify-state}"
 COOLDOWN_DAYS="${DEV_SNAPSHOT_COOLDOWN_DAYS:-7}"
 # Set before the trap can fire; the argument parser below may raise it.
@@ -170,14 +170,7 @@ DRY_RUN=0
 
 # push <title> <body text> [priority]
 # shellcheck disable=SC2329  # reached only from the EXIT trap
-push() {
-  local body
-  [ -x "$NOTIFIER" ] || return 0
-  body="$(mktemp)" || return 0
-  printf '%s\n' "$2" > "$body"
-  "$NOTIFIER" "$1" "$body" --priorite "${3:-high}" >/dev/null 2>&1 || true
-  rm -f "$body"
-}
+push() { push_text "$1" "$2" "${3:-high}"; }
 
 # The state file holds one line: <cause><TAB><epoch of the last push>.
 # shellcheck disable=SC2329  # reached only from the EXIT trap
@@ -308,7 +301,11 @@ esac
 # same when the same fault hits a different file. Never contains a path.
 error_class() {
   local line
-  line="$(printf '%s\n' "$1" | grep -m1 -E '^rsync(\([0-9]+\))?: error: ' | sed -E 's/^rsync(\([0-9]+\))?: error: //')"
+  # The first "error:" line wins; openrsync reports exit 23's cause as a
+  # "warning:" line, so that is the fallback when no error line exists.
+  line="$(printf '%s\n' "$1" | grep -m1 -E '^rsync(\([0-9]+\))?: error: ' || true)"
+  [ -n "$line" ] || line="$(printf '%s\n' "$1" | grep -m1 -E '^rsync(\([0-9]+\))?: warning: ' || true)"
+  line="$(printf '%s\n' "$line" | sed -E 's/^rsync(\([0-9]+\))?: (error|warning): //')"
   # "<path>: <class>" -> "<class>"; a line with a single colon-free class stays.
   case "$line" in *": "*) line="${line#*: }" ;; esac
   printf '%s' "${line:-unclassified}" | tr '\t/' '  ' | cut -c1-80
@@ -326,7 +323,7 @@ is_dataless() {
 # .env.example / .dev.vars.example.
 RSYNC_FILTERS=(
   --include='.env.example' --include='*.example'
-  --exclude='node_modules/' --exclude='.next/' --exclude='dist/' --exclude='build/' --exclude='out/'
+  --exclude='node_modules/' --exclude='.next/' --exclude='dist/' --exclude='build/' --exclude='out/' --exclude='target/'
   --exclude='.vercel/' --exclude='.wrangler/' --exclude='.venv/' --exclude='venv/' --exclude='__pycache__/'
   --exclude='.turbo/' --exclude='coverage/' --exclude='.svelte-kit/' --exclude='.astro/' --exclude='.pytest_cache/'
   --exclude='.ruff_cache/' --exclude='.playwright-mcp/' --exclude='.claude/worktrees/' --exclude='.worktrees/'
@@ -358,6 +355,9 @@ fi
 
 if [ "$PREFLIGHT_RC" -ne 0 ]; then
   echo "FATAL: rsync pre-flight exited $PREFLIGHT_RC — refusing, nothing deleted" >&2
+  # The log is local, so it may carry paths (the push never does): without
+  # rsync's own lines, exit 23 every night from 2026-10-31 left no cause.
+  printf '%s\n' "$PREFLIGHT_OUT" | grep -m5 -E '^(open)?rsync(\([0-9]+\))?: ' | sed 's/^/  rsync said: /' >&2 || true
   FAIL_REASON="rsync pre-flight exited $PREFLIGHT_RC, nothing deleted"; FAIL_CAUSE="preflight: $(error_class "$PREFLIGHT_OUT")"
   exit 1
 fi

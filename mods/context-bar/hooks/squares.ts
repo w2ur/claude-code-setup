@@ -161,8 +161,11 @@ export function squareLines(input: SquaresInput): Line[] {
   // Placement is decided on the closed legend, so opening a category never moves it.
   const legendWidth = Math.max(...legendOf(rows, usedTokens, maxTokens, auto, null).map(widthOf))
   // The legend belongs beside the grid: spaced squares when both fit, packed
-  // squares when only that fits, and under the grid as a last resort.
-  const isSpaced = spacedColumns + GUTTER.length + legendWidth <= columns || side + GUTTER.length + legendWidth > columns
+  // squares when only that fits, and under the grid as a last resort, where
+  // the spaced grid stays only if it fits the pane too.
+  const isBesideSpaced = spacedColumns + GUTTER.length + legendWidth <= columns
+  const isBesidePacked = side + GUTTER.length + legendWidth <= columns
+  const isSpaced = isBesideSpaced || (!isBesidePacked && spacedColumns <= columns)
   const gridColumns = isSpaced ? spacedColumns : side
   const isBeside = gridColumns + GUTTER.length + legendWidth <= columns
   const grid: Line[] = Array.from({ length: side }, (_, row) =>

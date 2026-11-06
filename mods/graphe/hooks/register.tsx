@@ -199,14 +199,20 @@ function imagesOf(sub: Graphe, width: number): Map<string, Position>[] {
   return settled.images
 }
 
-// One tick: the next image, only while one is left and the pane is seen.
+// One tick: the next image, only while one is left and the pane is seen. A pane
+// found hidden or closed lands the settle on its last image and ends the timer:
+// nothing tells this mod when a tab comes forward, so no timer waits for it.
 async function tick($: EngineInterface): Promise<void> {
-  if (image >= IMAGES - 1) {
+  const mine = timer
+  const isSeen = image >= IMAGES - 1 ? false : (await $.ui.panes()).some(pane => pane.id === PANE && pane.isShown)
+  // A replay during the wait has started a newer timer: this tick is stale.
+  if (timer !== mine) return
+  if (!isSeen) {
+    image = IMAGES - 1
     timer?.cancel()
     timer = undefined
     return
   }
-  if (!(await $.ui.panes()).some(pane => pane.id === PANE && pane.isShown)) return
   image += 1
   $.ui.invalidate('ui.render')
 }
@@ -279,14 +285,16 @@ async function askModel($: EngineInterface): Promise<void> {
   const g = snapshot?.graphe
   if (asking || g === undefined || typeof g === 'string' || prompts.length === 0) return
   asking = true
+  // Taken at entry: a close or a pin during any wait below drops the answer.
+  const wanted = epoch
   try {
     const now = await $.clock.now()
+    if (epoch !== wanted) return
     if (lastAsk !== undefined && (promptCount - lastAsk.count < ASK_EVERY_PROMPTS || now - lastAsk.at < ASK_EVERY_MS)) return
     lastAsk = { at: now, count: promptCount }
     const ids = sousGraphe(visibles(g, tout), null, ASK_NODES, true).nodes.map(n => n.id)
     if (ids.length === 0) return
     const talk = prompts.slice(-ASK_PROMPTS).join('\n---\n').slice(-ASK_CHARS)
-    const wanted = epoch
     const answer = await $.model.complete({
       model: HAIKU,
       system: INSTRUCTION,
@@ -469,6 +477,12 @@ async function recheckClose($: EngineInterface): Promise<void> {
 // The pane closed, or the panel did: the server goes with it, and its passages.
 function closePane(): void {
   stopServer()
+  timer?.cancel()
+  timer = undefined
+  image = IMAGES - 1
+  // Nothing ranks or asks the model for a pane that is closed; a reopening reads again.
+  snapshot = undefined
+  epoch += 1
   entry = undefined
   entryAsked = undefined
   centreRequest += 1

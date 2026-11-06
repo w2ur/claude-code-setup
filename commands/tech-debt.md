@@ -142,7 +142,7 @@ git commit -m "chore(tech-debt): {description}" -- <files that category changed>
 - Performance regressions → note for investigation
 - Escalated items → create a concrete plan, or escalate to the `troubleshooter` agent (cascade L3)
 
-Do NOT push. The owner reviews and pushes.
+Do not push before the owner's go. Ask through the question tool, naming the repos to push. On his go, push them yourself, one repo per call with `git -C <repo> push`. Never print push commands for him to run.
 
 ## Phase 4 — Update Tracking
 
@@ -168,7 +168,7 @@ Top candidates for next session (based on today's triage):
 - {app}: {reason}
 
 ### Manual Actions
-1. Review and push commits: {list of apps with commits}
+1. Push on your go (I push): {list of apps with commits}
 2. Dispatch the `troubleshooter` agent for: {list of major migrations}
 3. Escalated items requiring decision: {list}
 ```

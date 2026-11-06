@@ -68,7 +68,7 @@ set -euo pipefail
 STATUS_URL="${ELENCHUS_STATUS_URL:-https://elenchus-proxy.{workers-subdomain}.workers.dev/status}"
 KEYCHAIN_SERVICE="${ELENCHUS_KEYCHAIN_SERVICE:-elenchus-status}"
 HEADROOM_MIN="${ELENCHUS_HEADROOM_MIN:-0.20}"
-NOTIFIER="${NOTIFIER_BIN:-$HOME/.claude/scripts/notifier.sh}"
+. "$(dirname "${BASH_SOURCE[0]}")/push-text.sh"
 
 JSON_OUTPUT=false
 [ "${1:-}" = "--json" ] && JSON_OUTPUT=true
@@ -81,12 +81,7 @@ warn() { echo "WARN: $*" >&2; }
 notify() {
   # $1 = title, $2 = body text (may be multi-line)
   if $JSON_OUTPUT; then return 0; fi
-  [ -x "$NOTIFIER" ] || return 0
-  local body_file
-  body_file=$(mktemp)
-  printf '%s\n' "$2" > "$body_file"
-  "$NOTIFIER" "$1" "$body_file" --priorite 4 >/dev/null 2>&1 || true
-  rm -f "$body_file"
+  push_text "$1" "$2" 4
 }
 
 # Every "could not run" exit goes through here. Previously six sites did a

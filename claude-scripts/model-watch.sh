@@ -46,6 +46,7 @@
 # (Groq); 1 at least one missing, priced or retired; 2 the check could not run
 # (no jq, no network, a probe page that no longer names a known-retired model).
 set -euo pipefail
+. "$(dirname "$0")/notify-on-exit.sh"; watch_notify_on_exit model-watch
 
 DEV_DIR="${DEV_DIR:-$HOME/Dev}"
 JSON_OUTPUT=false

@@ -9,6 +9,7 @@ description: |
   - "Run docs-checker" — full audit
   - "Run docs-checker, the site is available at https://budget.example.com" — full audit + URL verification
 model: sonnet
+effort: medium
 tools: Read, Write, Edit, Bash, Glob, Grep
 skills:
   - claude-md-hygiene
