@@ -1,0 +1,1 @@
+{ "name": "doc-view", "version": "0.1.0", "author": { "name": "{author-name}" }, "description": "Shows the markdown files Claude writes or edits in this session, rendered: the Docs tab of /panel", "types": "./types/index.d.ts" }

@@ -3,8 +3,8 @@ name: "Claude Code Setup"
 tagline_fr: "Mon workflow Claude Code, anonymisé et documenté."
 tagline_en: "My Claude Code workflow, anonymized and documented."
 about_en: "Claude Code hooks, agents and commands for running 10+ personal apps without babysitting every diff — MIT, hooks included."
-facts_fr: "9 commandes, 5 agents, 10 skills, 4 hooks et 7 mods."
-facts_en: "9 commands, 5 agents, 10 skills, 4 hooks and 7 mods."
+facts_fr: "9 commandes, 5 agents, 10 skills, 4 hooks et 8 mods."
+facts_en: "9 commands, 5 agents, 10 skills, 4 hooks and 8 mods."
 -->
 
 # Claude Code Setup
@@ -95,7 +95,7 @@ You type a command; it dispatches agents; agents load skills; hooks guard the wr
 </details>
 
 <details>
-<summary><strong>Mods (7)</strong> — TypeScript hooks into Claude Code itself</summary>
+<summary><strong>Mods (8)</strong> — TypeScript hooks into Claude Code itself</summary>
 
 - **panel** (`/panel`): the right panel; every other mod joins it as a tab
 - **context-bar**: the context window as a grid of squares, one colour per category
@@ -104,6 +104,7 @@ You type a command; it dispatches agents; agents load skills; hooks guard the wr
 - **portrait** (`/portrait`): the owner portrait drawn as a bust filled with its own text
 - **graphe** (`/graphe`): a writings graph drawn in ASCII
 - **plan-progress** (`/plans`): plans being executed and plans that stalled, read from the execution ledgers; writes nothing
+- **doc-view** (`/docs`): every markdown file Claude writes in the session, rendered in a tab as it lands; a list brings back earlier ones
 
 </details>
 
