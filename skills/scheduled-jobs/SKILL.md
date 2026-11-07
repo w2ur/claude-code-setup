@@ -79,6 +79,15 @@ table contains **no row for `uv` at all** — the grant has never existed — an
 path is the FileProvider not yet materialising, not a missing grant. Note `claude`
 carries an **explicit FDA denial** (`auth_value 0`) and still reaches the Drive mount.
 
+**A bash script launchd starts itself cannot list iCloud Drive; start it through
+`icloud-host.py`.** Measured 2026-11-07 with one-shot LaunchAgents: `ls` and
+`rsync` on an iCloud directory get "Operation not permitted" when `/bin/bash`
+is the process launchd started, and succeed when uv's Python is (the host runs
+the script as its child). Writing to a known path still works from bash —
+`db-backup`'s `mv` lands every night — so a job that only writes can look fine
+while one that lists fails. Do not "fix" it by granting Full Disk Access to
+`/bin/bash`: that hands every bash job full disk access.
+
 ## Per-job judgment
 
 **`tech-debt-triage`** — Phase 2 deep-review selections stay manual. Items flagged
@@ -278,6 +287,9 @@ Do not "tighten" the guard back. A third guard refuses (exit 2) if
 the source and the iCloud destination are nested inside each other. See
 `~/.claude/scripts/dev-snapshot.sh` for the filter list and every constant's
 rationale — each script owns its own numbers, not this file.
+**The plist starts it through `icloud-host.py`** (the iCloud listing rule
+above): launched directly, the pre-flight exited 23 every night from
+2026-10-15 to 2026-11-07 while manual runs from a session succeeded.
 **A clean run used to be silent, which broke the rule that log age is the only
 stop signal** — a dead agent never exits with an error, it goes quiet, so only
 the age of its log can say it has stopped. launchd does not touch a log file's mtime on a run that writes nothing, so a job

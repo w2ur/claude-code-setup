@@ -58,9 +58,9 @@ Nothing is pushed or deployed in this step.
 
 ## Step 5 — code review
 
-Run `/code-review high` on the resulting diff. When the diff touches a money path, auth or
-secrets, a data migration or a public API contract, the `ultra` rule and the review-round
-rule in the **Quality** section of `~/.claude/CLAUDE.md` decide the level and the number of
+Run `/code-review high` on the resulting diff. When the diff is a high-risk change, or touches
+auth or secrets, a data migration or a public API contract, the `ultra` rule and the
+high-risk review rule in the **Quality** section of `~/.claude/CLAUDE.md` decide the level and the number of
 rounds — follow them there.
 
 ## Step 6 — stop before push

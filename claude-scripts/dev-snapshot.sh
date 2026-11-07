@@ -215,6 +215,8 @@ notify_recovery() {
 # shellcheck disable=SC2329  # reached only from the EXIT trap
 finish() {
   local rc=$?
+  # Already exiting: a late signal must not cut the summary or the push short.
+  trap '' TERM HUP INT
   local ts dur
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   dur=$(( $(date +%s) - SUMMARY_START ))
@@ -228,6 +230,13 @@ finish() {
   fi
 }
 trap finish EXIT
+# A fatal signal must reach finish() as a failure: bash runs the EXIT trap with
+# the LAST command's status, so a run stopped by launchd right after a
+# successful command logged "ok", pushed a false recovery and erased the
+# cooldown state. Bash runs these only once the running command returns.
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+trap 'exit 130' INT
 
 if [ -z "${HOME:-}" ]; then
   echo "FATAL: HOME is not set — could not resolve defaults" >&2
