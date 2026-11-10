@@ -18,6 +18,8 @@
 #     previous run has not seen.
 #   MODELE — pinned, same pin as my-editor-app/tools/graphe/extraire.py: an
 #     unattended judgment must not move with the alias.
+#   EFFORT — pinned beside MODELE, same value as EFFORT_CLAUDE in extraire.py:
+#     left out, it follows settings.json modelSettings in silence.
 #   MAX_PROPOSITIONS — what the owner can judge in one sitting; passed to the
 #     prompt as {{MAX}}. A longer answer is still written whole, never truncated
 #     in silence.
@@ -51,6 +53,7 @@ export LC_ALL=C.UTF-8
 
 FENETRE_JOURS=7
 MODELE=claude-opus-5-5
+EFFORT=medium
 DELAI_S=600
 MAX_PROPOSITIONS=8
 
@@ -146,7 +149,7 @@ done < "$MODELE_PROMPT" > "$TMP/prompt" || fin 2 "prompt non construit"
 # perl's alarm survives exec: the model call is killed by SIGALRM (rc 142).
 rc=0
 /usr/bin/perl -e 'alarm shift; exec @ARGV or exit 127' "$DELAI_S" \
-  "$CLAUDE" -p --model "$MODELE" --output-format json \
+  "$CLAUDE" -p --model "$MODELE" --effort "$EFFORT" --output-format json \
   --strict-mcp-config --no-session-persistence --tools "" \
   < "$TMP/prompt" > "$TMP/sortie" 2> "$TMP/erreurs" || rc=$?
 [ "$rc" -ne 142 ] || fin 2 "délai dépassé"

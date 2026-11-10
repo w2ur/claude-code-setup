@@ -29,7 +29,7 @@ while IFS= read -r f; do targets+=("$f"); done \
   < <(find "$HOME/Library/LaunchAgents" -maxdepth 1 -name 'com.example.*.plist')
 for d in "$HOME"/Dev/*/; do
   case "$(basename "$d")" in my-encyclopedia-app|my-bible-app|my-facilitation-app) continue ;; esac
-  for s in scripts src options docs/triggers .claude/agents; do
+  for s in scripts src tools options docs/triggers .claude/agents; do
     [ -e "$d$s" ] && targets+=("$d$s")
   done
 done
@@ -50,7 +50,7 @@ else
 fi
 
 printf '%s\n' '--- 3. headless claude -p calls'
-grep -rnE '(claude|CLAUDE_BIN\}?"?) +-p( |$)' "${ex[@]}" "${targets[@]}"
+grep -rnE '(claude|\$\{?[A-Z_]*CLAUDE[A-Z_]*\}?)"? +-p( |$)' "${ex[@]}" "${targets[@]}"
 ```
 
 my-encyclopedia-app, my-bible-app and my-facilitation-app are out of scope; never open them.
@@ -88,7 +88,7 @@ entry exists, confirm its effort still fits and say so.
 ## Step 3 — re-test instructions tuned for the previous model
 
 Load the `claude-api` skill and run its prompt audit (`prompt-audit`) over the instruction
-files the new model reads every session: `~/.claude/CLAUDE.md`, `~/.claude/agents/*.md`,
+files the new model reads every session: `~/.claude/CLAUDE.md`, `~/.claude/portrait.md` (imported by it), `~/.claude/agents/*.md`,
 `~/.claude/commands/*.md`, `~/.claude/skills/*/SKILL.md`. Report what reads as
 compensation for the previous model's habits and what the new model now does unprompted.
 
