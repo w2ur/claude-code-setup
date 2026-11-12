@@ -76,9 +76,10 @@ EXCLUDED="analytics {github-username}"
 # Extract a scalar from the README's pitch block. Strips surrounding single or
 # double quotes. Empty output means absent.
 #
-# THE PITCH-BLOCK RULE (the same rule lives in {portfolio-site}
-# build-inventory.mjs parsePitch, mac-setup tests/run.sh and my-budget-app
-# publish-public.sh strip_pitch; change one, change all four):
+# THE PITCH-BLOCK RULE (the same rule lives in six copies: {portfolio-site}
+# build-inventory.mjs parsePitch, this read_frontmatter, mac-setup
+# tests/run.sh, my-budget-app and my-fitness-app publish-public.sh strip_pitch,
+# and claims-watch.sh read_pitch; change one, change all six):
 #   - "Normalised" means: a trailing \r stripped, then surrounding spaces and
 #     tabs trimmed. A leading UTF-8 byte-order mark on line 1 is ignored.
 #   - Line 1, normalised, is exactly `<!-- portfolio` (comment form, invisible

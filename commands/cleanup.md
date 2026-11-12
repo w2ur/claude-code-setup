@@ -34,8 +34,8 @@ restate those numbers here, they will drift out of sync with the script.
    ~/.claude/scripts/disk-hygiene.sh apply
    ```
 
-3. For the CONFIRM tier — stale `projects/` transcript dirs and plugin
-   temp/whitespace dirs reported by the `plan` run above — present the
+3. For the CONFIRM tier — stale or empty `projects/` transcript dirs and
+   plugin temp/whitespace dirs reported by the `plan` run above — present the
    owner with the specific paths and their sizes (e.g. `du -sh <path>`
    for each) and ask for explicit confirmation. Only on an explicit yes,
    re-run with the corresponding flag(s):
@@ -44,6 +44,9 @@ restate those numbers here, they will drift out of sync with the script.
    ~/.claude/scripts/disk-hygiene.sh apply --yes-plugins
    ```
    (both flags can be combined in one `apply` call if the owner confirms both.)
+   The `# projects:` comment lines name what the script kept on purpose: dirs
+   whose folder cannot be answered for right now, and dirs holding
+   auto-memory. Relay them to the owner; never delete them in this step.
 
 4. Any `REPORT`-verb lines are owner actions, surfaced verbatim with the
    script's reason field — for a marketplace with no enabled plugin, the

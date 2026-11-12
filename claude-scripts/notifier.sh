@@ -25,9 +25,15 @@
 # Codes de sortie :
 #   0 — envoyé, OU aucun canal configuré (l'absence de canal n'est pas une panne
 #       du travail qu'on rapporte ; le script appelant ne doit pas échouer pour ça)
-#   1 — appelé de travers, ou l'envoi a échoué. Une CONSTATATION.
+#   1 — appelé de travers, ou l'envoi a échoué, OU le corps a été retenu
+#       (filet littéral requis mais indisponible : seul un message de
+#       remplacement part, jamais le contenu). Une CONSTATATION.
 #       An undelivered message is still 1 even when it was spooled for the
-#       next call (see "Transport: retry, then spool" below).
+#       next call (see "Transport: retry, then spool" below). A withheld body
+#       is 1 too, so that callers which record state on 0 (offers marked as
+#       pushed, a comment marked as armed) do not record content that never
+#       left; a deferred (--a) message with a withheld body sends nothing.
+#       --dry and --dry-all print what would be sent and stay 0.
 #
 # Test overrides: NOTIFIER_CONF, NOTIFIER_RETRY_DELAYS, NOTIFIER_SPOOL_DIR,
 # NOTIFIER_SPOOL_MAX (scripts/tests/notifier/transport.sh).
@@ -46,7 +52,8 @@ while [ $# -gt 0 ]; do
     --priorite) PRIORITE="${2:-}"; shift 2 ;;
     --a)        QUAND="${2:-}"; shift 2 ;;
     --dry)      DRY=1; shift ;;
-    -h|--help)  echo "usage: notifier.sh <titre> <fichier-corps> [--lien URL] [--priorite N] [--a EPOCH] [--dry]"; exit 0 ;;
+    --dry-all)  DRY=2; shift ;;
+    -h|--help)  echo "usage: notifier.sh <titre> <fichier-corps> [--lien URL] [--priorite N] [--a EPOCH] [--dry|--dry-all]"; exit 0 ;;
     *)          if [ -z "$TITRE" ]; then TITRE="$1"; elif [ -z "$CORPS" ]; then CORPS="$1"; else die "argument inattendu : $1"; fi; shift ;;
   esac
 done
@@ -69,6 +76,14 @@ if [ -n "$QUAND" ]; then
   [ "$delta" -le 259200 ] || die "--a dépasse les 72 h que ntfy accepte (${delta}s) : réarmer plus tard"
 fi
 
+# A newline in the title or the link would shift the spool's one-field-per-line
+# format and split the HTTP header. The title has its CR and LF collapsed to
+# spaces; a URL has no use for either, so the link loses them outright.
+TITRE="${TITRE//$'\r'/ }"
+TITRE="${TITRE//$'\n'/ }"
+LIEN="${LIEN//$'\r'/}"
+LIEN="${LIEN//$'\n'/}"
+
 [ -n "$TITRE" ] || die "titre manquant"
 [ -n "$CORPS" ] || die "fichier de corps manquant"
 [ -f "$CORPS" ] || die "corps introuvable : $CORPS"
@@ -77,27 +92,76 @@ fi
 # Filet 1 : les valeurs littérales. On ne retient que les clés dont le NOM dit
 # qu'elles sont secrètes — redacter dispatch_url rendrait les messages illisibles
 # sans rien protéger.
-literaux=""
-if [ -r "$SECRETS" ] && command -v jq >/dev/null 2>&1; then
-  literaux=$(jq -r '[paths(scalars) as $p | select(($p[-1]|tostring|test("token|key|secret|password";"i"))) | getpath($p)] | .[] | select(type=="string" and length >= 12)' "$SECRETS" 2>/dev/null | sort -u)
+# The first net is REQUIRED by default. When it cannot be loaded (secrets.json
+# sits on a cloud mount that may be absent, jq may be missing, the file may be
+# unreadable JSON, or it may hold no qualifying literal at all), the generic
+# patterns alone would let a proprietary token through, so the body is withheld
+# and a line saying why replaces it. The alert still arrives; its content does
+# not, and the exit code is 1 so that callers do not record it as delivered.
+# The title is still filtered, but only by the generic patterns: with no net
+# loaded the literal pass has nothing to apply. That residue is accepted
+# because a title names the job, not its output. The link is DROPPED in that
+# case: a URL can carry a credential no generic pattern knows.
+# In optional mode a secrets file that exists but is unusable is reported on
+# stderr (the body is still sent); a file that does not exist stays silent,
+# which is what optional is for.
+# A machine with no secrets file at all sets NOTIFIER_LITERALS=optional in
+# its conf (or in the environment, which wins). Any value other than
+# "optional" means "required": a typo in the conf must not silence alerts, and
+# must not weaken the redaction either.
+literals_env="${NOTIFIER_LITERALS:-}"
+if [ -f "$CONF" ]; then
+  # shellcheck source=/dev/null
+  . "$CONF"
 fi
 
-# Les littéraux passent par l'environnement, jamais par argv : argv est lisible
-# dans `ps` par n'importe quel processus de l'utilisateur.
-corps_propre=$(REDACT_VALS="$literaux" awk '
-  BEGIN {
-    n = 0
-    m = split(ENVIRON["REDACT_VALS"], arr, "\n")
-    for (i = 1; i <= m; i++) if (length(arr[i]) >= 12) lit[++n] = arr[i]
-  }
-  {
-    line = $0
-    for (i = 1; i <= n; i++) {
-      while ((p = index(line, lit[i])) > 0)
-        line = substr(line, 1, p - 1) "[SECRET RETIRE]" substr(line, p + length(lit[i]))
+# A real send on a machine with no channel does nothing: decide that BEFORE
+# touching the secrets file (a cloud mount) or logging anything about it.
+if [ "$DRY" -eq 0 ]; then
+  [ -f "$CONF" ] || exit 0
+  [ -n "${NTFY_TOPIC:-}" ] || exit 0
+fi
+
+LITERALS_MODE="${literals_env:-${NOTIFIER_LITERALS:-required}}"
+if [ "$LITERALS_MODE" != "optional" ]; then
+  if [ "$LITERALS_MODE" != "required" ]; then
+    printf 'notifier: NOTIFIER_LITERALS inconnu « %s », traité comme « required »\n' "$LITERALS_MODE" >&2
+  fi
+  LITERALS_MODE="required"
+fi
+
+literaux=""; filet_absent=""
+if [ ! -r "$SECRETS" ]; then
+  filet_absent="secrets illisibles"
+elif ! command -v jq >/dev/null 2>&1; then
+  filet_absent="jq absent"
+elif ! literaux=$(jq -r '[paths(scalars) as $p | select(($p[-1]|tostring|test("token|key|secret|password";"i"))) | getpath($p)] | .[] | select(type=="string" and length >= 12)' "$SECRETS" 2>/dev/null | sort -u); then
+  filet_absent="secrets non analysables"
+  literaux=""
+elif [ -z "$literaux" ]; then
+  # A 0-byte file, {} or a file whose keys were renamed parses fine and yields
+  # nothing: that is the net being absent, not the net finding nothing to hide.
+  filet_absent="aucun secret lu"
+fi
+
+# redact_stdin: filters stdin to stdout. Literal pass first, then the generic
+# patterns. The literals go through the environment, never argv: argv is
+# readable in `ps` by any process of the user.
+redact_stdin() {
+  REDACT_VALS="$literaux" awk '
+    BEGIN {
+      n = 0
+      m = split(ENVIRON["REDACT_VALS"], arr, "\n")
+      for (i = 1; i <= m; i++) if (length(arr[i]) >= 12) lit[++n] = arr[i]
     }
-    print line
-  }' "$CORPS" | sed -E \
+    {
+      line = $0
+      for (i = 1; i <= n; i++) {
+        while ((p = index(line, lit[i])) > 0)
+          line = substr(line, 1, p - 1) "[SECRET RETIRE]" substr(line, p + length(lit[i]))
+      }
+      print line
+    }' | sed -E \
     -e 's/(^|[^A-Za-z0-9_])(napi|sbp|nfp)_[A-Za-z0-9]{20,}/\1[SECRET RETIRE]/g' \
     -e 's/(^|[^A-Za-z0-9_])sb_secret_[A-Za-z0-9_-]{20,}/\1[SECRET RETIRE]/g' \
     -e 's~([A-Za-z][A-Za-z0-9+.-]*://[^:/@[:space:]]*:)[^@/?#[:space:]]+@~\1[SECRET RETIRE]@~g' \
@@ -107,21 +171,44 @@ corps_propre=$(REDACT_VALS="$literaux" awk '
     -e 's/(^|[^A-Za-z0-9_])gh[pos]_[A-Za-z0-9]{30,}/\1[SECRET RETIRE]/g' \
     -e 's/(^|[^A-Za-z0-9_])glpat-[A-Za-z0-9_-]{20,}/\1[SECRET RETIRE]/g' \
     -e 's/([Bb]earer[[:space:]]+)[A-Za-z0-9._~+/=-]{12,}/\1[SECRET RETIRE]/g' \
-    -e 's/((token|password|secret|api[_-]?key)[[:space:]]*[:=][[:space:]]*"?)[A-Za-z0-9_.-]{12,}/\1[SECRET RETIRE]/gI')
+    -e 's/((token|password|secret|api[_-]?key)[[:space:]]*[:=][[:space:]]*"?)[A-Za-z0-9_.-]{12,}/\1[SECRET RETIRE]/gI'
+}
 
-if [ "$DRY" -eq 1 ]; then
+WITHHELD=0
+lien_propre=""
+if [ -n "$filet_absent" ] && [ "$LITERALS_MODE" = "required" ]; then
+  WITHHELD=1
+  corps_propre="[corps retenu : les secrets n'ont pas pu être lus pour la rédaction ($filet_absent). Le contenu n'a pas quitté la machine ; rétablir l'accès puis relancer la tâche.]"
+  printf 'notifier: corps retenu, %s\n' "$filet_absent" >&2
+else
+  if [ -n "$filet_absent" ] && [ -e "$SECRETS" ]; then
+    printf 'notifier: filet littéral inactif (mode optional), %s\n' "$filet_absent" >&2
+  fi
+  corps_propre=$(redact_stdin < "$CORPS")
+  [ -z "$LIEN" ] || lien_propre=$(printf '%s\n' "$LIEN" | redact_stdin)
+fi
+titre_propre=$(printf '%s\n' "$TITRE" | redact_stdin)
+
+if [ "$DRY" -ge 1 ]; then
+  if [ "$DRY" -eq 2 ]; then
+    printf 'Title: %s\nClick: %s\n' "$titre_propre" "$lien_propre"
+  fi
   printf '%s\n' "$corps_propre"
   exit 0
 fi
 
 # --- Canal -------------------------------------------------------------------
-# Pas de configuration = pas de canal = rien à faire, et surtout pas une erreur.
-[ -f "$CONF" ] || exit 0
-# shellcheck source=/dev/null
-. "$CONF"
+# Pas de configuration = pas de canal = rien à faire, et surtout pas une erreur
+# (already decided above, before the secrets file is touched).
 NTFY_TOPIC="${NTFY_TOPIC:-}"
 NTFY_SERVER="${NTFY_SERVER:-https://ntfy.sh}"
-[ -n "$NTFY_TOPIC" ] || exit 0
+
+# A deferred message with a withheld body sends nothing: its caller records
+# nothing on exit 1 and re-arms it on its next pass.
+if [ "$WITHHELD" -eq 1 ] && [ -n "$QUAND" ]; then
+  printf 'notifier: message différé non envoyé, corps retenu (%s)\n' "$filet_absent" >&2
+  exit 1
+fi
 
 command -v curl >/dev/null 2>&1 || die "curl introuvable (PATH=$PATH)"
 
@@ -250,16 +337,19 @@ attempt=0
 for delay in "" $RETRY_DELAYS; do
   if [ -n "$delay" ]; then sleep "$delay"; fi
   attempt=$((attempt + 1))
-  send_once "$TITRE" "$PRIORITE" "$LIEN" "$QUAND" "$TMPW/corps.txt"
+  send_once "$titre_propre" "$PRIORITE" "$lien_propre" "$QUAND" "$TMPW/corps.txt"
   case $? in
-    0) exit 0 ;;
+    0) [ "$WITHHELD" -eq 0 ] || exit 1
+       exit 0 ;;
     1) printf 'notifier: ntfy a repondu %s (curl %s) %s\n' "$SEND_HTTP" "$SEND_CURL" "$(head -1 "$TMPW/curl.err")" >&2
        exit 1 ;;
   esac
   printf 'notifier: essai %s, echec transitoire (curl %s, http %s)\n' "$attempt" "$SEND_CURL" "$SEND_HTTP" >&2
 done
 
-if [ -z "$QUAND" ] && spool_add "$TITRE" "$PRIORITE" "$LIEN" "$TMPW/corps.txt"; then
+# A withheld placeholder is never spooled: replaying it later would deliver
+# nothing, and the caller re-runs the task on exit 1.
+if [ -z "$QUAND" ] && [ "$WITHHELD" -eq 0 ] && spool_add "$titre_propre" "$PRIORITE" "$lien_propre" "$TMPW/corps.txt"; then
   printf 'notifier: envoi echoue apres %s essai(s), message mis en attente (%s en attente)\n' \
     "$attempt" "$(spool_count)" >&2
 else

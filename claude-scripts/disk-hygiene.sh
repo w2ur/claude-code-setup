@@ -574,6 +574,90 @@ collect_live_project_paths() {
   done < <(find "$HOME/Dev" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
 }
 
+# A session can start anywhere (a Drive mount, an iCloud folder, a plugin
+# checkout), and those paths cannot be enumerated forward. Each transcript
+# records the directory it ran in, so a dir is also live when one of its
+# transcripts, a subagent's included, names a directory that still exists.
+#
+# A recorded directory that is absent is not always gone: an unplugged
+# volume, a cloud provider that is not running, and a folder this process may
+# not read (a LaunchAgent's bash cannot list iCloud Drive) all look the same.
+# Under those roots the answer is "stale" only when the nearest ancestor that
+# still exists lists something; otherwise it is unknown, and unknown is never
+# deleted.
+cwd_is_unknowable() {
+  local root anc
+  for root in "/Volumes" "$HOME/Library/CloudStorage" "$HOME/Library/Mobile Documents" \
+              "$HOME/Desktop" "$HOME/Documents" "$HOME/Downloads"; do
+    case "$1" in
+      "$root"/*)
+        # Nearest ancestor that exists. A provider that is offline can still
+        # show its top level, so the mount point alone answers nothing.
+        anc="$(dirname "$1")"
+        while [ "$anc" != "$root" ] && [ ! -d "$anc" ]; do
+          anc="$(dirname "$anc")"
+        done
+        # Hidden files do not count: Finder leaves a .DS_Store in an offline
+        # provider folder.
+        if [ "$anc" != "$root" ] && [ -n "$(find "$anc" -mindepth 1 -maxdepth 1 ! -name ".*" -print -quit 2>/dev/null)" ]; then
+          return 1
+        fi
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+# Prints one verdict for a projects/ dir:
+#   live    -- a transcript names a directory that exists;
+#   stale   -- every recorded directory is absent, and none is unknowable;
+#   unknown -- a recorded directory cannot be answered for, a transcript
+#              records no directory, or a file could not be read;
+#   empty   -- no transcript at all (a plugin log is not one): nothing here
+#              says anything.
+# Lines are read raw and parsed one by one, so a truncated record does not
+# hide the ones after it; the first 200 records of a file are enough. With -R
+# a malformed line is not an error, so a non-zero jq means the file itself
+# could not be read.
+project_liveness() {
+  local f cwd files=0 recorded=0 unreadable=0 verdict="stale"
+  while IFS= read -r -d "" f; do
+    cwd="$(jq -rnR '[limit(200; inputs | fromjson? | objects)] as $o | (first($o[] | .cwd | strings | select(. != ""))) // (if any($o[]; has("sessionId") or has("uuid") or has("type")) then "?" else empty end)' "$f" 2>/dev/null)" || { unreadable=$((unreadable + 1)); continue; }
+    # No answer: not a transcript (a plugin log, a file of garbage).
+    [ -n "$cwd" ] || continue
+    files=$((files + 1))
+    # A transcript that records no directory: evidence of a session, not of where.
+    [ "$cwd" != "?" ] || continue
+    recorded=$((recorded + 1))
+    if [ -d "$cwd" ]; then
+      echo "live"
+      return 0
+    fi
+    if cwd_is_unknowable "$cwd"; then
+      verdict="unknown"
+    fi
+  done < <(find "$1" -mindepth 1 -type f -name "*.jsonl" -print0 2>/dev/null)
+  if [ "$unreadable" -gt 0 ]; then
+    verdict="unknown"
+  elif [ "$files" -eq 0 ]; then
+    verdict="empty"
+  elif [ "$recorded" -eq 0 ]; then
+    verdict="unknown"
+  fi
+  echo "$verdict"
+}
+
+# With no transcript, the dir name is the only clue. It cannot be decoded
+# for certain (a hyphen in a folder name reads as a separator), but a naive
+# decode that lands on an existing directory is reason enough to keep the
+# dir: the mistake can only err toward keeping.
+project_name_decodes_to_existing_dir() {
+  local name="$1" path
+  path="$(printf '%s' "$name" | sed -e 's|--|/.|g' -e 's|-|/|g')"
+  [ -n "$path" ] && [ -d "$path" ]
+}
+
 do_projects() {
   # Only compute/report this category in plan mode, or in apply mode when
   # its flag was passed -- an unset flag means this category is not
@@ -585,22 +669,59 @@ do_projects() {
   local dir="$ROOT/projects"
   [ -d "$dir" ] || return 0
 
+  # Without jq the recorded-directory check cannot run, and a dir it would
+  # have kept must not be planned: report and stop, never delete on a guess.
+  if ! command -v jq >/dev/null 2>&1; then
+    emit "REPORT" "$dir" "stale transcript dir check SKIPPED -- no jq; this is not a clean result" "confirm"
+    return 0
+  fi
+
   local live_encoded
   live_encoded="$(collect_live_project_paths | while IFS= read -r p; do printf '%s\n' "$(normalize_encode "$p")"; done | sort -u)"
 
-  local entry base norm
+  # Kept dirs are comments, not rows: a row nobody can act on would sit in
+  # cleanup-cron's owner-action count every month (see do_job_logs).
+  local entry base norm unknown=0 kept_memory=""
   while IFS= read -r -d '' entry; do
     base="$(basename "$entry")"
     norm="$(normalize_encode "$base")"
     if printf '%s\n' "$live_encoded" | grep -Fxq -- "$norm"; then
       continue
     fi
-    emit "DELETE" "$entry" "stale transcript dir (no matching live path)" "confirm"
+    local verdict reason="stale transcript dir (no matching live path)"
+    verdict="$(project_liveness "$entry")"
+    case "$verdict" in
+      live) continue ;;
+      unknown) unknown=$((unknown + 1)); continue ;;
+      # Not "stale": with no transcript nothing says the folder is gone. A
+      # shell whose name still decodes to a folder is left alone: the next
+      # session there would recreate it, and the row would return monthly.
+      empty)
+        if project_name_decodes_to_existing_dir "$base"; then
+          continue
+        fi
+        reason="empty transcript dir (no transcript, no auto-memory)"
+        ;;
+    esac
+    # Auto-memory is never deleted here, whatever the liveness answer: it is
+    # the one thing in projects/ that no transcript retention can rebuild.
+    if [ -n "$(find "$entry/memory" -type f -print -quit 2>/dev/null)" ]; then
+      kept_memory="$kept_memory $base"
+      continue
+    fi
+    emit "DELETE" "$entry" "$reason" "confirm"
     if [ "$MODE" = "apply" ]; then
       assert_under_root "$entry"
       rm -rf -- "$entry"
     fi
   done < <(find "$dir" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+
+  if [ "$unknown" -gt 0 ]; then
+    print_comment "projects: $unknown dir(s) kept -- their recorded folder cannot be answered for right now (a volume, a cloud mount, a protected folder, an unreadable or directory-less transcript); that is unknown, not stale"
+  fi
+  if [ -n "$kept_memory" ]; then
+    print_comment "projects: kept, no live path but auto-memory inside (remove by hand only if the folder is gone for good):$kept_memory"
+  fi
 }
 
 do_payload_baselines() {

@@ -101,6 +101,16 @@ this directory is out of scope, not missing.
   Generic on purpose, so there is one channel and one redaction pass: it
   strips the literal values of known secrets and the `secret-scan` hook's
   patterns before anything leaves the machine.
+  The literal pass is required by default: when the secrets file cannot be
+  read, the title is sent with the body withheld and the script exits 1. A
+  machine with no secrets file sets `NOTIFIER_LITERALS=optional` in its
+  `.notifier.conf`.
+- **`claims-watch.sh`** — checks that what is published says what the repo
+  says: every figure in a README pitch line must be derived by a rule or is
+  reported, and a registry page must match its repo. Rule commands run in a
+  restricted shell that holds only read tools. It expects a rule table,
+  `claims-watch.rules.json`, beside it; none is published here, since rules
+  name the owner's repos. Not scheduled.
 
 - **`act-local.sh`**, **`gha-bridge.sh`**, **`midas-ohlcv-bridge.sh`** were a
   temporary family that ran GitHub Actions work locally while the included-usage

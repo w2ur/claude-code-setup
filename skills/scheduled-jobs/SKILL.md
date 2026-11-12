@@ -378,7 +378,18 @@ change. `gate-watch.sh` distinguishes `pending` (a fix already open in a PR) fro
 **`notifier.sh` is the single push channel, and its topic is PUBLIC.** It redacts
 against `secrets.json` literals first and generic token patterns second, because a
 failing run can quote its own `curl` command. **That redaction covers secrets, not
-personal data** — never route personal content through it. Counts only.
+personal data** — never route personal content through it. Counts only. The
+literal net is required by default, because the generic patterns alone cannot
+recognise a proprietary token, so a body is never sent on the strength of them
+alone. When the secrets file cannot be loaded (cloud mount absent, `jq` missing,
+unparseable file, or no qualifying key in it), the owner sees the title only,
+with the body withheld and the cause named in its place, and the link dropped.
+**A withheld body is exit 1, never 0**: callers record a message as delivered
+on 0 (the job-offer watch marks offers as pushed, the publication reminder marks
+a comment as armed), so a 0 would lose the content for good. A deferred message
+whose body is withheld is not sent at all, and its caller re-arms it. A machine with no
+secrets file sets `NOTIFIER_LITERALS=optional` in `.notifier.conf`; any other
+value counts as `required`.
 **A transport failure is retried, then spooled — never dropped.** A DNS hiccup
 used to lose the push outright (one attempt, exit 1). The notifier now retries
 transient failures only (transport, HTTP 5xx, 429; any other 4xx is an
@@ -407,6 +418,19 @@ exits 1 only on a var documented in *neither*.
 the status code** — the Store answers 200 for any 32-character ID, including one that
 never existed, so `res.ok` is unfalsifiable there. It re-proves that control at
 runtime rather than trusting the measurement in its own comment.
+
+**`claims-watch.sh` checks that what the portfolio says in public still matches the
+repo, and it has no schedule yet.** About a dozen October-review findings were one
+defect: a pitch figure or a registry README that the code no longer supports. It
+derives every number in each README pitch block through a rule table
+(`claims-watch.rules.json`, read-only offline commands, a refused rule is exit 2) and
+compares each published package's version and README first line with its repo. It is
+run by hand until a few runs show whether a plist earns its place. It differs from
+`distribution-watch.sh`, which answers "is the package there" from a hand list and
+feeds vigie: `claims-watch.sh` discovers its packages, answers "does what is published
+say what the repo says", and never re-reports presence (an unpublished package is an
+info line there). The script owns the rule semantics and the rules file owns the
+figures; the file stays out of the public mirror because it names private repos.
 
 **All but `distribution-watch.sh` honour `CLAUDE_DIR` / `DEV_DIR` / `LAUNCH_AGENTS_DIR`**
 so they can be tested against a fixture tree. That one reads no local tree — it
