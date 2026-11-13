@@ -23,8 +23,7 @@
 # propriétaire ne ressemble à aucun motif connu.
 #
 # Codes de sortie :
-#   0 — envoyé, OU aucun canal configuré (l'absence de canal n'est pas une panne
-#       du travail qu'on rapporte ; le script appelant ne doit pas échouer pour ça)
+#   0 — envoyé, OU canal écarté exprès (`NTFY_TOPIC=` écrit vide dans la conf)
 #   1 — appelé de travers, ou l'envoi a échoué, OU le corps a été retenu
 #       (filet littéral requis mais indisponible : seul un message de
 #       remplacement part, jamais le contenu). Une CONSTATATION.
@@ -34,6 +33,8 @@
 #       pushed, a comment marked as armed) do not record content that never
 #       left; a deferred (--a) message with a withheld body sends nothing.
 #       --dry and --dry-all print what would be sent and stay 0.
+#   2 — pas de canal par accident : conf absente, ou conf sans ligne
+#       NTFY_TOPIC. Rien n'est envoyé et l'appelant ne doit rien marquer livré.
 #
 # Test overrides: NOTIFIER_CONF, NOTIFIER_RETRY_DELAYS, NOTIFIER_SPOOL_DIR,
 # NOTIFIER_SPOOL_MAX (scripts/tests/notifier/transport.sh).
@@ -110,16 +111,33 @@ LIEN="${LIEN//$'\n'/}"
 # "optional" means "required": a typo in the conf must not silence alerts, and
 # must not weaken the redaction either.
 literals_env="${NOTIFIER_LITERALS:-}"
+# Only the conf may choose "no channel": an empty NTFY_TOPIC inherited from
+# the environment is dropped, so it cannot pass for that choice.
+[ -n "${NTFY_TOPIC:-}" ] || unset NTFY_TOPIC
 if [ -f "$CONF" ]; then
   # shellcheck source=/dev/null
   . "$CONF"
 fi
 
-# A real send on a machine with no channel does nothing: decide that BEFORE
-# touching the secrets file (a cloud mount) or logging anything about it.
+# No channel: decide BEFORE touching the secrets file (a cloud mount).
+# Only a conf that writes `NTFY_TOPIC=` empty means "no channel, on purpose"
+# (exit 0, silent). A missing conf, or one that never names a topic, is a
+# broken channel: exit 2, because every caller records a message as delivered
+# on 0 and the alert would be lost with nothing saying so.
 if [ "$DRY" -eq 0 ]; then
-  [ -f "$CONF" ] || exit 0
-  [ -n "${NTFY_TOPIC:-}" ] || exit 0
+  if [ ! -f "$CONF" ]; then
+    printf 'notifier: configuration absente (%s), rien n'\''est envoyé\n' "$CONF" >&2
+    exit 2
+  fi
+  if [ ! -r "$CONF" ]; then
+    printf 'notifier: configuration illisible (%s), rien n'\''est envoyé\n' "$CONF" >&2
+    exit 2
+  fi
+  if [ -z "${NTFY_TOPIC+set}" ]; then
+    printf 'notifier: NTFY_TOPIC absent de la configuration, rien n'\''est envoyé (NTFY_TOPIC= vide pour se passer de canal)\n' >&2
+    exit 2
+  fi
+  [ -n "$NTFY_TOPIC" ] || exit 0
 fi
 
 LITERALS_MODE="${literals_env:-${NOTIFIER_LITERALS:-required}}"
@@ -198,8 +216,7 @@ if [ "$DRY" -ge 1 ]; then
 fi
 
 # --- Canal -------------------------------------------------------------------
-# Pas de configuration = pas de canal = rien à faire, et surtout pas une erreur
-# (already decided above, before the secrets file is touched).
+# The no-channel cases were decided above, before the secrets file is touched.
 NTFY_TOPIC="${NTFY_TOPIC:-}"
 NTFY_SERVER="${NTFY_SERVER:-https://ntfy.sh}"
 

@@ -105,6 +105,9 @@ this directory is out of scope, not missing.
   read, the title is sent with the body withheld and the script exits 1. A
   machine with no secrets file sets `NOTIFIER_LITERALS=optional` in its
   `.notifier.conf`.
+  A missing `.notifier.conf`, or one with no `NTFY_TOPIC` line, exits 2 and
+  sends nothing, so callers never record an undelivered message as sent. To
+  run the watchers with no channel at all, write `NTFY_TOPIC=` empty.
 - **`claims-watch.sh`** — checks that what is published says what the repo
   says: every figure in a README pitch line must be derived by a rule or is
   reported, and a registry page must match its repo. Rule commands run in a

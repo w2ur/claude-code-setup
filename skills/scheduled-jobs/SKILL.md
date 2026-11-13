@@ -390,6 +390,9 @@ a comment as armed), so a 0 would lose the content for good. A deferred message
 whose body is withheld is not sent at all, and its caller re-arms it. A machine with no
 secrets file sets `NOTIFIER_LITERALS=optional` in `.notifier.conf`; any other
 value counts as `required`.
+**A missing channel is exit 2, never 0**, for the same reason: a missing
+`.notifier.conf`, or one with no `NTFY_TOPIC` line, sends nothing and says so.
+Only `NTFY_TOPIC=` written empty means "no channel, on purpose" (exit 0).
 **A transport failure is retried, then spooled — never dropped.** A DNS hiccup
 used to lose the push outright (one attempt, exit 1). The notifier now retries
 transient failures only (transport, HTTP 5xx, 429; any other 4xx is an
