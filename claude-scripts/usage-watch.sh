@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vigie: notifie-sa-sortie-1 (its exit 1 sends its own notification; vigie keeps it out of the band)
 #
 # usage-watch.sh — weekly served-bytes trend across the portfolio.
 #
@@ -62,9 +63,10 @@
 #
 # Notification: a run with findings pushes ONE message through notifier.sh
 # (counts only — the ntfy topic is PUBLIC, so no host and no route). It has
-# to: vigie drops exit 1 on the assumption that the job
-# already reported its finding, so without this push a tripled payload would
-# land only in a log nobody opens. Exit 2 needs no push of its own — vigie
+# to: vigie keeps a job's exit 1 out of its band only when the script declares
+# `# vigie: notifie-sa-sortie-1` (line 2), and that declaration is true only
+# because of this push. Without it a tripled payload would land in a log nobody
+# opens. Exit 2 needs no push of its own — vigie
 # surfaces it. NOTIFIER_BIN overrides the notifier (tests).
 #
 # Env overrides (for testing against a fixture tree — production runs use

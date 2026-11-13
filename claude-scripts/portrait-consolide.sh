@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vigie: notifie-sa-sortie-1 (its exit 1 sends its own notification; vigie keeps it out of the band)
 # portrait-consolide.sh — weekly PROPOSAL of updates to the owner portrait
 # (~/.claude/portrait.md), drawn from the auto-memories written that week.
 #

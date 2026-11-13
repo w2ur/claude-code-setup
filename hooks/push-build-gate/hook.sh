@@ -15,6 +15,23 @@ case "$input" in
   *) exit 0 ;;
 esac
 
+# Without jq the command below reads back EMPTY, the push match fails and the
+# hook exits 0 in silence: every push ungated, nothing said (fail-closed drill,
+# 2026-11-12). This is the one malfunction that cannot degrade loudly at exit 1,
+# because without jq the hook cannot even tell a push from a `git status`; the
+# raw payload naming `push` is the best it can do, so that is what it blocks on.
+# npm missing already blocks (exit 127 from the build); jq and node join it.
+if ! command -v jq >/dev/null 2>&1; then
+  case "$input" in
+    # Matches the whole raw payload, cwd included: a git command run from a path
+    # holding "push" is blocked too. Accepted: it only over-blocks, only while
+    # jq is missing, and the message says what to install.
+    *push*) echo "push-build-gate: jq not found (PATH=$PATH) — cannot tell whether this command pushes; push BLOCKED until jq is on PATH" >&2
+            exit 2 ;;
+  esac
+  exit 0
+fi
+
 # `jq`, not an interpreter: a field lookup needs no interpreter at all, and
 # this has to happen before the push match below regardless.
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
@@ -175,6 +192,15 @@ done < <(git -C "$dir" -c core.quotePath=false ls-files -- ':(glob)*/package.jso
 # No package.json anywhere in the shape this hook understands — nothing to gate.
 [ ${#PKG_DIRS[@]} -eq 0 ] && exit 0
 
+# The build and test commands are read through node. Without it both read back
+# empty, the root was skipped as "no build/test" and the push passed at exit 0
+# (fail-closed drill, 2026-11-12). Same doctrine as the jq guard above: npm,
+# which cannot run without node anyway, already blocks when it is missing.
+if ! command -v node >/dev/null 2>&1; then
+  echo "push-build-gate: node not found (PATH=$PATH) — cannot read the build/test scripts; push BLOCKED" >&2
+  exit 2
+fi
+
 # ONE global deadline, covering the root's build AND test AND every nested
 # package's build/test — not a fresh budget per stage. There's no `timeout`
 # binary on macOS, and this hook itself has a 180s external ceiling
@@ -306,8 +332,23 @@ for pkgdir in "${PKG_DIRS[@]}"; do
     label="${pkgdir#"$dir"/}"
   fi
 
-  BUILD_CMD=$(node -e "const p=require('$pkgdir/package.json'); console.log(p.scripts && p.scripts.build || '')" 2>/dev/null)
-  TEST_CMD=$(node -e "const p=require('$pkgdir/package.json'); console.log(p.scripts && p.scripts.test || '')" 2>/dev/null)
+  # A package.json node cannot parse read back as "no build/test" and passed
+  # ungated. At the ROOT it is the manifest npm itself reads, so it blocks. A
+  # NESTED one may be a template or a fixture npm never reads ({{name}}): there
+  # it is reported NOT GATED (exit 1 at the end), never a block.
+  # The path goes in as argv, never inside the script text: an apostrophe in a
+  # folder name broke the quoted string and blocked a valid push.
+  if ! BUILD_CMD=$(node -e 'const p=require(process.argv[1]); console.log(p.scripts && p.scripts.build || "")' "$pkgdir/package.json" 2>/dev/null) \
+     || ! TEST_CMD=$(node -e 'const p=require(process.argv[1]); console.log(p.scripts && p.scripts.test || "")' "$pkgdir/package.json" 2>/dev/null); then
+    if [ "$pkgdir" = "$dir" ]; then
+      echo "push-build-gate: cannot read $label/package.json with node — push BLOCKED" >&2
+      exit 2
+    fi
+    NOT_GATED_MSGS="${NOT_GATED_MSGS}push-build-gate: nested $label NOT GATED (package.json unreadable by node)
+"
+    NOT_GATED=1
+    continue
+  fi
 
   # npm scaffolds a `test` script that only fails. Gating on it would block
   # every push in a package that has simply never written a test.
@@ -346,7 +387,7 @@ for pkgdir in "${PKG_DIRS[@]}"; do
   # Won't fix (2026-09-26): a zero-dependency nested package is still built and can block; blocking is the safe side.
   if [ "$pkgdir" != "$dir" ] \
      && [ ! -d "$pkgdir/node_modules" ] && [ ! -d "$dir/node_modules" ]; then
-    DEP_COUNT=$(node -e "const p=require('$pkgdir/package.json'); console.log(Object.keys(Object.assign({}, p.dependencies, p.devDependencies)).length)" 2>/dev/null)
+    DEP_COUNT=$(node -e 'const p=require(process.argv[1]); console.log(Object.keys(Object.assign({}, p.dependencies, p.devDependencies)).length)' "$pkgdir/package.json" 2>/dev/null)
     if [ "${DEP_COUNT:-0}" -gt 0 ] 2>/dev/null; then
       NOT_GATED_MSGS="${NOT_GATED_MSGS}push-build-gate: nested $label NOT GATED (dependencies not installed)
 "

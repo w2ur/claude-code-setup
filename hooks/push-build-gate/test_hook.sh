@@ -711,6 +711,59 @@ else
     "$LIVE_LIB_HASH_BEFORE" "$LIVE_LIB_HASH_AFTER"
 fi
 
+# --- Fail-closed on a missing jq or node (drill of 2026-11-12) ---------------
+# A PATH that holds everything the hook uses EXCEPT the named binaries: symlinks
+# to /usr/bin, /bin, Homebrew, ~/.local/bin and fnm's default Node, minus the
+# exclusions. Built under $ROOT; the real PATH is never modified.
+filtered_path() { # <name> <excluded binary>...
+  local d="$ROOT/bin-$1"; shift; mkdir -p "$d"
+  local ex=" $* " b n
+  for b in /usr/bin/* /bin/* /opt/homebrew/bin/* "$HOME"/.local/bin/* \
+           "$HOME"/.local/share/fnm/aliases/default/bin/*; do
+    n=$(basename "$b"); case "$ex" in *" $n "*) continue ;; esac
+    [ -e "$d/$n" ] || ln -s "$b" "$d/$n" 2>/dev/null
+  done
+  echo "$d"
+}
+# run_filtered <path dir> <cwd> <cmd> — prints "<exit>|<stderr>"
+run_filtered() {
+  local p="$1" cwd="$2" cmd="$3" out rc
+  out=$(jq -n --arg cwd "$cwd" --arg cmd "$cmd" '{cwd: $cwd, tool_input: {command: $cmd}}' \
+        | PATH="$p" /bin/bash "$HOOK" 2>&1 >/dev/null); rc=$?
+  printf '%s|%s' "$rc" "$out"
+}
+expect_filtered() { # <want exit> <stderr substring or -> <name> <path dir> <cwd> <cmd>
+  local want="$1" needle="$2" name="$3" r
+  r=$(run_filtered "$4" "$5" "$6")
+  if [ "${r%%|*}" = "$want" ] && { [ "$needle" = "-" ] || printf '%s' "${r#*|}" | grep -qF "$needle"; }; then
+    PASS=$((PASS + 1)); printf '  ok    %s\n' "$name"
+  else
+    FAIL=$((FAIL + 1)); printf '  FAIL  %s — expected exit %s, got: %s\n' "$name" "$want" "$r"
+  fi
+}
+FULL_PATH=$(filtered_path full)
+NO_JQ=$(filtered_path nojq jq)
+NO_NODE=$(filtered_path nonode node)
+BADPKG=$(fixture badpkg 'echo built' '-'); printf '{ "scripts": ' > "$BADPKG/package.json"
+
+expect_filtered 0 - "control: the filtered PATH with jq and node lets a clean push through" "$FULL_PATH" "$ROOT/notest" "git push"
+# Regression: b3c70d5 -- with jq absent the command was read as empty and every push passed ungated, exit 0, no output
+expect_filtered 2 "jq not found" "jq absent: a push is blocked, and says why" "$NO_JQ" "$ROOT/notest" "git push"
+expect_filtered 0 - "jq absent: a git command with no push in it is not blocked" "$NO_JQ" "$ROOT/notest" "git status"
+# Regression: b3c70d5 -- with node absent both scripts read back empty and the root was skipped as 'no build/test', exit 0
+expect_filtered 2 "node not found" "node absent: a push is blocked, and says why" "$NO_NODE" "$ROOT/notest" "git push"
+# Regression: b3c70d5 -- an unreadable package.json read back as 'no build/test' and the push passed ungated
+expect_filtered 2 "cannot read" "an unreadable package.json blocks the push" "$FULL_PATH" "$BADPKG" "git push"
+
+# Regression: b3c70d5 -- a package path holding an apostrophe broke the quoted node -e script, and the new read check blocked a valid push
+QUOTED="$ROOT/{author-first-name}'s app"; mkdir -p "$QUOTED"; git -C "$QUOTED" init -q
+printf '{"scripts":{"build":"echo built"}}' > "$QUOTED/package.json"
+expect_filtered 0 - "a package path with an apostrophe is read, not blocked" "$FULL_PATH" "$QUOTED" "git push"
+# Regression: b3c70d5 -- a tracked nested package.json npm never reads (a template) blocked every push
+TPL=$(fixture tplrepo 'echo built' '-')
+mkdir -p "$TPL/templates"; printf '{ "name": {{name}} }' > "$TPL/templates/package.json"; git -C "$TPL" add templates/package.json
+expect_filtered 1 "NOT GATED" "an unreadable NESTED package.json is reported, not blocking" "$FULL_PATH" "$TPL" "git push"
+
 echo
 printf '%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

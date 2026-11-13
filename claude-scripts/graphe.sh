@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vigie: notifie-sa-sortie-1 (its exit 1 sends its own notification; vigie keeps it out of the band)
 # graphe.sh — build of the writings graph and of the corpus index
 # (my-editor-app/tools/graphe/graphe.py, which launches tools/index).
 #

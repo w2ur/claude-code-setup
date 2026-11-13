@@ -101,8 +101,9 @@ AUTO tier only** and logs the rest as `owner action:`.
 **`usage-watch`** — guards on `curl` and a uv-managed Python with a **fatal exit
 rather than a skip**, so a missing interpreter cannot be mistaken for a quiet week.
 Its findings, payload growth included, **notify through `notifier.sh` itself**:
-vigie drops exit 1 on the assumption that the job already
-reported it. A run that measured nothing (no route list, zero routes, every probe
+vigie hides an exit 1 only for a script that declares
+`# vigie: notifie-sa-sortie-1` on line 2, which this one does because it notifies.
+A run that measured nothing (no route list, zero routes, every probe
 failing at the transport level, the ratchet crashing) is exit 2, never a finding.
 Hosts that answer non-2xx or catch-all are findings, even when every one does.
 So is a Vercel token the API rejects (401/403, or a JSON `error` body): a dead
@@ -187,7 +188,7 @@ section is unknown (exit 2), never "everything is new". **The marker advances on
 through `--traite`**, run by the owner from `/setup-watch`: a marker that advances
 by itself either marks unread versions as reviewed or grows without bound.
 **News alone is exit 0**: a weekly exit 1 on routine releases teaches the reader
-to skip it, and vigie drops exit 1. **Failures are keyed on first sighting in the
+to skip it, and vigie hides the exit 1 of a script declaring `# vigie: notifie-sa-sortie-1`, as this one does. **Failures are keyed on first sighting in the
 job's own state**, not parsed from heterogeneous logs, so the age is "at least",
 never the failure's real start. An unknown launchd exit (`-`, `(never exited)`)
 after a reboot or reload **keeps** the first-seen date; dropping it would reset
@@ -302,8 +303,7 @@ success included, now ends with one timestamped summary line
 real liveness signal for this job too, not an exception to the rule.
 **Every non-zero exit also notifies once through `notifier.sh`** (job name,
 exit code, counts — never a path). The liveness line cannot carry a failure
-on its own: vigie drops exit 1 on the assumption that the
-job already reported its finding, and the `FAILED` line keeps the log fresh,
+on its own: the `FAILED` line keeps the log fresh,
 so a mirror refusing every night read as healthy everywhere.
 **An evicted mirror copy is unlinked, not read.** With the disk near full,
 iCloud evicts mirror files to dataless placeholders; when the source copy then

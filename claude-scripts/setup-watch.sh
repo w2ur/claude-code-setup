@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vigie: notifie-sa-sortie-1 (its exit 1 sends its own notification; vigie keeps it out of the band)
 # setup-watch.sh — weekly PROPOSAL about the health of the Claude Code setup:
 # login expiry, Claude Code CHANGELOG versions not yet reviewed, scheduled jobs
 # failing since a dated first sighting. No model call anywhere.

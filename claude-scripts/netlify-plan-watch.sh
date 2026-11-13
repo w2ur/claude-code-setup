@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vigie: notifie-sa-sortie-1 (its exit 1 sends its own notification; vigie keeps it out of the band)
 #
 # netlify-plan-watch.sh — weekly watch on Netlify's Legacy-plan wording.
 #
