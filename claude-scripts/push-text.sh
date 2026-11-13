@@ -12,8 +12,13 @@
 # not silent either: one stderr line ("push_text: notifier missing", "push_text:
 # mktemp failed", "push_text: notifier failed rc=N") lands in the job's log.
 
+# The notifier push_text calls. An unattended job that must not run with every
+# alert lost checks this path (exists and executable) instead of re-deriving it.
+push_text_notifier() { printf '%s' "${NOTIFIER_BIN:-${HOME:-}/.claude/scripts/notifier.sh}"; }
+
 push_text() {
-  local notifier="${NOTIFIER_BIN:-${HOME:-}/.claude/scripts/notifier.sh}" body rc=0
+  local notifier body rc=0
+  notifier="$(push_text_notifier)"
   [ -x "$notifier" ] || { echo "push_text: notifier missing" >&2 || true; return 0; }
   body="$(mktemp 2>/dev/null)" || { echo "push_text: mktemp failed" >&2 || true; return 0; }
   printf '%s\n' "$2" > "$body" 2>/dev/null || true

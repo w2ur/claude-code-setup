@@ -6,7 +6,7 @@ Four `hook.sh` scripts, each dropped in its own `~/.claude/hooks/<name>/hook.sh`
 |------|-------|---------|--------------|
 | `auto-format` | PostToolUse → `Write\|Edit` | Advisory | Runs `ruff format` on a `.py` file in a repo that configures ruff (`ruff.toml`, `.ruff.toml`, or a `[tool.ruff]` table in `pyproject.toml`), or `rustfmt` on a `.rs` file inside a Cargo project. Silent no-op otherwise — it never invents a style for a project that hasn't picked one. |
 | `stale-readme-guard` | PreToolUse → `Bash` (`git push`) | Advisory | Diffs the unpushed range against upstream. If a deploy/dependency file changed (`package.json`, `Cargo.toml`, `netlify.toml`, ...) but `README.md` didn't, it surfaces a note — the push still goes through. |
-| `secret-scan` | PreToolUse → `Write\|Edit\|NotebookEdit` and `Bash` | **Blocking** | Greps the content about to be written, or the shell command about to run, for API-key-shaped strings (OpenAI/Anthropic `sk-`, AWS `AKIA`, GitHub `ghp_`/`gho_`/`ghs_`, GitLab `glpat-`, Stripe `pk_`/`sk_live`/`sk_test`, hardcoded `password:`/`secret:`/`token:` assignments...). On a match it prints the pattern to stderr and `exit 2`s — the write never happens. Skips `.env.example` and `~/.claude/plans/`. Without `jq` it refuses the call and says why, rather than letting it through. |
+| `secret-scan` | PreToolUse → `Write\|Edit\|NotebookEdit` and `Bash` | **Blocking** | Greps the content about to be written, or the shell command about to run, for API-key-shaped strings (OpenAI/Anthropic `sk-`, AWS `AKIA`, GitHub `ghp_`/`gho_`/`ghs_`, GitLab `glpat-`, Stripe `pk_`/`sk_live`/`sk_test`, hardcoded `password`/`secret`/`token`/`*_KEY` assignments, quoted or not, in a file or mid-command...). On a match it prints the pattern to stderr and `exit 2`s — the write never happens. Skips `.env.example` and `~/.claude/plans/`. A scan that cannot run (a missing `jq`, `grep`, `base64`, `sed` or `sort`, an unreadable payload) refuses the call and says why, rather than letting it through. Its known gaps are written at the place they occur in `hook.sh`. |
 | `push-build-gate` | PreToolUse → `Bash` (`git push`) | **Blocking** | If the target repo has an npm `build` script, runs it before the push goes out. Non-zero exit, or any `N warning(s)` in the output, blocks the push with `exit 2`. Needs a uv-managed Python (see [Requirements](#requirements)); without one it fails open and says so. |
 
 ## These hooks protect a machine, not a repository
@@ -94,7 +94,7 @@ jq -s '.[0] * .[1]' ~/.claude/settings.json claude-code-setup/hooks/settings.hoo
   {
     "matcher": "Write|Edit|NotebookEdit",
     "hooks": [
-      { "type": "command", "command": "bash ~/.claude/hooks/secret-scan/hook.sh", "timeout": 5, "statusMessage": "Scanning for secrets..." }
+      { "type": "command", "command": "bash ~/.claude/hooks/secret-scan/hook.sh", "timeout": 10, "statusMessage": "Scanning for secrets..." }
     ]
   }
   // repeat per event/matcher block from hooks/settings.hooks.json

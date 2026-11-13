@@ -31,11 +31,17 @@
 # least MIN_BYTES. An empty or tiny file is deleted and is a finding: a backup
 # that "succeeded" into nothing is the failure this job exists to stop.
 #
-# Exit: 0 every database dumped and verified; 1 a finding (pg_dump failed, or
-# the dump was empty/tiny/not an archive); 2 could not run for at least one
-# database (no config, no pg_dump, iCloud absent, missing keychain item) —
-# UNKNOWN, never healthy. 2 outranks 1. Every non-zero exit alerts through
-# notifier.sh. Restore: pg_restore --no-owner -d <target-url> <file>.dump
+# Exit: 0 every database dumped and verified; 1 a finding (pg_dump failed, the
+# dump was empty/tiny/not an archive, it could not be moved into place, or the
+# file in place has the wrong size — no backup written for that database
+# tonight —, the retention listing failed, or dumps dated after today sit in the
+# folder); 2 could not run for at least one database (no config, no pg_dump,
+# iCloud absent, missing keychain item, backup folder uncreatable) or at all
+# (push-text.sh or its notifier not usable, then nothing runs and nothing is
+# alerted: stderr only) — UNKNOWN, never healthy. 2 outranks 1. Every other
+# non-zero exit alerts through notifier.sh, and the alert never carries a path,
+# a host or a role: the topic is public, the log carries the detail.
+# Restore: pg_restore --no-owner -d <target-url> <file>.dump
 set -uo pipefail
 
 KEEP=14
@@ -44,7 +50,22 @@ MIN_BYTES=4096
 CONFIG="${DB_BACKUP_CONFIG:-$HOME/.claude/db-backup.json}"
 ICLOUD_ROOT="${DB_BACKUP_ICLOUD_ROOT:-$HOME/Library/Mobile Documents/com~apple~CloudDocs}"
 DEST="${DB_BACKUP_DEST:-$ICLOUD_ROOT/exports/db-backups}"
-. "$(dirname "${BASH_SOURCE[0]}")/push-text.sh"
+PUSH_TEXT_LIB="$(dirname "${BASH_SOURCE[0]}")/push-text.sh"
+# Without push_text every alert is lost: the job cannot report, so it must not
+# look healthy. A failed `.` does not stop bash, and its status is the helper's
+# last statement, so only the presence of the function decides.
+if [ -r "$PUSH_TEXT_LIB" ]; then . "$PUSH_TEXT_LIB"; fi
+if ! declare -F push_text >/dev/null || ! declare -F push_text_notifier >/dev/null; then
+  echo "db-backup: cannot load $PUSH_TEXT_LIB — no alert is possible, refusing to run (exit 2 = unknown)" >&2
+  exit 2
+fi
+# push_text returns 0 when its notifier is missing, so a job without one would
+# run with every alert lost. The path is the helper's own resolution.
+PUSH_NOTIFIER=$(push_text_notifier)
+if [ -z "$PUSH_NOTIFIER" ] || [ ! -x "$PUSH_NOTIFIER" ]; then
+  echo "db-backup: notifier missing or not executable ($PUSH_NOTIFIER) — no alert is possible, refusing to run (exit 2 = unknown)" >&2
+  exit 2
+fi
 ACCOUNT="${USER:-$(id -un)}"
 
 umask 077
@@ -53,8 +74,8 @@ warn() { echo "WARN: $*" >&2; }
 
 notify() { push_text "$1" "$2" 4; }
 
-die2() {
-  warn "$1"
+die2() { # $1 = alert text (public topic: no path), $2 = optional log-only detail
+  warn "$1${2:+ — $2}"
   notify "db-backup — could not run (exit 2 = unknown)" "$1"
   exit 2
 }
@@ -70,24 +91,35 @@ if [ -z "$PG_DUMP" ]; then
 fi
 [ -n "$PG_DUMP" ] && [ -x "$PG_DUMP" ] || die2 "pg_dump not found. Install it with: brew install libpq"
 
-[ -f "$CONFIG" ] || die2 "config not found: $CONFIG"
+[ -f "$CONFIG" ] || die2 "config not found" "$CONFIG"
 entries=$(jq -r '.[] | [.name, .keychain_service] | @tsv' "$CONFIG" 2>/dev/null) \
-  || die2 "config is not a JSON array of {name, keychain_service}: $CONFIG"
-[ -n "$entries" ] || die2 "config lists no databases: $CONFIG"
+  || die2 "config is not a JSON array of {name, keychain_service}" "$CONFIG"
+[ -n "$entries" ] || die2 "config lists no databases" "$CONFIG"
 
 # An absent iCloud root means Drive is not mounted; mkdir -p would invent a
 # local folder that never syncs and the dump would look saved.
-[ -d "$ICLOUD_ROOT" ] || die2 "iCloud Drive not found at: $ICLOUD_ROOT"
+[ -d "$ICLOUD_ROOT" ] || die2 "iCloud Drive not found" "$ICLOUD_ROOT"
 
 stamp=$(date +%Y-%m-%d)
 worst=0
 report=""
 
-note() { # $1 = level (1|2), $2 = line
+note() { # $1 = level (1|2), $2 = alert line (public topic: no path, no stderr),
+         # $3 = optional log-only detail
   report+="$2"$'\n'
-  warn "$2"
+  warn "$2${3:+ — $3}"
   [ "$1" -gt "$worst" ] && worst=$1
   return 0
+}
+
+# A dump is acceptable when it is a custom-format archive of at least MIN_BYTES.
+# Sets DUMP_SIZE.
+verify_dump() {
+  local magic
+  DUMP_SIZE=$(wc -c < "$1" 2>/dev/null | tr -d ' ')
+  DUMP_SIZE=${DUMP_SIZE:-0}
+  magic=$(head -c 5 "$1" 2>/dev/null || true)
+  [ "$DUMP_SIZE" -ge "$MIN_BYTES" ] && [ "$magic" = "PGDMP" ]
 }
 
 while IFS=$'\t' read -r name service; do
@@ -104,36 +136,75 @@ while IFS=$'\t' read -r name service; do
   url=$(printf '%s' "$url" | sed -E 's#^([a-z]+://[^/@]*@[^/?]*)-pooler\.#\1.#')
 
   outdir="$DEST/$name"
-  mkdir -p "$outdir" && chmod 700 "$outdir" || { note 2 "$name: cannot create $outdir"; continue; }
+  mkdir -p "$outdir" && chmod 700 "$outdir" || { note 2 "$name: cannot create the backup folder" "$outdir"; continue; }
 
   tmp="$outdir/.$name-$stamp.dump.partial"
   err=$(mktemp)
   if ! "$PG_DUMP" -Fc --no-owner --no-privileges -f "$tmp" "$url" 2>"$err"; then
     detail=$(tail -n 3 "$err" | redact | tr '\n' ' ')
     rm -f "$tmp" "$err"
-    note 1 "$name: pg_dump failed — $detail"
+    note 1 "pg_dump failed for $name" "$detail"
     continue
   fi
   rm -f "$err"
 
-  size=$(wc -c < "$tmp" 2>/dev/null | tr -d ' ')
-  size=${size:-0}
-  magic=$(head -c 5 "$tmp" 2>/dev/null || true)
-  if [ "$size" -lt "$MIN_BYTES" ] || [ "$magic" != "PGDMP" ]; then
+  if ! verify_dump "$tmp"; then
     rm -f "$tmp"
-    note 1 "$name: dump rejected (${size} bytes, below ${MIN_BYTES} or not a pg_dump archive) — not counted as a backup"
+    note 1 "$name: dump rejected (${DUMP_SIZE} bytes, below ${MIN_BYTES} or not a pg_dump archive) — not counted as a backup"
     continue
   fi
+  size=$DUMP_SIZE
 
   chmod 600 "$tmp"
-  mv -f "$tmp" "$outdir/$name-$stamp.dump"
+  final="$outdir/$name-$stamp.dump"
+  # A failed move leaves the verified temp file in place: it is the only copy of
+  # tonight's dump and can be renamed by hand. Its name carries today's date, so a
+  # later night's pg_dump never truncates it.
+  if ! mv -f "$tmp" "$final"; then
+    note 1 "$name: no backup written today (could not move the verified dump into place)" \
+      "verified dump left at $tmp, rename it to $final by hand"
+    continue
+  fi
+  # A same-directory rename is atomic, so only presence and size are checked. A
+  # mismatch is reported and the file stays: nothing is deleted after the move.
+  final_size=$(wc -c < "$final" 2>/dev/null | tr -d ' ')
+  if [ ! -f "$final" ] || [ "${final_size:-0}" -ne "$size" ]; then
+    note 1 "$name: the dump in place does not match the verified size, not counted as a backup" \
+      "$final: ${final_size:-0} bytes in place, $size verified before the move"
+    continue
+  fi
+  # Today's dump is verified and in place: only now are kept temp files of
+  # PREVIOUS days no longer needed. Never earlier, they may be the only copy.
+  find "$outdir" -maxdepth 1 -type f -name ".$name-*.dump.partial" ! -name ".$name-$stamp.dump.partial" -exec rm -f {} + 2>/dev/null || true
 
   # Retention: dated names sort lexically; drop everything past the newest KEEP.
+  # Files dated after today are never counted and never pruned (they would take
+  # the KEEP slots for ever). Invariant: the pruned tail only holds names dated
+  # up to today, newest first, and today's file is the newest of them, rank 1, so
+  # with KEEP >= 1 it can never be in the tail. A failing listing prunes nothing
+  # and is a finding.
+  retention_done=1
   # shellcheck disable=SC2012
-  ls -1 "$outdir" | grep -E "^$name-[0-9]{4}-[0-9]{2}-[0-9]{2}\.dump$" | sort -r | tail -n +"$((KEEP + 1))" \
-    | while read -r old; do rm -f "$outdir/$old"; done
+  if ! listing=$(ls -1 "$outdir" 2>&1); then
+    retention_done=0
+    note 1 "$name: retention not done (could not list the backup folder), nothing pruned" \
+      "${listing:-ls exited non-zero with no message}"
+  else
+    dated=$(printf '%s\n' "$listing" | grep -E "^$name-[0-9]{4}-[0-9]{2}-[0-9]{2}\.dump$" || true)
+    future_n=$(printf '%s\n' "$dated" | awk -v n="$name" -v s="$stamp" 'NF && (substr($0, length(n) + 2, 10) "") > (s "") { c++ } END { print c + 0 }')
+    printf '%s\n' "$dated" | awk -v n="$name" -v s="$stamp" 'NF && (substr($0, length(n) + 2, 10) "") <= (s "")' \
+      | sort -r | tail -n +"$((KEEP + 1))" \
+      | while read -r old; do rm -f "$outdir/$old"; done
+    if [ "$future_n" -gt 0 ]; then
+      note 1 "$name: $future_n dump(s) dated after today in the backup folder, left untouched and not counted for retention"
+    fi
+  fi
 
-  echo "db-backup ok: $name $stamp ${size} bytes"
+  if [ "$retention_done" -eq 1 ]; then
+    echo "db-backup ok: $name $stamp ${size} bytes"
+  else
+    echo "db-backup: $name $stamp ${size} bytes written, retention NOT done"
+  fi
 done <<< "$entries"
 
 if [ "$worst" -ne 0 ]; then
